@@ -187,8 +187,13 @@ struct GameDetailView: View {
     @EnvironmentObject private var depotCtl: DepotDownloaderController
     @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var goldberg: GoldbergInstaller
+    @EnvironmentObject private var cloudAuth: SteamAuthStore
+    @EnvironmentObject private var cloudSync: CloudSyncEngine
     @State private var qrArt: String = ""
     @State private var isShowingQR: Bool = false
+    @State private var isShowingCloudConnect: Bool = false
+    @State private var cloudSyncMessage: String?
+    @State private var cloudSyncIsError: Bool = false
     @State private var patchStatusMessage: String?
     @State private var patchStatusIsError: Bool = false
     @State private var isPatching: Bool = false
@@ -241,6 +246,12 @@ struct GameDetailView: View {
                 onCancel: { cancelInstall(reason: "Cancelled.") }
             )
             .interactiveDismissDisabled(true)
+        }
+        .sheet(isPresented: $isShowingCloudConnect) {
+            SteamCloudQRSheet(onConnected: {
+                cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
+                cloudSyncIsError = false
+            })
         }
     }
 
@@ -409,6 +420,7 @@ struct GameDetailView: View {
 
                 displayModeRow(bottle: bottle)
                 steamEmulatorRow(bottle: bottle)
+                steamCloudRow(bottle: bottle)
 
                 Text("Switch to the Compatibility tab in the sidebar to change runtime, graphics backend, or launch arguments.")
                     .font(.caption)
@@ -602,6 +614,164 @@ struct GameDetailView: View {
                 .foregroundStyle(patchStatusIsError ? .red : .green)
                 .padding(.leading, 142)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    // MARK: - Steam Cloud row
+
+    @ViewBuilder
+    private func steamCloudRow(bottle: Bottle) -> some View {
+        let connected = cloudAuth.account != nil
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Steam Cloud")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 130, alignment: .leading)
+
+                if connected {
+                    Label(cloudAuth.account?.accountName ?? "Connected", systemImage: "checkmark.icloud.fill")
+                        .foregroundStyle(.green)
+                        .font(.callout)
+                } else {
+                    Label("Not connected", systemImage: "icloud.slash")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                }
+
+                if cloudSync.isSyncing {
+                    ProgressView().controlSize(.small)
+                }
+
+                Spacer()
+
+                if !connected {
+                    Button {
+                        cloudSyncMessage = nil
+                        isShowingCloudConnect = true
+                    } label: {
+                        Label("Connect", systemImage: "icloud")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+                } else {
+                    Button {
+                        pullSaves(for: bottle)
+                    } label: {
+                        Label("Pull saves", systemImage: "icloud.and.arrow.down")
+                    }
+                    .controlSize(.small)
+                    .disabled(cloudSync.isSyncing)
+
+                    Button {
+                        pushSaves(for: bottle)
+                    } label: {
+                        Label("Push saves", systemImage: "icloud.and.arrow.up")
+                    }
+                    .controlSize(.small)
+                    .disabled(cloudSync.isSyncing)
+
+                    Menu {
+                        Button(role: .destructive) {
+                            cloudAuth.signOut()
+                            cloudSyncMessage = "Disconnected from Steam Cloud."
+                            cloudSyncIsError = false
+                        } label: {
+                            Label("Sign Out", systemImage: "icloud.slash")
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
+                    }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                }
+            }
+
+            if cloudSync.isSyncing && !cloudSync.phase.isEmpty {
+                Text(cloudSync.phase)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 142)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if let message = cloudSyncMessage {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(cloudSyncIsError ? .red : .green)
+                    .padding(.leading, 142)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else if connected, let last = cloudSync.lastSyncAt {
+                Text("Last synced \(last.formatted(.relative(presentation: .named))).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 142)
+            } else if connected {
+                Text("Pull to download your existing PC saves into this bottle. Push to send Mac progress back to Steam Cloud after a play session.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 142)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func pullSaves(for bottle: Bottle) {
+        Task {
+            cloudSyncMessage = nil
+            do {
+                let report = try await cloudSync.pull(
+                    bottle: bottle,
+                    appID: game.appID,
+                    auth: cloudAuth
+                )
+                cloudSyncIsError = !report.failures.isEmpty
+                let msg = "Pulled \(report.downloaded) save\(report.downloaded == 1 ? "" : "s")"
+                    + (report.skipped > 0 ? ", \(report.skipped) up-to-date" : "")
+                    + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
+                cloudSyncMessage = msg
+            } catch let err as SteamAuthError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch let err as SteamCloudError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch let err as CloudSyncError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch {
+                cloudSyncIsError = true
+                cloudSyncMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func pushSaves(for bottle: Bottle) {
+        Task {
+            cloudSyncMessage = nil
+            do {
+                let report = try await cloudSync.push(
+                    bottle: bottle,
+                    appID: game.appID,
+                    auth: cloudAuth
+                )
+                cloudSyncIsError = !report.failures.isEmpty
+                let msg = "Pushed \(report.uploaded) save\(report.uploaded == 1 ? "" : "s")"
+                    + (report.skipped > 0 ? ", \(report.skipped) up-to-date" : "")
+                    + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
+                cloudSyncMessage = msg
+            } catch let err as SteamAuthError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch let err as SteamCloudError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch let err as CloudSyncError {
+                cloudSyncIsError = true
+                cloudSyncMessage = err.errorDescription
+            } catch {
+                cloudSyncIsError = true
+                cloudSyncMessage = error.localizedDescription
+            }
         }
     }
 

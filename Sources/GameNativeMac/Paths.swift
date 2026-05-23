@@ -69,6 +69,14 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("steam-library.json")
     }
 
+    /// Persisted Steam Cloud auth (refresh token + cached access token).
+    /// TODO(security): move into the Keychain — refresh tokens grant access
+    /// to the user's Steam account. For v1 we keep them in Application
+    /// Support like the rest of our state.
+    static var steamCloudAuthStateURL: URL {
+        applicationSupport.appendingPathComponent("steam-cloud-auth.json")
+    }
+
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.

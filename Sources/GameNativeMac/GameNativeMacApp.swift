@@ -33,6 +33,8 @@ struct GameNativeMacApp: App {
     @StateObject private var depotCtl = DepotDownloaderController()
     @StateObject private var downloads = DownloadsStore()
     @StateObject private var goldberg = GoldbergInstaller()
+    @StateObject private var cloudAuth = SteamAuthStore()
+    @StateObject private var cloudSync = CloudSyncEngine()
 
     var body: some Scene {
         WindowGroup {
@@ -45,6 +47,8 @@ struct GameNativeMacApp: App {
                 .environmentObject(depotCtl)
                 .environmentObject(downloads)
                 .environmentObject(goldberg)
+                .environmentObject(cloudAuth)
+                .environmentObject(cloudSync)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -54,6 +58,7 @@ struct GameNativeMacApp: App {
                     library.load()
                     depotCtl.load()
                     goldberg.refresh()
+                    cloudAuth.load()
                 }
         }
         .windowStyle(.titleBar)
