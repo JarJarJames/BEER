@@ -661,18 +661,18 @@ struct GameDetailView: View {
                     } label: {
                         Label("Pull saves", systemImage: "icloud.and.arrow.down")
                     }
-                    .controlSize(.small)
-                    .disabled(cloudSync.isSyncing)
-
-                    Button {
-                        pushSaves(for: bottle)
-                    } label: {
-                        Label("Push saves", systemImage: "icloud.and.arrow.up")
-                    }
+                    .buttonStyle(.borderedProminent)
                     .controlSize(.small)
                     .disabled(cloudSync.isSyncing)
 
                     Menu {
+                        Button {
+                            cloudSyncMessage = "Push isn't supported: Valve gates the upload API behind a Publisher Web API Key. Saves can only flow cloud → Mac here."
+                            cloudSyncIsError = true
+                        } label: {
+                            Label("Why no push?", systemImage: "info.circle")
+                        }
+                        Divider()
                         Button(role: .destructive) {
                             cloudAuth.signOut()
                             cloudSyncMessage = "Disconnected from Steam Cloud."
@@ -706,7 +706,7 @@ struct GameDetailView: View {
                     .foregroundStyle(.secondary)
                     .padding(.leading, 142)
             } else if connected {
-                Text("Pull to download your existing PC saves into this bottle. Push to send Mac progress back to Steam Cloud after a play session.")
+                Text("Pull downloads your existing PC saves into this bottle. Push isn't supported — Valve gates the upload API behind a Publisher Web API Key that third-party apps can't get.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 142)
@@ -726,36 +726,6 @@ struct GameDetailView: View {
                 )
                 cloudSyncIsError = !report.failures.isEmpty
                 let msg = "Pulled \(report.downloaded) save\(report.downloaded == 1 ? "" : "s")"
-                    + (report.skipped > 0 ? ", \(report.skipped) up-to-date" : "")
-                    + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
-                cloudSyncMessage = msg
-            } catch let err as SteamAuthError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as SteamCloudError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as CloudSyncError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch {
-                cloudSyncIsError = true
-                cloudSyncMessage = error.localizedDescription
-            }
-        }
-    }
-
-    private func pushSaves(for bottle: Bottle) {
-        Task {
-            cloudSyncMessage = nil
-            do {
-                let report = try await cloudSync.push(
-                    bottle: bottle,
-                    appID: game.appID,
-                    auth: cloudAuth
-                )
-                cloudSyncIsError = !report.failures.isEmpty
-                let msg = "Pushed \(report.uploaded) save\(report.uploaded == 1 ? "" : "s")"
                     + (report.skipped > 0 ? ", \(report.skipped) up-to-date" : "")
                     + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
                 cloudSyncMessage = msg

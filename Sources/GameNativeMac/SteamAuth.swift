@@ -71,6 +71,7 @@ final class SteamAuthStore: ObservableObject {
     func signOut() {
         account = nil
         try? FileManager.default.removeItem(at: AppPaths.steamCloudAuthStateURL)
+        clearWebSession()
     }
 
     private func persist() {
@@ -222,6 +223,131 @@ final class SteamAuthStore: ObservableObject {
         self.account = updated
         persist()
         return newAccess
+    }
+
+    // MARK: - Web session (cookies on store.steampowered.com)
+
+    /// Exchange our refresh_token for steamLoginSecure cookies on Steam's
+    /// web properties (store / community / help / checkout / steam.tv).
+    /// Once this runs, URLSession.shared can hit any user-only Steam web
+    /// page as the authenticated user — this is how we work around Steam
+    /// not honoring `access_token=` on ICloudService for non-partners.
+    ///
+    /// Idempotent: skips the round-trip if the steamLoginSecure cookie on
+    /// store.steampowered.com is still valid.
+    func ensureWebSession() async throws {
+        guard let account else { throw SteamAuthError.notSignedIn }
+
+        if let storeURL = URL(string: "https://store.steampowered.com/"),
+           let cookies = HTTPCookieStorage.shared.cookies(for: storeURL),
+           cookies.contains(where: {
+               $0.name == "steamLoginSecure" &&
+               ($0.expiresDate ?? Date().addingTimeInterval(86400)) > Date().addingTimeInterval(300)
+           }) {
+            return
+        }
+
+        // 1. GET community to seed a sessionid cookie.
+        guard let communityURL = URL(string: "https://steamcommunity.com/") else {
+            throw SteamAuthError.invalidResponse("bad URL")
+        }
+        _ = try await session.data(from: communityURL)
+        guard let sessionCookie = HTTPCookieStorage.shared.cookies(for: communityURL)?
+              .first(where: { $0.name == "sessionid" }) else {
+            throw SteamAuthError.invalidResponse("No sessionid cookie from steamcommunity.com")
+        }
+
+        // 2. POST refresh_token + sessionid to /jwt/finalizelogin as
+        //    multipart/form-data — Steam rejects plain form encoding here.
+        let finalizeData = try await postMultipart(
+            to: "https://login.steampowered.com/jwt/finalizelogin",
+            fields: [
+                ("nonce", account.refreshToken),
+                ("sessionid", sessionCookie.value),
+                ("redir", "https://steamcommunity.com/login/home/?goto=")
+            ],
+            extraHeaders: [
+                "Origin": "https://steamcommunity.com",
+                "Referer": "https://steamcommunity.com/login/home/?goto="
+            ]
+        )
+
+        struct FinalizeResp: Decodable {
+            let steamID: String
+            let transfer_info: [Transfer]
+        }
+        struct Transfer: Decodable {
+            let url: String
+            let params: [String: String]
+        }
+        let finalize: FinalizeResp
+        do {
+            finalize = try JSONDecoder().decode(FinalizeResp.self, from: finalizeData)
+        } catch {
+            throw SteamAuthError.invalidResponse(String(data: finalizeData, encoding: .utf8) ?? "")
+        }
+
+        // 3. For each domain transfer URL, POST the params (plus steamID) to
+        //    set steamLoginSecure on that domain. URLSession will pick up
+        //    the Set-Cookie response into HTTPCookieStorage.shared.
+        for transfer in finalize.transfer_info {
+            var fields: [(String, String)] = transfer.params.map { ($0.key, $0.value) }
+            fields.append(("steamID", finalize.steamID))
+            _ = try? await postMultipart(to: transfer.url, fields: fields, extraHeaders: [:])
+        }
+
+        // 4. Sanity check.
+        guard let storeURL = URL(string: "https://store.steampowered.com/"),
+              HTTPCookieStorage.shared.cookies(for: storeURL)?
+                  .contains(where: { $0.name == "steamLoginSecure" }) == true else {
+            throw SteamAuthError.invalidResponse(
+                "Cookie exchange completed but steamLoginSecure was not set on the store domain."
+            )
+        }
+    }
+
+    /// Tear down any web-session cookies (so a Sign Out from the UI fully
+    /// disconnects). Refresh-token persistence is removed by signOut().
+    func clearWebSession() {
+        for host in ["store.steampowered.com", "steamcommunity.com",
+                     "help.steampowered.com", "checkout.steampowered.com",
+                     "login.steampowered.com", "steam.tv"] {
+            guard let url = URL(string: "https://\(host)/") else { continue }
+            HTTPCookieStorage.shared.cookies(for: url)?.forEach {
+                HTTPCookieStorage.shared.deleteCookie($0)
+            }
+        }
+    }
+
+    private func postMultipart(
+        to urlString: String,
+        fields: [(String, String)],
+        extraHeaders: [String: String]
+    ) async throws -> Data {
+        guard let url = URL(string: urlString) else {
+            throw SteamAuthError.invalidResponse("bad URL")
+        }
+        let boundary = "----GameNative\(UUID().uuidString)"
+        var body = Data()
+        for (k, v) in fields {
+            body.append("--\(boundary)\r\n".data(using: .utf8)!)
+            body.append("Content-Disposition: form-data; name=\"\(k)\"\r\n\r\n".data(using: .utf8)!)
+            body.append(v.data(using: .utf8)!)
+            body.append("\r\n".data(using: .utf8)!)
+        }
+        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
+
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
+        for (k, v) in extraHeaders { req.setValue(v, forHTTPHeaderField: k) }
+        req.httpBody = body
+
+        let (data, response) = try await session.data(for: req)
+        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+            throw SteamAuthError.http((response as? HTTPURLResponse)?.statusCode ?? 0, String(data: data, encoding: .utf8) ?? "")
+        }
+        return data
     }
 
     // MARK: - HTTP helpers
