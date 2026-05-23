@@ -1,0 +1,415 @@
+import Foundation
+
+enum RuntimeKind: String, Codable, CaseIterable, Identifiable {
+    case systemWine
+    case crossOver
+    case whisky
+    case gamePortingToolkit
+    case gameNativeWine
+    case custom
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .systemWine: "System Wine"
+        case .crossOver: "CrossOver"
+        case .whisky: "Whisky Wine"
+        case .gamePortingToolkit: "Game Porting Toolkit"
+        case .gameNativeWine: "GameNative Wine"
+        case .custom: "Custom Wine"
+        }
+    }
+}
+
+enum GraphicsBackend: String, Codable, CaseIterable, Identifiable {
+    case automatic
+    case d3dMetal
+    case dxmt
+    case dxvk
+    case wineD3D
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .d3dMetal: "D3DMetal"
+        case .dxmt: "DXMT"
+        case .dxvk: "DXVK"
+        case .wineD3D: "WineD3D"
+        }
+    }
+}
+
+struct RuntimeCandidate: Identifiable, Codable, Hashable {
+    var id: String { bundlePath ?? executablePath }
+    var kind: RuntimeKind
+    var executablePath: String
+    var displayName: String
+    var bundlePath: String? = nil
+    var version: String? = nil
+    var entrypoints: RuntimeEntrypoints? = nil
+
+    var parentDirectory: String {
+        URL(fileURLWithPath: executablePath).deletingLastPathComponent().path
+    }
+
+    var locationPath: String {
+        bundlePath ?? executablePath
+    }
+}
+
+struct RuntimeEntrypoints: Codable, Hashable {
+    var wine: String
+    var wineboot: String?
+    var wineserver: String?
+}
+
+struct Bottle: Identifiable, Codable, Hashable {
+    var id: UUID
+    var name: String
+    var createdAt: Date
+    var updatedAt: Date
+    var runtimePath: String
+    var runtimeKind: RuntimeKind
+    var runtimeBundlePath: String?
+    var runtimeDisplayName: String?
+    var runtimeVersion: String?
+    var runtimeEntrypoints: RuntimeEntrypoints?
+    var graphicsBackend: GraphicsBackend
+    var windowsVersion: String
+    var launchArguments: String
+    var environmentOverrides: [String: String]
+    var notes: String
+
+    // When this bottle was created by the SteamCMD library flow, these
+    // identify the Steam game it belongs to. Legacy bottles created via the
+    // manual "New Bottle" flow leave these nil and use the full Steam client.
+    var steamAppID: Int? = nil
+    var steamGameName: String? = nil
+    var gameInstallStatus: SteamGameInstallStatus? = nil
+    var gameLaunchExecutable: String? = nil
+    /// Host filesystem path to the game's install root (the directory that
+    /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
+    /// when reapplying or restoring on an already-installed game.
+    var gameInstallDirectory: String? = nil
+
+    // --- Display mode ---
+    // When useVirtualDesktop is true, we launch the game inside
+    // `wine explorer /desktop=Name,WxH game.exe` — a fixed-size macOS window
+    // that doesn't grab exclusive fullscreen. Cocoa fullscreens such a
+    // window with black bars instead of stretching, which is the behavior
+    // the user actually wants. Both fields are optional so old bottles
+    // continue to decode; nil means "use the effective defaults below".
+    var useVirtualDesktop: Bool? = nil
+    var virtualDesktopResolution: String? = nil
+
+    /// Effective windowed-mode toggle. Defaults to ON for any bottle that's
+    /// associated with a Steam appID (i.e. installed via the Library flow),
+    /// OFF for manual / legacy bottles.
+    var effectiveUseVirtualDesktop: Bool {
+        useVirtualDesktop ?? (steamAppID != nil)
+    }
+
+    /// Effective windowed-mode resolution. 1920x1080 is a safe default for
+    /// modern games; the user can override per-bottle in Compatibility.
+    var effectiveVirtualDesktopResolution: String {
+        virtualDesktopResolution ?? "1920x1080"
+    }
+
+    var folderName: String {
+        "\(sanitizedName)-\(id.uuidString.prefix(8))"
+    }
+
+    private var sanitizedName: String {
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let mapped = name.unicodeScalars.map { allowed.contains($0) ? Character($0) : "-" }
+        let collapsed = String(mapped).replacingOccurrences(of: "--", with: "-")
+        return collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "-")).isEmpty ? "Bottle" : collapsed
+    }
+
+    var runtimeLabel: String {
+        runtimeDisplayName ?? runtimeKind.label
+    }
+
+    var runtimeLocationPath: String {
+        runtimeBundlePath ?? runtimePath
+    }
+
+    mutating func useRuntime(_ runtime: RuntimeCandidate) {
+        runtimePath = runtime.executablePath
+        runtimeKind = runtime.kind
+        runtimeBundlePath = runtime.bundlePath
+        runtimeDisplayName = runtime.displayName
+        runtimeVersion = runtime.version
+        runtimeEntrypoints = runtime.entrypoints
+    }
+
+    static func make(
+        name: String,
+        runtime: RuntimeCandidate,
+        graphicsBackend: GraphicsBackend
+    ) -> Bottle {
+        Bottle(
+            id: UUID(),
+            name: name,
+            createdAt: Date(),
+            updatedAt: Date(),
+            runtimePath: runtime.executablePath,
+            runtimeKind: runtime.kind,
+            runtimeBundlePath: runtime.bundlePath,
+            runtimeDisplayName: runtime.displayName,
+            runtimeVersion: runtime.version,
+            runtimeEntrypoints: runtime.entrypoints,
+            graphicsBackend: graphicsBackend,
+            windowsVersion: "win10",
+            launchArguments: SteamLaunchDefaults.basicArguments,
+            environmentOverrides: [:],
+            notes: ""
+        )
+    }
+}
+
+enum SteamLaunchDefaults {
+    static let basicArguments = "-no-cef-sandbox"
+
+    // Extra CEF flags that sometimes stabilize steamwebhelper.exe on Wine/macOS.
+    // These help when the helper dies in the GPU / sandbox / breakpad path, but
+    // they will NOT fix the `NetworkChangeNotifierWin → WSALookupServiceBeginW`
+    // crash, which lives inside Chromium and only goes away with a runtime that
+    // has a working `ws2_32.WSALookupServiceBeginW` (CrossOver-style patches or
+    // a Wine-Staging build with the relevant patch).
+    static let webHelperSafeArguments = "-no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing -cef-in-process-gpu -cef-disable-breakpad"
+
+    // Big Picture / tenfoot launch. Worth trying when the desktop UI's CEF
+    // helper is crash-looping, because it goes through a different rendering
+    // entry point. No guarantee — modern Steam still uses CEF for Big Picture
+    // ("gamepadui"), but `-tenfoot` is the documented opt-in and sometimes
+    // gets past the initial helper crash.
+    static let bigPictureArguments = "-tenfoot -no-cef-sandbox"
+
+    static func mergedWithWebHelperSafeArguments(_ existing: String) -> String {
+        var parts = existing
+            .split(separator: " ")
+            .map(String.init)
+            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+
+        for required in webHelperSafeArguments.split(separator: " ").map(String.init) where !parts.contains(required) {
+            parts.append(required)
+        }
+
+        return parts.joined(separator: " ")
+    }
+}
+
+// Names of the log files Steam writes inside `<prefix>/drive_c/Program Files (x86)/Steam/logs/`.
+// These are the actual sources of truth when Steam's UI fails to render — the Wine WINEDEBUG
+// trace only captures the bootstrap process exiting.
+enum SteamLogFile: String, CaseIterable, Identifiable {
+    case bootstrap = "bootstrap_log.txt"
+    case cef = "cef_log.txt"
+    case steamui = "steamui_html.txt"
+    case console = "console_log.txt"
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .bootstrap: "Bootstrap (bootstrap_log.txt)"
+        case .cef: "CEF / WebHelper (cef_log.txt)"
+        case .steamui: "Steam UI (steamui_html.txt)"
+        case .console: "Console (console_log.txt)"
+        }
+    }
+}
+
+// Result of inspecting Steam's own logs after a launch. Used to surface the
+// "webhelper is crash-looping" case in the UI instead of reporting the parent
+// Wine process's clean exit as success.
+struct WebHelperHealth: Equatable {
+    var restartCount: Int
+    var lastCEFError: String?
+
+    var isCrashLooping: Bool { restartCount >= 3 }
+}
+
+// ---------------------------------------------------------------------------
+// Light Steam (SteamCMD) — app-level account + per-game library entries
+// ---------------------------------------------------------------------------
+//
+// Architectural intent: SteamCMD is Valve's headless Steam client. It has no
+// CEF/Chromium dependency, so it dodges the WSALookupServiceBeginW crash that
+// blocks the full Steam client on GPTK/vanilla Wine. We log in once at the
+// app level, list owned games, and install each one into its own Wine bottle
+// — Winlator/GameNative-Android style, one bottle per game so each can be
+// tuned independently.
+//
+// We never store the Steam password. SteamCMD caches its own session token
+// in its config directory after the initial login. We only persist a
+// username + (optional) SteamID + (optional) Web API key.
+
+struct SteamAccount: Codable, Equatable {
+    var username: String           // Steam persona (display) name once signed in
+    var steamID64: String?
+    var webAPIKey: String?
+    var avatarURL: String?         // full-size avatar from GetPlayerSummaries
+    var isLoggedIn: Bool
+
+    static let signedOut = SteamAccount(username: "", steamID64: nil, webAPIKey: nil, avatarURL: nil, isLoggedIn: false)
+}
+
+struct SteamLibraryGame: Identifiable, Codable, Hashable {
+    var id: Int { appID }
+    var appID: Int
+    var name: String
+    var headerImageURL: String?
+    var iconURL: String?
+    var sizeOnDiskBytes: Int64?
+    var lastPlayed: Date?
+    var installedBottleID: UUID?
+
+    var headerImage: URL? {
+        URL(string: headerImageURL ?? "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/header.jpg")
+    }
+}
+
+enum SteamGameInstallStatus: String, Codable {
+    case notInstalled
+    case queued
+    case installing
+    case installed
+    case updateAvailable
+    case failed
+}
+
+struct BottleLogEntry: Identifiable, Hashable {
+    let id = UUID()
+    let date: Date
+    let message: String
+    let isError: Bool
+}
+
+enum RuntimeBundle {
+    static func candidate(from url: URL, fallbackDisplayName: String? = nil) throws -> RuntimeCandidate {
+        let values = try url.resourceValues(forKeys: [.isDirectoryKey])
+        guard values.isDirectory == true else {
+            throw RuntimeBundleError.notDirectory
+        }
+
+        let manifestURL = url.appendingPathComponent("runtime.json", isDirectory: false)
+        let manifest: RuntimeBundleManifest?
+        if FileManager.default.fileExists(atPath: manifestURL.path) {
+            let data = try Data(contentsOf: manifestURL)
+            manifest = try JSONDecoder().decode(RuntimeBundleManifest.self, from: data)
+        } else {
+            manifest = nil
+        }
+
+        let entrypoints = try resolvedEntrypoints(for: url, manifest: manifest)
+        guard FileManager.default.isExecutableFile(atPath: entrypoints.wine) else {
+            throw RuntimeBundleError.missingExecutable(entrypoints.wine)
+        }
+        if let wineboot = entrypoints.wineboot,
+           !FileManager.default.isExecutableFile(atPath: wineboot) {
+            throw RuntimeBundleError.missingExecutable(wineboot)
+        }
+        if let wineserver = entrypoints.wineserver,
+           !FileManager.default.isExecutableFile(atPath: wineserver) {
+            throw RuntimeBundleError.missingExecutable(wineserver)
+        }
+
+        let version = manifest?.version
+        let displayName = displayName(
+            manifestName: manifest?.name,
+            fallback: fallbackDisplayName ?? url.deletingPathExtension().lastPathComponent,
+            version: version
+        )
+
+        return RuntimeCandidate(
+            kind: .gameNativeWine,
+            executablePath: entrypoints.wine,
+            displayName: displayName,
+            bundlePath: url.path,
+            version: version,
+            entrypoints: entrypoints
+        )
+    }
+
+    static func candidateIfAvailable(in url: URL, fallbackDisplayName: String? = nil) -> RuntimeCandidate? {
+        guard isRuntimeBundle(url) else { return nil }
+        return try? candidate(from: url, fallbackDisplayName: fallbackDisplayName)
+    }
+
+    static func isRuntimeBundle(_ url: URL) -> Bool {
+        let manifestURL = url.appendingPathComponent("runtime.json", isDirectory: false)
+        return url.pathExtension == "runtime" || FileManager.default.fileExists(atPath: manifestURL.path)
+    }
+
+    private static func resolvedEntrypoints(for bundleURL: URL, manifest: RuntimeBundleManifest?) throws -> RuntimeEntrypoints {
+        if let manifest {
+            return RuntimeEntrypoints(
+                wine: resolve(manifest.entrypoints.wine, relativeTo: bundleURL).path,
+                wineboot: manifest.entrypoints.wineboot.map { resolve($0, relativeTo: bundleURL).path },
+                wineserver: manifest.entrypoints.wineserver.map { resolve($0, relativeTo: bundleURL).path }
+            )
+        }
+
+        let binURL = bundleURL.appendingPathComponent("bin", isDirectory: true)
+        let wineURL = binURL.appendingPathComponent("wine", isDirectory: false)
+        let winebootURL = binURL.appendingPathComponent("wineboot", isDirectory: false)
+        let wineserverURL = binURL.appendingPathComponent("wineserver", isDirectory: false)
+
+        return RuntimeEntrypoints(
+            wine: wineURL.path,
+            wineboot: FileManager.default.fileExists(atPath: winebootURL.path) ? winebootURL.path : nil,
+            wineserver: FileManager.default.fileExists(atPath: wineserverURL.path) ? wineserverURL.path : nil
+        )
+    }
+
+    private static func resolve(_ path: String, relativeTo bundleURL: URL) -> URL {
+        let expanded = (path as NSString).expandingTildeInPath
+        if expanded.hasPrefix("/") {
+            return URL(fileURLWithPath: expanded)
+        }
+        return bundleURL.appendingPathComponent(path, isDirectory: false)
+    }
+
+    private static func displayName(manifestName: String?, fallback: String, version: String?) -> String {
+        let rawName: String
+        if let manifestName, !manifestName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            rawName = manifestName
+        } else {
+            rawName = fallback
+        }
+
+        let baseName = rawName.localizedCaseInsensitiveContains("GameNativeWine") || rawName.localizedCaseInsensitiveContains("GameNative Wine")
+            ? "GameNative Wine"
+            : rawName
+
+        guard let version, !version.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return baseName
+        }
+        return "\(baseName) \(version)"
+    }
+}
+
+private struct RuntimeBundleManifest: Decodable {
+    let name: String?
+    let version: String?
+    let entrypoints: RuntimeEntrypoints
+}
+
+enum RuntimeBundleError: LocalizedError {
+    case notDirectory
+    case missingExecutable(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .notDirectory:
+            "The selected runtime is not a directory bundle."
+        case .missingExecutable(let path):
+            "The selected runtime bundle references a missing or non-executable file: \(path)"
+        }
+    }
+}

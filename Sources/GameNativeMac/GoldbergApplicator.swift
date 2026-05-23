@@ -1,0 +1,160 @@
+import Foundation
+
+// GoldbergApplicator drops the GBE_Fork Steamworks-emu stubs into a game's
+// install tree so the game launches without a running Steam process.
+//
+// Per gbe_fork's README.release.md, the recipe for a single game is:
+//   1. Replace each `steam_api.dll` (32-bit) and/or `steam_api64.dll`
+//      (64-bit) in the install with the matching arch stub.
+//   2. Drop a `steam_settings/` folder beside the stub that contains at
+//      minimum a `steam_appid.txt` with the numeric Steam appID.
+//
+// We do this recursively across the whole install dir because some games
+// ship multiple copies (e.g. /redist, /tools, the main exe dir). For each
+// patched DLL we keep the original at `<name>.original` so a Restore action
+// can put everything back.
+
+enum GoldbergPatchError: LocalizedError {
+    case stubsMissing
+    case unreadableInstallDir(String)
+    case noSteamApiFound
+
+    var errorDescription: String? {
+        switch self {
+        case .stubsMissing:
+            return "The Steam emulator binaries weren't found. Open the Compatibility tab and reinstall the Steam emulator."
+        case .unreadableInstallDir(let path):
+            return "Could not read the game's install directory at \(path)."
+        case .noSteamApiFound:
+            return "No steam_api.dll / steam_api64.dll was found in the install. Either the game doesn't use Steamworks, or the depot download is incomplete."
+        }
+    }
+}
+
+struct GoldbergPatchReport {
+    var patched: [URL]      // .dll paths we replaced
+    var backedUp: [URL]     // matching .original paths
+    var settingsDirs: [URL] // steam_settings folders we created
+    var alreadyPatched: Int // count of DLLs we found but had already swapped
+
+    var totalPatched: Int { patched.count + alreadyPatched }
+}
+
+enum GoldbergApplicator {
+    /// Walk the install dir and replace every steam_api*.dll with the matching
+    /// GBE_Fork stub. Idempotent: re-running is safe and only patches DLLs we
+    /// haven't already patched.
+    @MainActor
+    static func apply(installDir: URL, appID: Int, using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
+        guard let stub64 = installer.steamApi64URL, let stub32 = installer.steamApi32URL else {
+            throw GoldbergPatchError.stubsMissing
+        }
+        guard let dlls = findSteamApiDLLs(in: installDir) else {
+            throw GoldbergPatchError.unreadableInstallDir(installDir.path)
+        }
+        guard !dlls.isEmpty else {
+            throw GoldbergPatchError.noSteamApiFound
+        }
+
+        let fm = FileManager.default
+        var report = GoldbergPatchReport(patched: [], backedUp: [], settingsDirs: [], alreadyPatched: 0)
+
+        // Read the stub size once — we use it to detect "already patched"
+        // (a file that's byte-identical to our stub is already swapped).
+        let stub64Data = (try? Data(contentsOf: stub64)) ?? Data()
+        let stub32Data = (try? Data(contentsOf: stub32)) ?? Data()
+
+        for dll in dlls {
+            let name = dll.lastPathComponent.lowercased()
+            let isWide = name == "steam_api64.dll"
+            let stubData = isWide ? stub64Data : stub32Data
+            let stubURL = isWide ? stub64 : stub32
+
+            // Idempotency check: byte-identical to the stub → already patched.
+            if let existing = try? Data(contentsOf: dll), existing == stubData {
+                report.alreadyPatched += 1
+                // Still write the steam_settings folder in case it's missing.
+                let settings = try writeSteamSettings(beside: dll, appID: appID, fileManager: fm)
+                report.settingsDirs.append(settings)
+                continue
+            }
+
+            // Back up the original (only if we haven't already).
+            let backupURL = dll.appendingPathExtension("original")
+            if !fm.fileExists(atPath: backupURL.path) {
+                try fm.copyItem(at: dll, to: backupURL)
+                report.backedUp.append(backupURL)
+            }
+
+            // Swap in the stub.
+            if fm.fileExists(atPath: dll.path) {
+                try fm.removeItem(at: dll)
+            }
+            try fm.copyItem(at: stubURL, to: dll)
+            report.patched.append(dll)
+
+            // Write steam_settings/steam_appid.txt beside it.
+            let settings = try writeSteamSettings(beside: dll, appID: appID, fileManager: fm)
+            report.settingsDirs.append(settings)
+        }
+
+        return report
+    }
+
+    /// Reverse an apply(): copy every `.original` back over the stub and
+    /// delete any steam_settings dirs that contain only files we created.
+    static func restore(installDir: URL) throws -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return 0
+        }
+        var restored = 0
+        for case let url as URL in enumerator
+        where url.pathExtension.lowercased() == "original"
+            && url.deletingPathExtension().pathExtension.lowercased() == "dll" {
+            let original = url
+            let liveDLL = url.deletingPathExtension()
+            // Replace the stub with the original.
+            if fm.fileExists(atPath: liveDLL.path) {
+                try fm.removeItem(at: liveDLL)
+            }
+            try fm.moveItem(at: original, to: liveDLL)
+            restored += 1
+
+            // Remove our steam_settings folder if it's the simple one we wrote
+            // (we'll only touch a folder that contains just steam_appid.txt;
+            // leave anything richer alone in case the user customized it).
+            let settingsDir = liveDLL.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
+            if let entries = try? fm.contentsOfDirectory(atPath: settingsDir.path),
+               entries.allSatisfy({ $0 == "steam_appid.txt" || $0.hasPrefix(".") }) {
+                try? fm.removeItem(at: settingsDir)
+            }
+        }
+        return restored
+    }
+
+    // MARK: - Internals
+
+    private static func findSteamApiDLLs(in installDir: URL) -> [URL]? {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isRegularFileKey]) else {
+            return nil
+        }
+        var found: [URL] = []
+        for case let url as URL in enumerator {
+            let name = url.lastPathComponent.lowercased()
+            if name == "steam_api.dll" || name == "steam_api64.dll" {
+                found.append(url)
+            }
+        }
+        return found
+    }
+
+    private static func writeSteamSettings(beside dll: URL, appID: Int, fileManager fm: FileManager) throws -> URL {
+        let settingsDir = dll.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
+        try fm.createDirectory(at: settingsDir, withIntermediateDirectories: true)
+        let appidFile = settingsDir.appendingPathComponent("steam_appid.txt", isDirectory: false)
+        try String(appID).write(to: appidFile, atomically: true, encoding: .utf8)
+        return settingsDir
+    }
+}
