@@ -1,36 +1,47 @@
 import Foundation
 
-// Bridges Steam Cloud and a bottle's Wine prefix.
+// Bridges Steam Cloud (via SteamCloud's web-scrape client) and a bottle's
+// Wine prefix. Pulls remote saves down into the right Wine user-home
+// subdirectory based on the file's Steam-Cloud folder tag.
 //
-// Cloud file paths from Steam come back as forward-slash-separated paths
-// keyed off the user's Windows home (e.g. "Saved Games/Kingdom Come
-// Deliverance/saves/foo.whs"). Wine maps %USERPROFILE% to
-// <bottle>/drive_c/users/<MAC_USER>/, so the mapping is straightforward.
-//
-// Sync policy: newer-mtime-wins on either side. Files that exist only in
-// one place flow to the other.
-//
-// First-time pull discovers the relative directories the game uses; we
-// remember them per-bottle so subsequent pushes can re-walk the same
-// directories looking for new local saves.
+// Push is intentionally unimplemented: Valve doesn't expose a third-party
+// cloud upload API. We throw .uploadNotSupported from push() and surface
+// that to the user instead of silently no-opping.
 
 struct CloudSyncReport {
     var downloaded: Int = 0
-    var uploaded: Int = 0
     var skipped: Int = 0
     var failures: [(filename: String, reason: String)] = []
 }
 
 enum CloudSyncError: LocalizedError {
     case userHomeNotFound(URL)
+    case noFiles
 
     var errorDescription: String? {
         switch self {
         case .userHomeNotFound(let url):
             return "Couldn't find a Wine user home inside \(url.path). The bottle may not be initialized."
+        case .noFiles:
+            return "Steam has no cloud files for this game on your account."
         }
     }
 }
+
+/// Maps Steam-Cloud "folder" tags to relative paths inside the Wine prefix's
+/// user home (drive_c/users/<user>/). These are stable — Steam picks one of
+/// a small set of well-known roots for each save category.
+private let steamFolderRouting: [String: String] = [
+    "WinSavedGames": "Saved Games",
+    "WinAppDataRoaming": "AppData/Roaming",
+    "WinAppDataLocal": "AppData/Local",
+    "WinAppDataLocalLow": "AppData/LocalLow",
+    "WinDocuments": "Documents",
+    "WinMyDocuments": "Documents",
+    "WinMyPictures": "Pictures",
+    "WinMyMusic": "Music",
+    "WinMyVideo": "Videos"
+]
 
 @MainActor
 final class CloudSyncEngine: ObservableObject {
@@ -42,25 +53,21 @@ final class CloudSyncEngine: ObservableObject {
 
     private let cloud = SteamCloud()
 
-    // Per-bottle: which top-level directories under the wine user home did
-    // we see cloud files in? Used for push to know where to look.
-    private var trackedDirectories: [UUID: Set<String>] = [:]
-
-    // MARK: - Pull (cloud → local)
+    // MARK: - Pull
 
     /// Pull every Steam Cloud file for this game down into the bottle.
-    /// Local files newer than the cloud counterpart are skipped.
+    /// Skips files where the local copy is mtime-equal-or-newer.
     func pull(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> CloudSyncReport {
         isSyncing = true
         defer { isSyncing = false }
 
-        phase = "Refreshing access token…"
-        let token = try await auth.getAccessToken()
+        phase = "Exchanging refresh token for web session…"
+        try await auth.ensureWebSession()
 
         phase = "Listing cloud files…"
-        let files = try await cloud.enumerateUserFiles(appID: appID, accessToken: token)
-        if files.isEmpty {
-            phase = "Steam Cloud has no files for this game yet."
+        let files = try await cloud.enumerateUserFiles(appID: appID)
+        guard !files.isEmpty else {
+            phase = "No cloud files for this game on your account."
             lastSyncAt = Date()
             let r = CloudSyncReport()
             lastReport = r
@@ -69,17 +76,11 @@ final class CloudSyncEngine: ObservableObject {
 
         let userHome = try resolveWineUserHome(for: bottle)
         var report = CloudSyncReport()
-        var seenDirs = Set<String>()
 
         for file in files {
-            phase = "Pulling \(file.filename)…"
-            let target = mapCloudPathToLocal(cloudPath: file.filename, userHome: userHome)
+            phase = "Pulling \(file.displayPath)…"
+            let target = mapToLocal(file, userHome: userHome)
 
-            if let topDir = file.filename.split(separator: "/").first.map(String.init) {
-                seenDirs.insert(topDir)
-            }
-
-            // Skip if our local copy is newer-or-equal.
             if let attrs = try? FileManager.default.attributesOfItem(atPath: target.path),
                let mtime = attrs[.modificationDate] as? Date,
                mtime >= file.timestamp {
@@ -100,11 +101,10 @@ final class CloudSyncEngine: ObservableObject {
                 )
                 report.downloaded += 1
             } catch {
-                report.failures.append((file.filename, error.localizedDescription))
+                report.failures.append((file.displayPath, error.localizedDescription))
             }
         }
 
-        trackedDirectories[bottle.id] = seenDirs
         lastSyncAt = Date()
         lastReport = report
         phase = "Pull complete — \(report.downloaded) downloaded, \(report.skipped) up-to-date" +
@@ -112,105 +112,20 @@ final class CloudSyncEngine: ObservableObject {
         return report
     }
 
-    // MARK: - Push (local → cloud)
+    // MARK: - Push (not supported)
 
-    /// Push any local files that are newer than their cloud counterpart, or
-    /// that exist locally but not in cloud, up to Steam Cloud.
-    ///
-    /// To avoid uploading the entire bottle, we only walk the top-level
-    /// directories that we saw cloud files in during the last pull
-    /// (e.g. "Saved Games" for KCD). Pull-first-then-push is the expected
-    /// workflow; a fresh push without a prior pull will no-op.
+    /// Steam doesn't expose an upload API to non-publishers, and a fake
+    /// Steam.exe (Goldberg) can't push to real cloud either. We surface
+    /// this clearly rather than silently no-op.
     func push(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> CloudSyncReport {
-        isSyncing = true
-        defer { isSyncing = false }
-
-        phase = "Refreshing access token…"
-        let token = try await auth.getAccessToken()
-
-        phase = "Listing cloud files for comparison…"
-        let cloudFiles = try await cloud.enumerateUserFiles(appID: appID, accessToken: token)
-        let cloudByName: [String: CloudFile] = Dictionary(
-            cloudFiles.map { ($0.filename.lowercased(), $0) },
-            uniquingKeysWith: { a, _ in a }
-        )
-
-        let userHome = try resolveWineUserHome(for: bottle)
-        var directories = trackedDirectories[bottle.id] ?? []
-        // If we never pulled, learn directory hints from cloud listing.
-        if directories.isEmpty {
-            for f in cloudFiles {
-                if let top = f.filename.split(separator: "/").first.map(String.init) {
-                    directories.insert(top)
-                }
-            }
-        }
-
-        var report = CloudSyncReport()
-
-        // Collect file URLs synchronously (FileManager.enumerator isn't
-        // safe to drive across `await` suspension points under strict
-        // concurrency — it's non-Sendable).
-        let candidates: [URL] = directories.flatMap { dir -> [URL] in
-            let root = userHome.appendingPathComponent(dir, isDirectory: true)
-            guard FileManager.default.fileExists(atPath: root.path) else { return [] }
-            guard let walker = FileManager.default.enumerator(
-                at: root,
-                includingPropertiesForKeys: [.isRegularFileKey, .contentModificationDateKey]
-            ) else { return [] }
-            var collected: [URL] = []
-            for case let url as URL in walker {
-                let rv = try? url.resourceValues(forKeys: [.isRegularFileKey])
-                if rv?.isRegularFile == true {
-                    collected.append(url)
-                }
-            }
-            return collected
-        }
-
-        for url in candidates {
-            let rv = try? url.resourceValues(forKeys: [.contentModificationDateKey])
-            guard let localMtime = rv?.contentModificationDate else { continue }
-
-            let cloudPath = relativeCloudPath(for: url, userHome: userHome)
-            phase = "Pushing \(cloudPath)…"
-
-            // Skip if Steam already has this file at >= mtime.
-            if let existing = cloudByName[cloudPath.lowercased()],
-               existing.timestamp >= localMtime {
-                report.skipped += 1
-                continue
-            }
-
-            do {
-                let data = try Data(contentsOf: url)
-                let handle = try await cloud.beginUpload(
-                    appID: appID,
-                    filename: cloudPath,
-                    data: data,
-                    accessToken: token
-                )
-                try await cloud.putBytes(data, to: handle)
-                try await cloud.commitUpload(handle, succeeded: true, accessToken: token)
-                report.uploaded += 1
-            } catch {
-                report.failures.append((cloudPath, error.localizedDescription))
-            }
-        }
-
-        lastSyncAt = Date()
-        lastReport = report
-        phase = "Push complete — \(report.uploaded) uploaded, \(report.skipped) up-to-date" +
-                (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
-        return report
+        throw SteamCloudError.uploadNotSupported
     }
 
     // MARK: - Path mapping
 
     /// Find the wine user home for this bottle:
-    /// `<bottle>/drive_c/users/<some-user>/`. Wine creates one per prefix,
-    /// usually named after the macOS short user, but historic prefixes may
-    /// have a different name. We pick the first non-Public entry.
+    /// `<bottle>/drive_c/users/<some-user>/`. Wine initializes one when
+    /// wineboot first runs.
     private func resolveWineUserHome(for bottle: Bottle) throws -> URL {
         let usersDir = AppPaths.prefixURL(for: bottle)
             .appendingPathComponent("drive_c", isDirectory: true)
@@ -226,28 +141,17 @@ final class CloudSyncEngine: ObservableObject {
         return usersDir.appendingPathComponent(user, isDirectory: true)
     }
 
-    /// Steam Cloud filenames are paths relative to %USERPROFILE% on Windows.
-    /// Wine's %USERPROFILE% maps to drive_c/users/<user>/, so we just
-    /// resolve the components against that root.
-    private func mapCloudPathToLocal(cloudPath: String, userHome: URL) -> URL {
-        let cleaned = cloudPath
-            .replacingOccurrences(of: "\\", with: "/")
-            .trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    /// Given a Steam cloud file, where does it belong on disk?
+    private func mapToLocal(_ file: CloudFile, userHome: URL) -> URL {
+        // Folder tag → relative path under user home.
+        let folderPath = steamFolderRouting[file.folder] ?? file.folder
         var url = userHome
-        for component in cleaned.split(separator: "/") {
+        for component in folderPath.split(whereSeparator: { $0 == "/" || $0 == "\\" }) {
+            url = url.appendingPathComponent(String(component), isDirectory: true)
+        }
+        for component in file.relativePath.split(whereSeparator: { $0 == "/" || $0 == "\\" }) {
             url = url.appendingPathComponent(String(component), isDirectory: false)
         }
         return url
-    }
-
-    /// Inverse of mapCloudPathToLocal: produce a cloud-style relative path
-    /// from an absolute URL inside the wine user home. Returns "" if the
-    /// URL isn't inside `userHome`.
-    private func relativeCloudPath(for localURL: URL, userHome: URL) -> String {
-        let homePath = userHome.path + "/"
-        guard localURL.path.hasPrefix(homePath) else {
-            return localURL.lastPathComponent
-        }
-        return String(localURL.path.dropFirst(homePath.count))
     }
 }
