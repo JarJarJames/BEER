@@ -1,222 +1,102 @@
 # GameNative for Mac — Agent Handoff
 
-This file is the entry point for any new agent (or future you) picking up this project. It captures **what this project actually is**, **where the code lives**, **how to reproduce the current broken state**, **what is actually wrong**, and **what to try next.**
-
-Keep it up to date — short bullets only. Don't bury changes in the conversation.
+Entry point for any new agent (or future you) picking up this project. **What it is, where the code lives, how it works today, how to build/debug, and the known sharp edges.** Keep it current — short bullets, no burying changes in chat.
 
 ---
 
-## 1. What this project actually is
+## 0. Ground rules (read first)
 
-There are **two separate repos** in play. Codex was bouncing between both. Most of the work that matters lives in the second one.
+- **The user runs ALL tests that touch their Steam account.** Claude writes and compiles code; the user scans QR codes, signs in, and reports results. Never initiate a Steam login / QR / token exchange / sync against the user's live account "to verify." Building and compiling locally is fine. (This is a hard boundary — it was set after an early mistake.)
+- The user's long-played saves (60+ hrs in Kingdom Come: Deliverance) are sacred. Cloud sync is built defensively around never losing them.
 
-| Repo | Path | What it is |
-|---|---|---|
-| `MacWine` | `/Users/user/Code/Codex Projects/MacWine` | Planning/docs/scripts for a downstream **GameNative Wine** runtime built from upstream Wine + selected staging patches. Has `docs/`, `patches/`, `scripts/`, a `wine/` checkout, and an empty placeholder `dist/GameNativeWine.runtime/` (only `LICENSES/` and `runtime.json` — no `bin/wine`). The Wine binaries have **not actually been built** yet. |
-| `GameNative for Mac` (this repo) | `/Users/user/Documents/GameNative for Mac` | The Swift/SwiftUI macOS app. This is the "nice UI" Codex built. It's a bottle manager that installs Steam into a Wine prefix and launches it. **This is where the bug is being investigated.** |
+## 1. What this is
 
-The Swift app delegates to whichever Wine-like runtime the user picks. Right now the only available runtime is **Gcenx Game Porting Toolkit 3.0-3**, downloaded by the in-app Runtime Manager into:
+A native macOS SwiftUI app: a Steam-like library that **downloads your games with DepotDownloader**, installs each into its **own Wine bottle** (per-game runtime / graphics / DLL tuning), runs them via Apple's **Game Porting Toolkit (GPTK)** Wine, and does **bidirectional Steam Cloud save sync** so you can move between a Windows PC and the Mac.
 
-```
-~/Library/Application Support/GameNativeMac/Runtimes/GPTK-Game-Porting-Toolkit-3.0-3/
-```
+It does NOT run the real Steam client (that path is a dead end on GPTK — see §7). Games run directly via Wine, with a Goldberg/GBE Steamworks shim where needed.
 
-The MacWine repo's plan is to eventually ship its own Wine runtime to replace GPTK, but that path is unbuilt and not the source of the current failure.
-
-## 2. Code layout (Swift app)
-
-`Sources/GameNativeMac/`
-
-- `GameNativeMacApp.swift` — `@main`, wires `BottleStore`, `ToolchainDetector`, `RuntimeInstaller`.
-- `ContentView.swift` — all SwiftUI views. Sidebar + `BottleDetailView` (header / configuration / **actions** / logs). All the buttons the user sees live in `BottleDetailView.actions`. ~876 lines.
-- `BottleStore.swift` — runs every Wine command. **Read this first.** Functions of interest:
-  - `launchSteam` — basic launch.
-  - `launchSteamDiagnostic` — same launch with `WINEDEBUG=+timestamp,+pid,+tid,+seh,+loaddll,+module`. This is the "Debug Launch" button and the log the user has been pasting.
-  - `runBottleCommand` / `command(for:prefix:mode:)` — chooses how to invoke the runtime (handles GPTK wrapper vs raw wine vs GameNativeWine bundle).
-  - `environment(for:prefix:)` — sets `WINEPREFIX`, `WINEARCH=win64`, `WINEDLLOVERRIDES`, `WINEDEBUG=-all` (default), `WINEESYNC=1`, `PATH`, `DYLD_FALLBACK_LIBRARY_PATH`.
-  - `dllOverrides(for:)` — DXVK/DXMT/D3DMetal/WineD3D mappings.
-  - "Steam Repair" menu: `writeSteamUpdateLock`, `removeSteamUpdateLock`, `refreshSteamClientPackage`, `downgradeSteamClient`.
-- `Models.swift` — `Bottle`, `RuntimeCandidate`, `RuntimeKind`, `GraphicsBackend`, `SteamLaunchDefaults`. `SteamLaunchDefaults.basicArguments = "-no-cef-sandbox"`.
-- `Paths.swift` — Application Support layout.
-- `ToolchainDetector.swift` — finds CrossOver / Whisky / GPTK / Homebrew wine.
-- `RuntimeInstaller.swift` — downloads and installs Gcenx GPTK from GitHub.
-- `ShellRunner.swift` — `Process` wrapper. Streams combined stdout+stderr to the UI log.
-- `SHA256Digest.swift` — tiny hashing util.
-
-`Paths.swift` constants used everywhere:
-
-- `~/Library/Application Support/GameNativeMac/Bottles/<name>-<uuid-prefix>/` — the Wine prefix.
-- `~/Library/Application Support/GameNativeMac/Runtimes/` — managed runtimes.
-- `~/Library/Application Support/GameNativeMac/bottles.json` — metadata.
-- Each bottle has a `gamenative.log` at the prefix root (this is what the "Copy Log" button copies).
-
-## 3. Current bottle state
-
-The active bottle the user is testing is **`Steam-Bottle-3683EB34`**, runtime is GPTK 3.0-3 (`wine64`), graphics backend `automatic`, launch args `-no-cef-sandbox`. Architectures inside the prefix:
-
-```
-steam.exe              PE32+  x86-64
-SteamUI.dll            PE32+  x86-64
-crashhandler64.dll     PE32+  x86-64
-Steam.dll              PE32   i386      ← 32-bit, expected, used by 32-bit auxiliaries
-```
-
-The **earlier** architecture-mismatch bug (Wine refusing to load a 32-bit `steamui.dll` into a 64-bit process — `arch 14c` / `c000007b`, documented in `MacWine/docs/steam-diagnostics.md`) is **already resolved.** The current `SteamUI.dll` is 64-bit.
-
-## 4. What "Steam doesn't launch" actually means right now
-
-This is the important section. The user's symptom is "no error, no window." That's misleading — Steam **is** launching, just headlessly.
-
-### Wine trace shows a clean exit
-The 1-second Wine log the user keeps pasting (`gamenative.log`) ends with:
-
-```
-LdrShutdownProcess ()
-... PROCESS_DETACH for every DLL ...
-Launching Steam with Wine diagnostics finished.
-```
-
-This is **not** a crash. The `steam.exe` we invoked detects an already-running Steam, forwards the args via IPC, and exits cleanly. That's normal Steam single-instance behavior.
-
-### The real Steam process is alive and crash-looping its webhelper
-The smoking gun is in the prefix's Steam logs (NOT the Wine log):
-
-```
-~/Library/Application Support/GameNativeMac/Bottles/Steam-Bottle-.../drive_c/Program Files (x86)/Steam/logs/steamui_html.txt
-```
-
-```
-Started webhelper process N
-Restart webhelper process, counter 2
-Shutting down webhelper process N
-Started webhelper process N+1
-Restart webhelper process, counter 2
-Shutting down webhelper process N+1
-...
-```
-
-…repeating endlessly. Matching pattern in `logs/cef_log.txt`:
-
-```
-WARNING:chrome_main_delegate.cc(748)] This is Chrome version 126.0.6478.183 (not a warning)
-ERROR:network_change_notifier_win.cc(268)] WSALookupServiceBegin failed with: 8
-```
-
-Steam respawns a fresh `steamwebhelper.exe` every ~10 seconds. Each helper dies inside Chromium's `NetworkChangeNotifierWin::CreateIpAddressTable` because `WSALookupServiceBegin` returns error 8 (`WSA_NOT_ENOUGH_MEMORY` / `WSAENOBUFS` — Wine's `ws2_32` doesn't actually fulfill the call). Because Steam's UI is CEF-rendered, no window ever appears. The Steam updater itself is happily idling.
-
-`logs/console_log.txt` confirms: every ~10s, `Created mapping SteamChrome_MasterStream_spid<NNN>_mem when set to fail if created`. Same `spid` across all retries — same parent Steam, fresh helpers.
-
-### Why Codex couldn't find it
-Codex was reading `gamenative.log` (the Wine WINEDEBUG trace), which only captures the bootstrap process exiting. Steam's own logs under `drive_c/Program Files (x86)/Steam/logs/` were never surfaced in the UI. **Any new agent should look there before the Wine log.**
-
-## 5. The actual bug to fix
-
-`steamwebhelper.exe` crashes in CEF's `NetworkChangeNotifierWin` because Wine's `ws2_32.WSALookupServiceBeginW` is incomplete on GPTK 3.0-3. Known workarounds, in rough order of how invasive they are:
-
-1. **Pass CEF flags to disable network change detection and GPU paths.** Already partially wired up — the **"Fix WebHelper"** button in the UI appends `-cef-disable-gpu -cef-disable-gpu-compositing` via `SteamLaunchDefaults.webHelperSafeArguments`. **It does not currently disable the network change notifier** and that's the actual cause. Try also adding (in `SteamLaunchDefaults`):
-   - `-cef-force-occlusion` (sometimes referenced in Whisky configs)
-   - Steam itself does not expose a clean "disable NetworkChangeNotifier" switch, but CEF respects `--disable-features=NetworkServiceInProcess` and `--disable-background-networking`. Steam passes through unknown flags to CEF, so try appending those to `launchArguments`.
-2. **Run with a Wine that has a working `WSALookupServiceBeginW`.** CrossOver 24+ ships a patched `ws2_32`. The detector already finds CrossOver if installed — try creating a fresh bottle with the CrossOver runtime and see if the webhelper stays up. If it does, this confirms the diagnosis and points the MacWine runtime build at the right patch.
-3. **Downgrade Steam to a pre-MasterStream client.** The "Steam Repair → Downgrade Steam Client" button already exists and points at a Web Archive snapshot. Worth trying as a baseline to confirm the UI can render at all in this bottle.
-4. **(Long path) Build the actual GameNative Wine runtime from the MacWine repo with a patched `ws2_32`** and have the app point at it. The plumbing in the Swift app to use a `.runtime` bundle already exists (`RuntimeBundle`, `runtimeKind == .gameNativeWine`), but no such bundle has been built.
-
-## 6. Reproduce the problem cleanly
-
-```bash
-cd "/Users/user/Documents/GameNative for Mac"
-swift run GameNativeMac
-```
-
-1. Select the existing `Steam Bottle` (or create a new one with the GPTK runtime).
-2. Click **Launch Steam** (not Debug Launch — Debug just adds WINEDEBUG noise).
-3. Wait ~30 seconds. No Steam window appears.
-4. **Look in the right place:**
-   ```bash
-   tail -f "$HOME/Library/Application Support/GameNativeMac/Bottles/Steam-Bottle-3683EB34/drive_c/Program Files (x86)/Steam/logs/steamui_html.txt"
-   tail -f "$HOME/Library/Application Support/GameNativeMac/Bottles/Steam-Bottle-3683EB34/drive_c/Program Files (x86)/Steam/logs/cef_log.txt"
-   ```
-   You'll see the webhelper restart loop.
-
-To reset before retrying, click **Stop** (runs `wineserver -k`), then relaunch.
-
-## 7. Suggested next steps for the next agent
-
-Pick one and report back here when done. Don't do all of them.
-
-- [ ] **Surface the Steam-side logs in the UI.** Add tail viewers (or at minimum buttons that reveal them in Finder) for `bootstrap_log.txt`, `cef_log.txt`, `steamui_html.txt` inside `BottleDetailView`. Codex burned a lot of cycles staring at the wrong log file — fix that for everyone. The right place is the `logs` section of `BottleDetailView` in `ContentView.swift:795`.
-- [ ] **Extend `SteamLaunchDefaults.webHelperSafeArguments`** with `-cef-disable-d3d11`, and try injecting `--disable-background-networking` / `--disable-features=NetworkServiceInProcess` through Steam's CEF passthrough. Make this a real button: "Apply CEF Safe Mode."
-- [ ] **Add a runtime swap test:** offer a one-click "Try this bottle with CrossOver" if CrossOver is installed, just to confirm whether the webhelper is healthy under CrossOver's patched `ws2_32`. The detector already lists CrossOver candidates; the bottle model already supports changing runtimes (`bottle.useRuntime(_:)`).
-- [ ] **Stop conflating "Wine exited cleanly" with "Steam is healthy."** `BottleStore.runBottleCommand` reports the parent process exit code. For Steam launches it should additionally poll for the existence of the Steam main window or at least check whether the webhelper is in a restart loop (parse `steamui_html.txt`). Surface a clear "Steam UI failed to render — webhelper is crash-looping" message instead of "Launching Steam finished."
-
-## 8. Phase 2 — Light Steam (SteamCMD + bottle-per-game) [IN PROGRESS]
-
-The full Steam-client path is permanently blocked on GPTK by an unimplemented `ws2_32.WSALookupServiceBeginW`, which Chromium's NetworkChangeNotifier hits and crashes the webhelper in a loop. Whisky/CrossOver fix it with patches; without them, the Steam UI cannot render.
-
-The user decided to pivot to a **Light Steam** architecture, modeled on Winlator / GameNative-Android. Goal:
-
-- **SteamCMD instead of Steam client.** Valve's official headless Steam binary. No CEF, no Chromium, no webhelper. Runs fine on GPTK because it's just HTTPS + a depot decompressor.
-- **Bottle-per-game.** Every game installs into its own Wine prefix with its own runtime / graphics backend / DLL overrides — so each game can be tuned without affecting the others.
-- **App-level Steam login.** Log in once via SteamCMD, install many games. SteamCMD itself caches the session token in its own VDF — the app never sees the password.
-
-### Architecture (what exists today)
+## 2. Architecture at a glance
 
 ```
 ~/Library/Application Support/GameNativeMac/
-  SteamCMD/                   ← app-level SteamCMD install
-    steamcmd.exe
-    ...
-  steam-library.json          ← cached account + library
-  Bottles/
-    Hades-<uuid>/             ← per-game bottle (Wine prefix)
-    Stardew-Valley-<uuid>/
-    ...
-  Runtimes/                   ← unchanged (GPTK / Whisky / etc.)
+  DepotDownloader/        native Steam downloader (SteamKit2); installed on first run
+  CloudSync/CloudSync      our SteamKit2 cloud helper (also bundled inside the .app)
+  Goldberg/                GBE_Fork steam_api shims
+  Runtimes/                managed GPTK Wine
+  Bottles/<game>-<uuid>/   one Wine prefix per game (drive_c/Games/<game>/…)
+  CloudSaveBackups/<appid>/ timestamped pre-sync backups + last-sync.log
+  steam-cloud-auth.json    QR refresh token + account (cloud/library auth)
+  steam-library.json       cached account + owned games
+  bottles.json             bottle metadata
 ```
 
-### Code added in this pass
+Two halves:
+- **Swift app** (`Sources/GameNativeMac/`) — UI, bottle management, install/launch, sync orchestration.
+- **CloudSync helper** (`Tools/CloudSync/`, C# / .NET 9 / SteamKit2) — speaks the real Steam *client* protocol for auth, owned-games, and cloud read/write. See `Tools/CloudSync/README.md`.
 
-UI-first scaffolding. Backend invocations of SteamCMD are stubbed; library data is mocked.
+## 3. Code map (Swift)
 
-| File | Role |
-|---|---|
-| `Models.swift` | New types: `SteamAccount`, `SteamLibraryGame`, `SteamGameInstallStatus`. `Bottle` gained `steamAppID`, `steamGameName`, `gameInstallStatus`, `gameLaunchExecutable` (all optional — legacy bottles keep working). |
-| `Paths.swift` | `steamCMDDirectory`, `steamCMDExecutableURL`, `steamLibraryStateURL`. |
-| `SteamCMDInstaller.swift` (new) | **Real** download + unzip of `steamcmd.zip` from Valve's CDN into `~/Library/Application Support/GameNativeMac/SteamCMD/`. No Wine needed for setup. |
-| `SteamLibraryStore.swift` (new) | App-level account + games store. Persists to `steam-library.json`. `fetchLibrary()` currently returns mock data (8 known Wine-friendly single-player games). |
-| `SteamLibraryView.swift` (new) | Sheet UI with a 3-state machine: `SteamCMDSetupView` → `SteamSignInView` → `SteamLibraryGridView`. Library grid renders `AsyncImage` Steam header capsules with Install / Launch / Reveal actions per game. |
-| `GameNativeMacApp.swift` | Wires `SteamCMDInstaller` and `SteamLibraryStore` into the env. |
-| `ContentView.swift` | New sidebar button: **Steam Library (Beta)**. Legacy "New Bottle" button kept but demoted. |
+- `GameNativeMacApp.swift` — `@main`; wires all the `@StateObject` stores.
+- `ContentView.swift` — router (onboarding → main shell) + `BottleDetailView` (the Display row, Steam Cloud row, Steam-emulator row, launch). `launch(_:)` does auto cloud sync: **pull before play, push after exit**.
+- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
+- `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games via QR/refresh-token.
+- `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
+- **Cloud:**
+  - `SteamAuth.swift` (`SteamAuthStore`) — QR sign-in **via the helper**; holds account + refresh token; `sessionExpired` flag + `noteCloudError`.
+  - `CloudSyncClient.swift` — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
+  - `CloudSyncEngine.swift` — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
+- `SteamLibraryStore.swift` — owned games. `signInWithQR(auth:)` (primary) + legacy Web-API-key path (`signIn`, dormant fallback).
+- `SteamLibraryView.swift` — onboarding (`SteamSignInView` = QR), library grid.
+- `Paths.swift` — all the Application Support locations, incl. `cloudSyncExecutableURL`, `cloudSaveBackupsDirectory`.
 
-### What still needs to be built (in order)
+## 4. Cloud saves — how it works
 
-1. **Steam Web API library fetch.** When the user provides a SteamID64 + Web API key (already accepted in the sign-in form), call `https://api.steampowered.com/IPlayerService/GetOwnedGames/v1/?key=…&steamid=…&include_appinfo=1` and replace the mock games list with real data. Fallback to SteamCMD `+licenses_print` parsing when no API key is given.
-2. **`SteamCMDController`.** A wrapper around `Process` that invokes `wine .../SteamCMD/steamcmd.exe` with appropriate `+args`. Must support:
-   - `login(username)` — opens **Terminal.app** with a one-liner (`osascript -e 'tell application "Terminal" to do script "..."'`). The user enters password + 2FA in Terminal; SteamCMD caches the token. We never touch the password.
-   - `installGame(appID, into: bottle)` — runs `+force_install_dir <bottle's drive_c/Games/<gameName>> +app_update <appID> validate +quit`, streams progress to the bottle log.
-   - `appInfo(appID)` — `+app_info_print <appID> +quit`, parses VDF for `installdir`, `launch` entries, name.
-3. **Game launch wiring.** After `installGame` finishes, parse the game's launch config from `app_info` and store the resulting `gameLaunchExecutable` on the bottle. The library grid's Launch button then runs that exe directly via Wine — no Steam client touched.
-4. **Goldberg Steam Emu drop-in (optional).** For games that check `steam_api.dll` at runtime: ship Goldberg's open-source shim, toggle per bottle. Lets some Steamworks-protected single-player games run without a real Steam process. Out of scope for v1.
-5. **Replace the BottleDetailView's "Install Steam" / "Launch Steam" actions on Steam-game bottles.** When `bottle.steamAppID != nil`, those buttons become "Reinstall/Validate Game", "Launch Game", and the "Steam Repair" menu disappears.
+1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**. Persisted to `steam-cloud-auth.json`. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
+2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
+3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
+4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
 
-### Constraints and known dead-ends
+## 5. Re-auth & rate-limit handling
 
-- **Anti-cheat / multiplayer with Steamworks runtime checks**: this approach won't work. Same constraint Steam Deck / Linux power-users hit. Not a bug, a feature decision.
-- **Achievements / cloud saves**: don't sync without the client unless you layer Goldberg, and even then it's local-only. Document this in the Sign-In sheet text.
-- **The legacy full-Steam path stays in the app**, accessed via "New Bottle (Manual)". Don't delete it — it's still the right tool for someone who installs Whisky/CrossOver later and wants the full client.
-- **Do not store the Steam password anywhere.** Use Terminal.app for the initial login. SteamCMD does its own credential caching.
+- Helper tags logon failures: `auth_failed` (revoked/expired → reconnect) vs `rate_limited` (throttled → **wait, don't re-auth**). Swift maps to `.authExpired` / `.rateLimited`.
+- `.authExpired` → `SteamAuthStore.sessionExpired = true` → Cloud row shows **Reconnect**; an explicit sync auto-opens the QR sheet. A fresh QR clears the flag.
+- `.rateLimited` → message says wait; does NOT flag expired (re-auth would only extend the cooldown).
 
-### Test plan for next agent
+## 6. Windowed mode (native Mac window)
 
-1. Open Steam Library sheet → click Install SteamCMD. Should download `steamcmd.zip`, unzip, and show "SteamCMD is installed."
-2. Sign-in screen accepts a username. After signing in, the mock library grid should appear with 8 game capsules.
-3. Clicking "Install" on a game creates a new bottle named after the game and selects it. The grid card flips to "Installed" with a Launch button.
-4. Bottle persists across app restarts. Re-opening the Steam Library sheet shows the same game as installed.
+- `BottleStore.launchGameExecutable` runs the game `.exe` **directly** (no `wine explorer /desktop` — that wrapper was the old borderless, un-movable "virtual desktop").
+- `configureWindowMode` writes winemac.drv registry before launch: `Decorated=Y` (title bar → movable + green-button fullscreen) and `CaptureDisplaysForFullscreen=N` when windowed (Wine never switches the display mode → fullscreen scales, no stretch).
+- The toggle is `Bottle.useVirtualDesktop` (legacy name; now means "windowed mode"). Default ON for Steam-app bottles.
+- **The game's own video setting must be Windowed** for a windowed window — the app can't force it from outside. Caveat: free-resizing to a wild aspect ratio can distort (Wine driver limitation).
 
-Everything past that — actual SteamCMD invocations, real library fetch, real game launch — is the Phase 2 work above.
+## 7. Dead ends / history (don't redo)
 
-## 9. Things to NOT redo
+- **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. That's why we use DepotDownloader, not the Steam client. The legacy full-Steam bottle path still exists behind "New Bottle (Manual)" for anyone who installs CrossOver/Whisky.
+- **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
+- **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
 
-- Don't keep re-reading the Wine WINEDEBUG trace looking for the failure. It's not there.
-- Don't run "Downgrade Steam Client" without first noting the current `package/` state — the previous run already produced a `crashhandler64.dll.old` and `steam.exe.old` that Steam couldn't clean up (filesystem perms via Wine). Capture state before destroying it.
-- Don't touch the `MacWine/wine/` checkout to chase this bug. The fix is either in the Swift app (better CEF args / surfaced logs) or in choosing a different runtime. Building Wine is a much bigger project (see `MacWine/docs/macos-build-pipeline.md`).
-- Don't add a `bin/wine` shim into `MacWine/dist/GameNativeWine.runtime/` to satisfy the Swift app's `.runtime` detection. There is no actual Wine there yet. The Swift app currently uses GPTK and that's correct for now.
+## 8. Build, run, release
+
+```bash
+swift build && swift run GameNativeMac      # dev
+./scripts/build_cloudsync.sh                # (re)build + install the helper to App Support
+./scripts/build_app.sh 0.2.0                # → .build/GameNative.app + .build/GameNative.zip (bundled helper, ad-hoc signed)
+```
+- Release: merged to **`master`** (the real main branch; `cloud-saves` was the feature branch). Distributed via `gh release` — v0.2.0 at https://github.com/JarJarJames/GameNative-for-Mac/releases.
+- **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/GameNative.app`. A paid Apple Developer ID + notarization would remove that step.
+- **Apple Silicon only** (helper is osx-arm64; GPTK is arm64).
+
+## 9. Debugging entry points
+
+- **Cloud sync failures:** `CloudSaveBackups/<appid>/last-sync.log` — per-file `FAIL\t<name>\t<reason>` lines + a summary. This is the first place to look.
+- **Per-bottle Wine log:** `Bottles/<bottle>/gamenative.log` (the exact command run is logged with a `$` prefix).
+- **Run the helper by hand (read-only is safe):** see `Tools/CloudSync/README.md` — `enumerate` just lists cloud files; `download` is safe; only `upload`/`batch`-with-uploads write.
+- **Recover a save:** copy from a `CloudSaveBackups/<appid>/<timestamp>-*/` folder back into the bottle.
+
+## 10. Known sharp edges / next bugs to expect
+
+- First-run on a fresh machine: large GPTK runtime download; GPTK install can be finicky. Friend testing will surface this.
+- Windowed mode depends on the game's own setting; aspect distortion on free-resize.
+- Goldberg/anticheat/multiplayer-with-Steamworks games won't work — by design.
+- Push currently only walks directories that already have a cloud file (learns the path from siblings); a brand-new save folder not yet in the cloud is skipped until one file from it exists in the cloud.
+- No Keychain yet — refresh token sits in `steam-cloud-auth.json` (TODO in `Paths.swift`).
