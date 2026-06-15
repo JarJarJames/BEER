@@ -83,7 +83,7 @@ struct Bottle: Identifiable, Codable, Hashable {
     var environmentOverrides: [String: String]
     var notes: String
 
-    // When this bottle was created by the SteamCMD library flow, these
+    // When this bottle was created by the library install flow, these
     // identify the Steam game it belongs to. Legacy bottles created via the
     // manual "New Bottle" flow leave these nil and use the full Steam client.
     var steamAppID: Int? = nil
@@ -231,28 +231,22 @@ struct WebHelperHealth: Equatable {
 }
 
 // ---------------------------------------------------------------------------
-// Light Steam (SteamCMD) — app-level account + per-game library entries
+// App-level Steam account + per-game library entries
 // ---------------------------------------------------------------------------
 //
-// Architectural intent: SteamCMD is Valve's headless Steam client. It has no
-// CEF/Chromium dependency, so it dodges the WSALookupServiceBeginW crash that
-// blocks the full Steam client on GPTK/vanilla Wine. We log in once at the
-// app level, list owned games, and install each one into its own Wine bottle
-// — Winlator/GameNative-Android style, one bottle per game so each can be
-// tuned independently.
-//
-// We never store the Steam password. SteamCMD caches its own session token
-// in its config directory after the initial login. We only persist a
-// username + (optional) SteamID + (optional) Web API key.
+// Sign-in is QR-only (Steam Mobile App → SteamAuthStore). We never see the
+// password. Games are downloaded by DepotDownloader and installed one-per-Wine
+// bottle (Winlator/GameNative-Android style) so each can be tuned independently.
+// This account is just the cached display identity; the credential lives in
+// SteamCloudAccount (steam-cloud-auth.json).
 
 struct SteamAccount: Codable, Equatable {
-    var username: String           // Steam persona (display) name once signed in
+    var username: String           // Steam account/persona name once signed in
     var steamID64: String?
-    var webAPIKey: String?
-    var avatarURL: String?         // full-size avatar from GetPlayerSummaries
+    var avatarURL: String?
     var isLoggedIn: Bool
 
-    static let signedOut = SteamAccount(username: "", steamID64: nil, webAPIKey: nil, avatarURL: nil, isLoggedIn: false)
+    static let signedOut = SteamAccount(username: "", steamID64: nil, avatarURL: nil, isLoggedIn: false)
 }
 
 struct SteamLibraryGame: Identifiable, Codable, Hashable {

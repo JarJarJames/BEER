@@ -62,12 +62,15 @@ Two halves:
 - `.authExpired` → `SteamAuthStore.sessionExpired = true` → Cloud row shows **Reconnect**; an explicit sync auto-opens the QR sheet. A fresh QR clears the flag.
 - `.rateLimited` → message says wait; does NOT flag expired (re-auth would only extend the cooldown).
 
-## 6. Windowed mode (native Mac window)
+## 6. Display mode (what GPTK actually allows)
 
-- `BottleStore.launchGameExecutable` runs the game `.exe` **directly** (no `wine explorer /desktop` — that wrapper was the old borderless, un-movable "virtual desktop").
-- `configureWindowMode` writes winemac.drv registry before launch: `Decorated=Y` (title bar → movable + green-button fullscreen) and `CaptureDisplaysForFullscreen=N` when windowed (Wine never switches the display mode → fullscreen scales, no stretch).
-- The toggle is `Bottle.useVirtualDesktop` (legacy name; now means "windowed mode"). Default ON for Steam-app bottles.
-- **The game's own video setting must be Windowed** for a windowed window — the app can't force it from outside. Caveat: free-resizing to a wild aspect ratio can distort (Wine driver limitation).
+Researched June 2026 — a native, movable/resizable macOS window with the green fullscreen button is **NOT possible on GPTK**: GPTK runs games as borderless *processes* with no macOS window chrome, and window style is owned by the game (Wine just mirrors it). There is no `Decorated` key in `winemac.drv` (that's X11). We accept this — GPTK is free and fastest. See the chat research for sources (winemac.drv `macdrv_main.c`, AppleGamingWiki).
+
+What we actually do:
+- `BottleStore.launchGameExecutable` runs the game `.exe` **directly** (no `wine explorer /desktop`).
+- `configureWindowMode` writes one real winemac.drv key: `CaptureDisplaysForFullscreen` = N when the toggle is on (fullscreen scales to the current display instead of switching modes → no stretch on odd resolutions) / Y when off (game may take exclusive fullscreen and change resolution).
+- The toggle (`Bottle.useVirtualDesktop`, legacy field name) is surfaced as **"Keep my display resolution"**. Default ON for Steam-app bottles.
+- For a smaller view, the user sets the game's own Windowed video option — the app can't impose it.
 
 ## 7. Dead ends / history (don't redo)
 
