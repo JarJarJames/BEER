@@ -2,3 +2,11 @@
 .swiftpm/
 .DS_Store
 DerivedData/
+
+# .NET helper build artifacts (rebuilt by scripts/build_cloudsync.sh)
+Tools/**/bin/
+Tools/**/obj/
+Tools/CloudSync/publish/
+
+# stray logs
+*.log
