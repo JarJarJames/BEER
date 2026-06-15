@@ -118,19 +118,19 @@ final class BottleStore: ObservableObject {
     }
 
     /// Apply the winemac.drv window settings for this bottle before launch.
-    ///   • Decorated = Y → native title bar (movable window + green fullscreen).
-    ///   • CaptureDisplaysForFullscreen = N when "windowed mode" is on → Wine
-    ///     never switches the macOS display mode, so fullscreen scales to the
-    ///     screen (letterboxed) instead of stretching / changing resolution.
-    ///     When windowed mode is off we let the game capture the display for
-    ///     classic exclusive fullscreen.
+    ///   • CaptureDisplaysForFullscreen = N when the toggle is on → Wine never
+    ///     switches the macOS display mode, so fullscreen scales to the screen
+    ///     instead of changing resolution. Off → the game may capture the
+    ///     display for classic exclusive fullscreen.
+    /// Note: GPTK does NOT give games native macOS window chrome (no title bar
+    /// or traffic-light buttons) — the game controls its own window. There is
+    /// no winemac.drv "Decorated" key on macOS, so we don't try to set one.
     private func configureWindowMode(_ bottle: Bottle) async {
         let capture = bottle.effectiveUseVirtualDesktop ? "N" : "Y"
         let reg = """
         Windows Registry Editor Version 5.00
 
         [HKEY_CURRENT_USER\\Software\\Wine\\Mac Driver]
-        "Decorated"="Y"
         "CaptureDisplaysForFullscreen"="\(capture)"
 
         """

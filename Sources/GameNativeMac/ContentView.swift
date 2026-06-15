@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 // MARK: - Root
 
 // ContentView is just a router. Onboarding flows take over the entire window
-// until the user has SteamCMD installed and is signed in. After that, the
+// until the user has DepotDownloader installed and is signed in. After that, the
 // main app shell (sidebar + content) takes over. Bottles are never shown to
 // users on the primary path — they live behind the Compatibility sidebar
 // item, for power users.
@@ -66,6 +66,7 @@ struct ContentView: View {
 
 enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
     case library
+    case installed
     case downloads
     case compatibility
 
@@ -74,6 +75,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
     var label: String {
         switch self {
         case .library: "Library"
+        case .installed: "Installed"
         case .downloads: "Downloads"
         case .compatibility: "Compatibility"
         }
@@ -82,6 +84,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .library: "rectangle.stack.fill"
+        case .installed: "internaldrive.fill"
         case .downloads: "arrow.down.circle"
         case .compatibility: "wineglass"
         }
@@ -91,6 +94,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
 struct MainShellView: View {
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var store: BottleStore
+    @EnvironmentObject private var cloudAuth: SteamAuthStore
     @State private var sidebar: AppSidebarItem = .library
     @State private var selectedGameAppID: Int?
 
@@ -131,7 +135,7 @@ struct MainShellView: View {
                         }
                         Spacer()
                         Menu {
-                            Button("Refresh Library") { Task { await library.fetchLibrary() } }
+                            Button("Refresh Library") { Task { await library.fetchLibrary(auth: cloudAuth) } }
                             Button("Sign Out", role: .destructive) { library.signOut() }
                         } label: {
                             Image(systemName: "ellipsis.circle")
@@ -148,12 +152,17 @@ struct MainShellView: View {
             switch sidebar {
             case .library:
                 LibraryPane(selectedGameAppID: $selectedGameAppID)
+            case .installed:
+                LibraryPane(selectedGameAppID: $selectedGameAppID, installedOnly: true)
             case .downloads:
                 DownloadsPane()
             case .compatibility:
                 CompatibilityPane()
             }
         }
+        // Switching tabs returns to that tab's grid rather than carrying a
+        // selected game across (e.g. Library → Installed shouldn't show a detail).
+        .onChange(of: sidebar) { _, _ in selectedGameAppID = nil }
     }
 }
 
@@ -161,6 +170,7 @@ struct MainShellView: View {
 
 struct LibraryPane: View {
     @Binding var selectedGameAppID: Int?
+    var installedOnly: Bool = false
     @EnvironmentObject private var library: SteamLibraryStore
 
     var body: some View {
@@ -171,7 +181,10 @@ struct LibraryPane: View {
                 onBack: { selectedGameAppID = nil }
             )
         } else {
-            SteamLibraryGridView(onSelectGame: { selectedGameAppID = $0.appID })
+            SteamLibraryGridView(
+                onSelectGame: { selectedGameAppID = $0.appID },
+                installedOnly: installedOnly
+            )
         }
     }
 }
@@ -459,7 +472,7 @@ struct GameDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 130, alignment: .leading)
 
-                Toggle("Windowed mode", isOn: Binding(
+                Toggle("Keep my display resolution", isOn: Binding(
                     get: {
                         bottles.bottles.first(where: { $0.id == bottleID })?.effectiveUseVirtualDesktop ?? windowedOn
                     },
@@ -475,8 +488,8 @@ struct GameDetailView: View {
             }
 
             Text(windowedOn
-                ? "Runs in a normal macOS window — move it, resize it, or click the green button for fullscreen. Set the game's own video option to Windowed; it opens at whatever resolution the game is set to. Fullscreen scales to your display without changing its resolution, so nothing stretches."
-                : "Exclusive fullscreen — the game takes over the whole display and may change your screen resolution and hide the menu bar.")
+                ? "Fullscreen scales to your current display resolution instead of switching modes — avoids stretching on unusual Mac resolutions. Note: GPTK runs games borderless and controls the window itself, so there's no macOS title bar or green fullscreen button. Use the game's own Windowed video option if you want a smaller view."
+                : "Lets the game take exclusive fullscreen and change your screen resolution (closer to a real PC, but may flicker the display and hide the menu bar).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 142)
@@ -1254,7 +1267,7 @@ struct DownloadsPane: View {
         VStack(spacing: 10) {
             Image(systemName: "arrow.down.circle").font(.system(size: 48)).foregroundStyle(.secondary)
             Text("No downloads yet").font(.headline)
-            Text("Pick a game from your Library and click Install to start a SteamCMD download.")
+            Text("Pick a game from your Library and click Install to start a download.")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
