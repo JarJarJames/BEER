@@ -7,12 +7,12 @@ import SwiftUI
 // directly into the main app shell (no sheet) — the user never sees a
 // modal, the library IS the app once they're set up.
 //
-//   • SteamCMDSetupView — full-window onboarding step 1
-//   • SteamSignInView   — full-window onboarding step 2
+//   • DepotDownloaderSetupView — full-window onboarding step 1
+//   • SteamSignInView   — full-window onboarding step 2 (QR sign-in)
 //   • SteamLibraryGridView — primary post-onboarding view (grid of capsules)
 //   • GameCardView      — single clickable capsule
 
-// MARK: - Onboarding step 1: install SteamCMD
+// MARK: - Onboarding step 1: install DepotDownloader
 
 struct DepotDownloaderSetupView: View {
     @EnvironmentObject private var depot: DepotDownloaderInstaller
@@ -189,6 +189,8 @@ struct SteamSignInView: View {
 
 struct SteamLibraryGridView: View {
     var onSelectGame: (SteamLibraryGame) -> Void
+    /// When true, show only installed games (the "Installed" sidebar tab).
+    var installedOnly: Bool = false
 
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var bottles: BottleStore
@@ -199,10 +201,30 @@ struct SteamLibraryGridView: View {
         GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 18, alignment: .top)
     ]
 
+    private func isInstalled(_ game: SteamLibraryGame) -> Bool {
+        guard let bottleID = game.installedBottleID else { return false }
+        return bottles.bottles.contains { $0.id == bottleID }
+    }
+
     private var filteredGames: [SteamLibraryGame] {
+        var base = installedOnly ? library.games.filter(isInstalled) : library.games
+
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard !q.isEmpty else { return library.games }
-        return library.games.filter { $0.name.lowercased().contains(q) || String($0.appID).contains(q) }
+        if !q.isEmpty {
+            base = base.filter { $0.name.lowercased().contains(q) || String($0.appID).contains(q) }
+        }
+
+        // Installed games first, then alphabetical — so the handful you've
+        // installed are always at the top of a 300-game library.
+        return base.sorted { a, b in
+            let ai = isInstalled(a), bi = isInstalled(b)
+            if ai != bi { return ai && !bi }
+            return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
+        }
+    }
+
+    private var installedCount: Int {
+        library.games.filter(isInstalled).count
     }
 
     var body: some View {
@@ -213,14 +235,23 @@ struct SteamLibraryGridView: View {
                 ProgressView("Fetching your library…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if library.games.isEmpty {
-                emptyState
+                emptyState(icon: "tray", title: "No games yet",
+                           message: "Click Refresh to fetch your Steam library.")
+            } else if filteredGames.isEmpty {
+                if installedOnly {
+                    emptyState(icon: "internaldrive", title: "No games installed yet",
+                               message: "Open a game in your Library and click Install — it'll show up here.")
+                } else {
+                    emptyState(icon: "magnifyingglass", title: "No matches",
+                               message: "No games match “\(searchText)”.")
+                }
             } else {
                 ScrollView {
                     LazyVGrid(columns: columns, spacing: 18) {
                         ForEach(filteredGames) { game in
                             GameCardView(
                                 game: game,
-                                isInstalled: bottles.bottles.contains { $0.id == game.installedBottleID },
+                                isInstalled: isInstalled(game),
                                 action: { onSelectGame(game) }
                             )
                         }
@@ -234,11 +265,13 @@ struct SteamLibraryGridView: View {
     private var toolbar: some View {
         HStack(spacing: 10) {
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search library", text: $searchText)
+            TextField(installedOnly ? "Search installed" : "Search library", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
             Spacer()
-            Text("\(library.games.count) games")
+            Text(installedOnly
+                 ? "\(filteredGames.count) installed"
+                 : "\(installedCount) installed · \(library.games.count) games")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button {
@@ -253,13 +286,14 @@ struct SteamLibraryGridView: View {
         .padding(.vertical, 12)
     }
 
-    private var emptyState: some View {
+    private func emptyState(icon: String, title: String, message: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: "tray").font(.system(size: 42)).foregroundStyle(.secondary)
-            Text("No games yet").font(.headline)
-            Text("Click Refresh to fetch your Steam library.")
+            Image(systemName: icon).font(.system(size: 42)).foregroundStyle(.secondary)
+            Text(title).font(.headline)
+            Text(message)
                 .font(.callout)
                 .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
