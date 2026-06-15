@@ -66,6 +66,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 PLIST
 
 echo "==> Ad-hoc code-signing…"
+# Strip extended attributes (quarantine, Finder info) that make codesign
+# reject the bundle with "resource fork … not allowed".
+xattr -cr "$APP_DIR"
 codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Zipping for distribution…"
