@@ -1,4 +1,6 @@
 import AppKit
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 // Building blocks for the Steam Library flow. ContentView composes these
@@ -65,104 +67,121 @@ struct DepotDownloaderSetupView: View {
 
 struct SteamSignInView: View {
     @EnvironmentObject private var library: SteamLibraryStore
-    @State private var profile: String = ""
-    @State private var apiKey: String = ""
-    @FocusState private var profileFocused: Bool
+    @EnvironmentObject private var auth: SteamAuthStore
 
-    private var canSubmit: Bool {
-        !profile.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    }
+    @State private var session: SteamAuthStore.QRSession?
+    @State private var error: String?
+    @State private var authTask: Task<Void, Never>?
 
     var body: some View {
         VStack(spacing: 20) {
-            Image(systemName: "person.crop.circle.badge.checkmark")
-                .font(.system(size: 56))
+            Image(systemName: "qrcode")
+                .font(.system(size: 52))
                 .foregroundStyle(.tint)
             Text("Sign in to Steam")
                 .font(.largeTitle.bold())
-            Text("Paste your Steam profile URL (or your vanity / SteamID64) and a free Steam Web API key. We use these to pull your owned-games list. We never see your Steam password — that only gets used later by SteamCMD inside a Terminal window when you install a game.")
+            Text("Scan this code with the Steam Mobile App and tap **Approve**. This signs you in to your library and Cloud saves in one step — your password is never typed into this app.")
                 .font(.callout)
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: 620)
+                .frame(maxWidth: 560)
                 .fixedSize(horizontal: false, vertical: true)
 
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Steam profile")
-                        .font(.callout.bold())
-                    TextField("vanity name, profile URL, or 17-digit SteamID64", text: $profile)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body)
-                        .focused($profileFocused)
-                        .onSubmit(submit)
-                    Text("Examples: `username` · `https://steamcommunity.com/id/username` · `76561198000000000`")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
+            qrView
+                .frame(width: 260, height: 260)
+                .padding(16)
+                .background(Color.white)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Steam Web API key")
-                        .font(.callout.bold())
-                    SecureField("32-character API key", text: $apiKey)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.body)
-                        .onSubmit(submit)
-                    HStack(spacing: 4) {
-                        Text("Don't have one?")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                        Link("Get one free in 30 seconds →", destination: URL(string: "https://steamcommunity.com/dev/apikey")!)
-                            .font(.caption2)
-                    }
+            if library.isFetchingLibrary {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Fetching your library…").font(.callout).foregroundStyle(.secondary)
                 }
-
-                if let error = library.lastError {
+            } else if let error {
+                VStack(spacing: 10) {
                     Text(error)
                         .font(.callout)
                         .foregroundStyle(.red)
-                        .multilineTextAlignment(.leading)
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.red.opacity(0.1))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 460)
+                    Button("Try again") { restart() }
+                        .buttonStyle(.bordered)
+                }
+            } else {
+                HStack(spacing: 10) {
+                    ProgressView().controlSize(.small)
+                    Text("Waiting for approval in the Steam Mobile App…")
+                        .font(.callout).foregroundStyle(.secondary)
                 }
             }
-            .frame(maxWidth: 520)
 
-            Button {
-                submit()
-            } label: {
-                HStack {
-                    if library.isFetchingLibrary {
-                        ProgressView().controlSize(.small)
-                        Text("Signing in…")
-                    } else {
-                        Label("Sign In", systemImage: "arrow.right.circle.fill")
-                    }
-                }
-                .font(.title3)
-                .frame(minWidth: 220, minHeight: 36)
+            HStack(spacing: 6) {
+                Image(systemName: "iphone")
+                Text("Open Steam on your phone → tap the QR-scan icon (top-left) → scan.")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .disabled(!canSubmit || library.isFetchingLibrary)
+            .font(.caption)
+            .foregroundStyle(.secondary)
         }
         .padding(60)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            library.lastError = nil
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
-                profileFocused = true
+        .onAppear { startAuthIfNeeded() }
+        .onDisappear { authTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private var qrView: some View {
+        if let urlString = session?.challengeURL, let cgImage = Self.generateQR(from: urlString) {
+            Image(decorative: cgImage, scale: 1.0)
+                .interpolation(.none)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+        } else if error != nil {
+            VStack {
+                Image(systemName: "exclamationmark.triangle").font(.largeTitle).foregroundStyle(.orange)
+                Text("Couldn't get a QR from Steam.").foregroundStyle(.black)
+            }
+        } else {
+            ProgressView()
+        }
+    }
+
+    private func startAuthIfNeeded() {
+        guard authTask == nil else { return }
+        error = nil
+        library.lastError = nil
+        authTask = Task {
+            do {
+                try await auth.runQRAuth { qr in self.session = qr }
+                await library.signInWithQR(auth: auth)
+                // ContentView re-routes to the library grid once
+                // library.account.isLoggedIn flips true.
+            } catch is CancellationError {
+                // view went away
+            } catch let err as SteamAuthError {
+                self.error = err.errorDescription ?? "Sign-in failed."
+            } catch {
+                self.error = error.localizedDescription
             }
         }
     }
 
-    private func submit() {
-        guard canSubmit, !library.isFetchingLibrary else { return }
-        library.lastError = nil
-        Task { await library.signIn(profile: profile, webAPIKey: apiKey) }
+    private func restart() {
+        authTask?.cancel()
+        authTask = nil
+        session = nil
+        error = nil
+        startAuthIfNeeded()
+    }
+
+    private static func generateQR(from string: String) -> CGImage? {
+        guard let data = string.data(using: .utf8) else { return nil }
+        let filter = CIFilter.qrCodeGenerator()
+        filter.setValue(data, forKey: "inputMessage")
+        filter.setValue("M", forKey: "inputCorrectionLevel")
+        guard let output = filter.outputImage else { return nil }
+        let scaled = output.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
+        return CIContext().createCGImage(scaled, from: scaled.extent)
     }
 }
 
@@ -173,6 +192,7 @@ struct SteamLibraryGridView: View {
 
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var bottles: BottleStore
+    @EnvironmentObject private var auth: SteamAuthStore
     @State private var searchText: String = ""
 
     private let columns: [GridItem] = [
@@ -222,7 +242,7 @@ struct SteamLibraryGridView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Button {
-                Task { await library.fetchLibrary() }
+                Task { await library.fetchLibrary(auth: auth) }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }

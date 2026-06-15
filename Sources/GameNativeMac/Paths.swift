@@ -69,6 +69,34 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("steam-library.json")
     }
 
+    /// Persisted Steam Cloud auth (refresh token + cached access token).
+    /// TODO(security): move into the Keychain — refresh tokens grant access
+    /// to the user's Steam account. For v1 we keep them in Application
+    /// Support like the rest of our state.
+    static var steamCloudAuthStateURL: URL {
+        applicationSupport.appendingPathComponent("steam-cloud-auth.json")
+    }
+
+    // CloudSync helper — native SteamKit2-based binary that does real
+    // bidirectional Steam Cloud (enumerate/download/upload). Located at runtime
+    // from several candidate paths (see CloudSyncClient.locateBinary()).
+    static var cloudSyncDirectory: URL {
+        applicationSupport.appendingPathComponent("CloudSync", isDirectory: true)
+    }
+
+    static var cloudSyncExecutableURL: URL {
+        cloudSyncDirectory.appendingPathComponent("CloudSync", isDirectory: false)
+    }
+
+    /// Timestamped, out-of-bottle backups of a game's save folders. We snapshot
+    /// here before EVERY cloud pull/push and before any "clear local saves", so
+    /// a long-played save can always be recovered — even if a bottle is wiped.
+    static func cloudSaveBackupsDirectory(forAppID appID: Int) -> URL {
+        applicationSupport
+            .appendingPathComponent("CloudSaveBackups", isDirectory: true)
+            .appendingPathComponent(String(appID), isDirectory: true)
+    }
+
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.

@@ -1,12 +1,25 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Builds a distributable GameNative.app:
+#   • compiles the SwiftUI app in release
+#   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
+#     the .app so a fresh machine needs no extra setup
+#   • ad-hoc code-signs the bundle so it launches
+#   • zips it for download (.build/GameNative.zip)
+#
+# DepotDownloader, Goldberg and the GPTK runtime are still fetched by the app
+# itself on first run (the onboarding flow), so they are not bundled here.
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
+VERSION="${1:-0.2.0}"
+
+echo "==> Building Swift app (release)…"
 swift build -c release
 
-APP_DIR="$ROOT_DIR/.build/GameNativeMac.app"
+APP_DIR="$ROOT_DIR/.build/GameNative.app"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
@@ -15,7 +28,17 @@ rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
 cp "$ROOT_DIR/.build/release/GameNativeMac" "$MACOS/GameNativeMac"
 
-cat > "$CONTENTS/Info.plist" <<'PLIST'
+echo "==> Publishing CloudSync helper (self-contained osx-arm64)…"
+dotnet publish "$ROOT_DIR/Tools/CloudSync/CloudSync.csproj" \
+    -c Release -r osx-arm64 --self-contained true \
+    -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+    -o "$ROOT_DIR/Tools/CloudSync/publish" >/dev/null
+# Bundled next to the app executable — CloudSyncClient.locateBinary() looks
+# for "CloudSync" alongside the running executable (Contents/MacOS).
+cp "$ROOT_DIR/Tools/CloudSync/publish/CloudSync" "$MACOS/CloudSync"
+chmod +x "$MACOS/CloudSync"
+
+cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -25,13 +48,13 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
   <key>CFBundleIdentifier</key>
   <string>local.gamenative.mac</string>
   <key>CFBundleName</key>
-  <string>GameNative for Mac</string>
+  <string>GameNative</string>
   <key>CFBundleDisplayName</key>
   <string>GameNative</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
-  <string>0.1.0</string>
+  <string>${VERSION}</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
@@ -42,4 +65,14 @@ cat > "$CONTENTS/Info.plist" <<'PLIST'
 </plist>
 PLIST
 
-echo "$APP_DIR"
+echo "==> Ad-hoc code-signing…"
+codesign --force --deep --sign - "$APP_DIR"
+
+echo "==> Zipping for distribution…"
+ZIP="$ROOT_DIR/.build/GameNative.zip"
+rm -f "$ZIP"
+ditto -c -k --keepParent "$APP_DIR" "$ZIP"
+
+echo ""
+echo "Built:  $APP_DIR"
+echo "Zip:    $ZIP"
