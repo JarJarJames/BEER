@@ -45,15 +45,6 @@ enum AppPaths {
         steamLogsDirectoryURL(for: bottle).appendingPathComponent(name, isDirectory: false)
     }
 
-    // (legacy — old SteamCMD-via-Wine path; superseded by DepotDownloader)
-    static var steamCMDDirectory: URL {
-        applicationSupport.appendingPathComponent("SteamCMD", isDirectory: true)
-    }
-
-    static var steamCMDExecutableURL: URL {
-        steamCMDDirectory.appendingPathComponent("steamcmd.exe", isDirectory: false)
-    }
-
     // App-level DepotDownloader install. Native macOS Apple Silicon binary,
     // no Wine, no .NET runtime. One install shared across all game bottles —
     // its account.config caches the refresh token so we only sign in once.
