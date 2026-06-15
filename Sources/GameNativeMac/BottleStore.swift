@@ -93,27 +93,20 @@ final class BottleStore: ObservableObject {
 
     /// Launch a specific .exe (Wine-style path like `C:\Games\Hades\x64\Hades.exe`)
     /// inside the bottle's prefix. Used by the per-game Library flow once
-    /// SteamCMD has installed the game.
+    /// the game is installed.
     ///
-    /// When the bottle has windowed mode enabled, we wrap the launch with
-    /// `wine explorer /desktop=Name,WxH game.exe` so the game runs inside a
-    /// fixed-size macOS window — no exclusive fullscreen, native window
-    /// controls, black-bar letterboxing when Cocoa-fullscreened.
+    /// We run the game's .exe directly (no `wine explorer /desktop` wrapper).
+    /// The Wine macOS driver (winemac.drv) then gives the game a REAL native
+    /// macOS window — movable, resizable, with a working green fullscreen
+    /// button — instead of the borderless, un-movable "virtual desktop" the
+    /// /desktop wrapper produced. `configureWindowMode` sets the driver's
+    /// registry so windows are decorated and fullscreen never changes the
+    /// display resolution (no stretching on odd Mac resolutions).
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
-        var args: [String] = []
-        if bottle.effectiveUseVirtualDesktop {
-            let desktopName = (bottle.steamGameName ?? bottle.name)
-                .components(separatedBy: CharacterSet.alphanumerics.inverted)
-                .filter { !$0.isEmpty }
-                .joined(separator: "_")
-                .prefix(40)
-            args.append(contentsOf: [
-                "explorer",
-                "/desktop=\(desktopName.isEmpty ? "GameNative" : String(desktopName)),\(bottle.effectiveVirtualDesktopResolution)"
-            ])
-        }
-        args.append(executable)
+        await configureWindowMode(bottle)
+
+        var args: [String] = [executable]
         if let arguments, !arguments.isEmpty {
             args.append(contentsOf: arguments.split(separator: " ").map(String.init))
         }
@@ -121,6 +114,37 @@ final class BottleStore: ObservableObject {
             bottle,
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
             mode: .wine(arguments: args)
+        )
+    }
+
+    /// Apply the winemac.drv window settings for this bottle before launch.
+    ///   • Decorated = Y → native title bar (movable window + green fullscreen).
+    ///   • CaptureDisplaysForFullscreen = N when "windowed mode" is on → Wine
+    ///     never switches the macOS display mode, so fullscreen scales to the
+    ///     screen (letterboxed) instead of stretching / changing resolution.
+    ///     When windowed mode is off we let the game capture the display for
+    ///     classic exclusive fullscreen.
+    private func configureWindowMode(_ bottle: Bottle) async {
+        let capture = bottle.effectiveUseVirtualDesktop ? "N" : "Y"
+        let reg = """
+        Windows Registry Editor Version 5.00
+
+        [HKEY_CURRENT_USER\\Software\\Wine\\Mac Driver]
+        "Decorated"="Y"
+        "CaptureDisplaysForFullscreen"="\(capture)"
+
+        """
+        let regFile = AppPaths.prefixURL(for: bottle).appendingPathComponent("gn-window-mode.reg")
+        do {
+            try FileManager.default.createDirectory(at: regFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try reg.write(to: regFile, atomically: true, encoding: .utf8)
+        } catch {
+            return // non-fatal — fall through to launch with whatever's set
+        }
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring window mode",
+            mode: .wine(arguments: ["regedit", "/S", regFile.path])
         )
     }
 
