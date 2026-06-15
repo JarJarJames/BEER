@@ -14,6 +14,7 @@ struct ContentView: View {
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var store: BottleStore
     @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @EnvironmentObject private var cloudAuth: SteamAuthStore
 
     var body: some View {
         Group {
@@ -55,7 +56,7 @@ struct ContentView: View {
         .task {
             await runtimeInstaller.refresh()
             if library.account.isLoggedIn {
-                await library.fetchLibrary()
+                await library.fetchLibrary(auth: cloudAuth)
             }
         }
     }
@@ -194,6 +195,7 @@ struct GameDetailView: View {
     @State private var isShowingCloudConnect: Bool = false
     @State private var cloudSyncMessage: String?
     @State private var cloudSyncIsError: Bool = false
+    @State private var confirmClearBottle: Bottle?
     @State private var patchStatusMessage: String?
     @State private var patchStatusIsError: Bool = false
     @State private var isPatching: Bool = false
@@ -252,6 +254,19 @@ struct GameDetailView: View {
                 cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
                 cloudSyncIsError = false
             })
+        }
+        .confirmationDialog(
+            "Back up and clear local saves?",
+            isPresented: Binding(get: { confirmClearBottle != nil }, set: { if !$0 { confirmClearBottle = nil } }),
+            presenting: confirmClearBottle
+        ) { bottle in
+            Button("Back up & clear", role: .destructive) {
+                clearLocalSaves(for: bottle)
+                confirmClearBottle = nil
+            }
+            Button("Cancel", role: .cancel) { confirmClearBottle = nil }
+        } message: { _ in
+            Text("Your current local saves for this game are copied to a timestamped backup, then removed from the bottle. Nothing is uploaded or deleted from Steam Cloud. You can restore by pulling from cloud, or from the backup folder.")
         }
     }
 
@@ -431,13 +446,11 @@ struct GameDetailView: View {
 
     @ViewBuilder
     private func displayModeRow(bottle: Bottle) -> some View {
-        // Read live from the store on every render so the Toggle / Picker
-        // bindings reflect the canonical state, not a snapshot captured at
-        // displayModeRow's first call.
+        // Read live from the store on every render so the Toggle binding
+        // reflects canonical state, not a snapshot at first call.
         let bottleID = bottle.id
         let liveBottle = bottles.bottles.first(where: { $0.id == bottleID }) ?? bottle
         let windowedOn = liveBottle.effectiveUseVirtualDesktop
-        let currentResolution = liveBottle.effectiveVirtualDesktopResolution
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -458,81 +471,17 @@ struct GameDetailView: View {
                 .controlSize(.small)
                 .fixedSize()
 
-                if windowedOn {
-                    Picker("Resolution", selection: Binding(
-                        get: {
-                            bottles.bottles.first(where: { $0.id == bottleID })?.effectiveVirtualDesktopResolution ?? currentResolution
-                        },
-                        set: { newValue in
-                            bottles.mutate(bottleID: bottleID) { $0.virtualDesktopResolution = newValue }
-                        }
-                    )) {
-                        ForEach(virtualDesktopResolutionChoices, id: \.self) { res in
-                            HStack {
-                                Text(res)
-                                if !resolutionFitsScreen(res) {
-                                    Text("(larger than display)").foregroundStyle(.secondary)
-                                }
-                            }.tag(res)
-                        }
-                    }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .fixedSize()
-
-                    if let screen = primaryScreenLogicalSize {
-                        Button {
-                            // Pick the largest choice that fits comfortably.
-                            let fitting = virtualDesktopResolutionChoices
-                                .filter { resolutionFitsScreen($0) }
-                                .last
-                                ?? "1280x720"
-                            bottles.mutate(bottleID: bottleID) { $0.virtualDesktopResolution = fitting }
-                        } label: {
-                            Label("Fit (\(Int(screen.width))×\(Int(screen.height)))", systemImage: "arrow.up.left.and.arrow.down.right")
-                        }
-                        .controlSize(.small)
-                    }
-                }
                 Spacer()
             }
 
-            if windowedOn && !resolutionFitsScreen(currentResolution) {
-                Text("\(currentResolution) is larger than your display — the wine window's title bar will be off-screen, so you can't drag or fullscreen it. Pick a smaller size or click Fit.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
-                    .padding(.leading, 142)
-                    .fixedSize(horizontal: false, vertical: true)
-            } else {
-                Text(windowedOn
-                    ? "Game runs in a \(currentResolution) macOS window. In KCD's in-game video options, set Display Mode → Windowed so it doesn't grab the wine desktop. Then drag the window or use the green button to fullscreen with black bars."
-                    : "Game runs in native fullscreen. May steal the entire display and hide the menu bar.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.leading, 142)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+            Text(windowedOn
+                ? "Runs in a normal macOS window — move it, resize it, or click the green button for fullscreen. Set the game's own video option to Windowed; it opens at whatever resolution the game is set to. Fullscreen scales to your display without changing its resolution, so nothing stretches."
+                : "Exclusive fullscreen — the game takes over the whole display and may change your screen resolution and hide the menu bar.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 142)
+                .fixedSize(horizontal: false, vertical: true)
         }
-    }
-
-    private var virtualDesktopResolutionChoices: [String] {
-        ["1280x720", "1600x900", "1920x1080", "2560x1440", "3440x1440", "3840x2160"]
-    }
-
-    /// Logical (points) size of the main display — that's the coordinate
-    /// space wine's macOS driver creates NSWindows in, not the Retina pixel
-    /// resolution. A 2560×1440 wine window on a 14" MBP (~1512×982 points)
-    /// won't fit and its title bar ends up off-screen.
-    private var primaryScreenLogicalSize: CGSize? {
-        NSScreen.main?.frame.size
-    }
-
-    private func resolutionFitsScreen(_ res: String) -> Bool {
-        guard let size = primaryScreenLogicalSize else { return true }
-        let parts = res.split(separator: "x").compactMap { Double($0) }
-        guard parts.count == 2 else { return true }
-        // Window needs to fit with room for the title bar (~28 pts).
-        return parts[0] <= size.width && parts[1] + 28 <= size.height
     }
 
     @ViewBuilder
@@ -622,6 +571,7 @@ struct GameDetailView: View {
     @ViewBuilder
     private func steamCloudRow(bottle: Bottle) -> some View {
         let connected = cloudAuth.account != nil
+        let expired = cloudAuth.sessionExpired
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -630,7 +580,11 @@ struct GameDetailView: View {
                     .foregroundStyle(.secondary)
                     .frame(width: 130, alignment: .leading)
 
-                if connected {
+                if connected && expired {
+                    Label("Sign-in expired", systemImage: "exclamationmark.icloud")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                } else if connected {
                     Label(cloudAuth.account?.accountName ?? "Connected", systemImage: "checkmark.icloud.fill")
                         .foregroundStyle(.green)
                         .font(.callout)
@@ -646,20 +600,31 @@ struct GameDetailView: View {
 
                 Spacer()
 
-                if !connected {
+                if !connected || expired {
                     Button {
                         cloudSyncMessage = nil
                         isShowingCloudConnect = true
                     } label: {
-                        Label("Connect", systemImage: "icloud")
+                        Label(expired ? "Reconnect" : "Connect", systemImage: "icloud")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
+
+                    if expired {
+                        Button(role: .destructive) {
+                            cloudAuth.signOut()
+                            cloudSyncMessage = "Disconnected from Steam Cloud."
+                            cloudSyncIsError = false
+                        } label: {
+                            Label("Sign Out", systemImage: "icloud.slash")
+                        }
+                        .controlSize(.small)
+                    }
                 } else {
                     Button {
-                        pullSaves(for: bottle)
+                        syncSaves(for: bottle, pull: true, push: true)
                     } label: {
-                        Label("Pull saves", systemImage: "icloud.and.arrow.down")
+                        Label("Sync now", systemImage: "arrow.triangle.2.circlepath")
                     }
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
@@ -667,10 +632,20 @@ struct GameDetailView: View {
 
                     Menu {
                         Button {
-                            cloudSyncMessage = "Push isn't supported: Valve gates the upload API behind a Publisher Web API Key. Saves can only flow cloud → Mac here."
-                            cloudSyncIsError = true
+                            syncSaves(for: bottle, pull: true, push: false)
                         } label: {
-                            Label("Why no push?", systemImage: "info.circle")
+                            Label("Pull from cloud", systemImage: "icloud.and.arrow.down")
+                        }
+                        Button {
+                            syncSaves(for: bottle, pull: false, push: true)
+                        } label: {
+                            Label("Push to cloud", systemImage: "icloud.and.arrow.up")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            confirmClearBottle = bottle
+                        } label: {
+                            Label("Back up & clear local saves…", systemImage: "trash")
                         }
                         Divider()
                         Button(role: .destructive) {
@@ -685,6 +660,7 @@ struct GameDetailView: View {
                     }
                     .menuStyle(.borderlessButton)
                     .fixedSize()
+                    .disabled(cloudSync.isSyncing)
                 }
             }
 
@@ -700,13 +676,19 @@ struct GameDetailView: View {
                     .foregroundStyle(cloudSyncIsError ? .red : .green)
                     .padding(.leading, 142)
                     .fixedSize(horizontal: false, vertical: true)
+            } else if connected && expired {
+                Text("Your Steam sign-in expired or was revoked. Click Reconnect to resume syncing — your local saves and backups are untouched.")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.leading, 142)
+                    .fixedSize(horizontal: false, vertical: true)
             } else if connected, let last = cloudSync.lastSyncAt {
                 Text("Last synced \(last.formatted(.relative(presentation: .named))).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 142)
             } else if connected {
-                Text("Pull downloads your existing PC saves into this bottle. Push isn't supported — Valve gates the upload API behind a Publisher Web API Key that third-party apps can't get.")
+                Text("Saves sync both ways with Steam Cloud, so you can move between your PC and this Mac. Every sync backs up your local saves first — nothing is overwritten without a recoverable copy.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.leading, 142)
@@ -715,24 +697,38 @@ struct GameDetailView: View {
         }
     }
 
-    private func pullSaves(for bottle: Bottle) {
+    /// Pull and/or push saves. `syncSaves(pull:true, push:true)` is the default
+    /// two-way sync; the menu offers one-direction variants.
+    private func syncSaves(for bottle: Bottle, pull: Bool, push: Bool) {
         Task {
             cloudSyncMessage = nil
             do {
-                let report = try await cloudSync.pull(
-                    bottle: bottle,
-                    appID: game.appID,
-                    auth: cloudAuth
-                )
+                let report: CloudSyncReport
+                if pull && push {
+                    report = try await cloudSync.sync(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                } else if push {
+                    report = try await cloudSync.push(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                } else {
+                    report = try await cloudSync.pull(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                }
                 cloudSyncIsError = !report.failures.isEmpty
-                let msg = "Pulled \(report.downloaded) save\(report.downloaded == 1 ? "" : "s")"
-                    + (report.skipped > 0 ? ", \(report.skipped) up-to-date" : "")
-                    + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")
-                cloudSyncMessage = msg
+                var parts: [String] = []
+                if pull { parts.append("\(report.downloaded) pulled") }
+                if push { parts.append("\(report.uploaded) pushed") }
+                parts.append("\(report.skipped) up-to-date")
+                if !report.failures.isEmpty { parts.append("\(report.failures.count) failed") }
+                cloudSyncMessage = parts.joined(separator: ", ") + "."
+            } catch CloudSyncClientError.authExpired {
+                // Token went stale — flag it and pop the QR reconnect right away,
+                // since the user explicitly asked to sync.
+                cloudAuth.sessionExpired = true
+                cloudSyncIsError = true
+                cloudSyncMessage = "Steam sign-in expired — reconnect to finish syncing."
+                isShowingCloudConnect = true
             } catch let err as SteamAuthError {
                 cloudSyncIsError = true
                 cloudSyncMessage = err.errorDescription
-            } catch let err as SteamCloudError {
+            } catch let err as CloudSyncClientError {
                 cloudSyncIsError = true
                 cloudSyncMessage = err.errorDescription
             } catch let err as CloudSyncError {
@@ -741,6 +737,21 @@ struct GameDetailView: View {
             } catch {
                 cloudSyncIsError = true
                 cloudSyncMessage = error.localizedDescription
+            }
+        }
+    }
+
+    private func clearLocalSaves(for bottle: Bottle) {
+        Task {
+            cloudSyncMessage = nil
+            do {
+                let backup = try await cloudSync.backupAndClearLocalSaves(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                cloudSyncIsError = false
+                cloudSyncMessage = "Local saves cleared. Backed up to \(backup.lastPathComponent). Use “Pull from cloud” to restore from Steam."
+            } catch {
+                cloudAuth.noteCloudError(error)
+                cloudSyncIsError = true
+                cloudSyncMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             }
         }
     }
@@ -997,7 +1008,47 @@ struct GameDetailView: View {
     private func launch(_ bottle: Bottle) {
         guard let exe = bottle.gameLaunchExecutable else { return }
         Task {
+            // Auto cloud sync: pull the latest saves down before play, and push
+            // whatever changed back up after the game exits. Best-effort — a
+            // sync hiccup must never block launching the game. Backups are taken
+            // inside the engine before anything is overwritten.
+            // Only auto-sync if the session is actually usable. If it's already
+            // flagged expired, skip silently and let the Cloud row's Reconnect
+            // prompt handle it — don't nag mid-launch.
+            let cloudUsable = cloudAuth.account != nil && !cloudAuth.sessionExpired
+            if cloudUsable {
+                cloudSyncMessage = nil
+                do {
+                    let r = try await cloudSync.pull(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                    cloudSyncIsError = !r.failures.isEmpty
+                    cloudSyncMessage = "Pulled \(r.downloaded) save\(r.downloaded == 1 ? "" : "s") before launch."
+                } catch CloudSyncClientError.authExpired {
+                    cloudAuth.sessionExpired = true
+                    cloudSyncIsError = true
+                    cloudSyncMessage = "Steam sign-in expired — launching anyway. Reconnect from the Steam Cloud row to sync."
+                } catch {
+                    cloudSyncIsError = true
+                    cloudSyncMessage = "Pre-launch cloud pull failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription). Launching anyway."
+                }
+            }
+
             await bottles.launchGameExecutable(bottle, executable: exe, arguments: nil)
+
+            // Re-check: the token may have expired during the pull above.
+            if cloudAuth.account != nil && !cloudAuth.sessionExpired {
+                do {
+                    let r = try await cloudSync.push(bottle: bottle, appID: game.appID, auth: cloudAuth)
+                    cloudSyncIsError = !r.failures.isEmpty
+                    cloudSyncMessage = "Pushed \(r.uploaded) save\(r.uploaded == 1 ? "" : "s") to cloud after play."
+                } catch CloudSyncClientError.authExpired {
+                    cloudAuth.sessionExpired = true
+                    cloudSyncIsError = true
+                    cloudSyncMessage = "Steam sign-in expired before your saves could upload. Your progress is safe locally and backed up — reconnect, then Push to cloud."
+                } catch {
+                    cloudSyncIsError = true
+                    cloudSyncMessage = "Post-play cloud push failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription). Your saves are safe locally and backed up."
+                }
+            }
         }
     }
 

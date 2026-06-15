@@ -96,12 +96,14 @@ struct Bottle: Identifiable, Codable, Hashable {
     var gameInstallDirectory: String? = nil
 
     // --- Display mode ---
-    // When useVirtualDesktop is true, we launch the game inside
-    // `wine explorer /desktop=Name,WxH game.exe` — a fixed-size macOS window
-    // that doesn't grab exclusive fullscreen. Cocoa fullscreens such a
-    // window with black bars instead of stretching, which is the behavior
-    // the user actually wants. Both fields are optional so old bottles
-    // continue to decode; nil means "use the effective defaults below".
+    // "Windowed mode" controls how the game's window is presented by the Wine
+    // macOS driver at launch (see BottleStore.configureWindowMode):
+    //   ON  → native, decorated, movable/resizable macOS window; fullscreen
+    //         scales to the display without changing its resolution (no stretch).
+    //   OFF → the game may capture the display for classic exclusive fullscreen.
+    // The field keeps its legacy name `useVirtualDesktop` so existing bottles
+    // decode unchanged. `virtualDesktopResolution` is retained only for decode
+    // compatibility — the game now controls its own resolution.
     var useVirtualDesktop: Bool? = nil
     var virtualDesktopResolution: String? = nil
 
@@ -110,12 +112,6 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// OFF for manual / legacy bottles.
     var effectiveUseVirtualDesktop: Bool {
         useVirtualDesktop ?? (steamAppID != nil)
-    }
-
-    /// Effective windowed-mode resolution. 1920x1080 is a safe default for
-    /// modern games; the user can override per-bottle in Compatibility.
-    var effectiveVirtualDesktopResolution: String {
-        virtualDesktopResolution ?? "1920x1080"
     }
 
     var folderName: String {
