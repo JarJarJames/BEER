@@ -18,7 +18,7 @@ using SteamKit2.Internal;
 // Why this exists: the Steam *Web* API (api.steampowered.com/ICloudService)
 // gates EnumerateUserFiles/upload behind a Publisher key. The Steam *client*
 // protocol does not — it authenticates with the user's own refresh token, the
-// same token GameNative already obtains via QR sign-in. This unlocks PUSH,
+// same token BEER already obtains via QR sign-in. This unlocks PUSH,
 // which the web-scrape path could never do.
 //
 // All commands print a single JSON object to stdout. Human/log noise goes to
@@ -112,7 +112,7 @@ static class Program
         var authSession = await session.Client.Authentication.BeginAuthSessionViaQRAsync(new AuthSessionDetails
         {
             PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
-            DeviceFriendlyName = "GameNative for Mac",
+            DeviceFriendlyName = "BEER for Mac",
             ClientOSType = EOSType.MacOS1020,
             IsPersistentSession = true,
         });

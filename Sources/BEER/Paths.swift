@@ -1,10 +1,28 @@
 import Foundation
 
 enum AppPaths {
-    static var applicationSupport: URL {
-        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        return base.appendingPathComponent("GameNativeMac", isDirectory: true)
-    }
+    /// Application Support root for all on-disk state (bottles, runtimes,
+    /// downloads, the CloudSync helper, save backups).
+    ///
+    /// Resolved once. The app was formerly named "GameNativeMac"; on first
+    /// access we migrate that directory to "BEER" with a single atomic rename
+    /// (same volume), so existing installs keep their bottles and saves. If the
+    /// rename fails we keep using the legacy directory rather than orphan data.
+    static let applicationSupport: URL = {
+        let fm = FileManager.default
+        let base = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let new = base.appendingPathComponent("BEER", isDirectory: true)
+        let legacy = base.appendingPathComponent("GameNativeMac", isDirectory: true)
+        if fm.fileExists(atPath: legacy.path), !fm.fileExists(atPath: new.path) {
+            do {
+                try fm.moveItem(at: legacy, to: new)
+            } catch {
+                NSLog("BEER: storage migration failed, using legacy directory: \(error.localizedDescription)")
+                return legacy
+            }
+        }
+        return new
+    }()
 
     static var bottlesDirectory: URL {
         applicationSupport.appendingPathComponent("Bottles", isDirectory: true)
@@ -27,7 +45,7 @@ enum AppPaths {
     }
 
     static func logsURL(for bottle: Bottle) -> URL {
-        prefixURL(for: bottle).appendingPathComponent("gamenative.log")
+        prefixURL(for: bottle).appendingPathComponent("beer.log")
     }
 
     static func steamDirectoryURL(for bottle: Bottle) -> URL {

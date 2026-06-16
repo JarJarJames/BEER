@@ -29,7 +29,7 @@ struct ContentView: View {
         }
         // Modal alerts only for errors that aren't already shown inline
         // (i.e. after the user is signed in).
-        .alert("GameNative", isPresented: Binding(
+        .alert("BEER", isPresented: Binding(
             get: {
                 library.account.isLoggedIn &&
                 (store.lastError != nil || runtimeInstaller.lastError != nil ||
@@ -107,7 +107,7 @@ struct MainShellView: View {
                     }
                 }
             }
-            .navigationTitle("GameNative")
+            .navigationTitle("BEER")
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
                     Divider()

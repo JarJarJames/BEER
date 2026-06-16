@@ -1,4 +1,4 @@
-# Contributing to GameNative for Mac
+# Contributing to BEER
 
 Thanks for your interest! This started as a personal project and is now open so
 others can build their own launchers, fix bugs, and add features. Pull requests
@@ -17,7 +17,7 @@ are welcome — small focused ones are easiest to review and merge.
 
 ## Project layout
 
-- `Sources/GameNativeMac/` — the SwiftUI app (UI, bottle management, install /
+- `Sources/BEER/` — the SwiftUI app (UI, bottle management, install /
   launch, sync orchestration).
 - `Tools/CloudSync/` — the native Steam-client helper (C# / .NET 9 / SteamKit2)
   for auth, owned games, and cloud read/write. See its `README.md`.
@@ -30,7 +30,7 @@ are welcome — small focused ones are easiest to review and merge.
 
 ```bash
 swift build                      # compile the app
-swift run GameNativeMac          # run it
+swift run BEER          # run it
 ./scripts/build_cloudsync.sh     # build + install the CloudSync helper
 ./scripts/build_app.sh [version] # build a distributable .app + zip
 ```
@@ -55,5 +55,5 @@ swift run GameNativeMac          # run it
 
 Open an issue with your macOS version, Mac model (chip), the game/app involved,
 and the relevant log. For sync problems, the most useful logs are
-`CloudSaveBackups/<appid>/last-sync.log` and the bottle's `gamenative.log`.
+`CloudSaveBackups/<appid>/last-sync.log` and the bottle's `beer.log`.
 **Redact your account name and any tokens** before pasting logs.

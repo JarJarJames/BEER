@@ -1,4 +1,4 @@
-# GameNative for Mac
+# BEER
 
 An experimental native macOS app that turns your Steam library into installable,
 per-game Wine bottles — with **bidirectional Steam Cloud save sync** so you can
@@ -34,18 +34,18 @@ behind Compatibility → New Manual Bottle, but it's parked — see `HANDOFF.md`
 ## Run (development)
 
 ```bash
-swift run GameNativeMac
+swift run BEER
 ```
 
 ## Build a distributable app
 
 ```bash
-scripts/build_app.sh 0.2.0      # → .build/GameNative.app + .build/GameNative.zip
+scripts/build_app.sh 0.2.0      # → .build/BEER.app + .build/BEER.zip
 ```
 The script compiles the app, bundles the native CloudSync helper, ad-hoc signs, and
 zips it. The build isn't notarized, so a downloader must run once:
 ```bash
-xattr -dr com.apple.quarantine /Applications/GameNative.app
+xattr -dr com.apple.quarantine /Applications/BEER.app
 ```
 
 ## First run

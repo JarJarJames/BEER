@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds a distributable GameNative.app:
+# Builds a distributable BEER.app:
 #   • compiles the SwiftUI app in release
 #   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
 #     the .app so a fresh machine needs no extra setup
 #   • ad-hoc code-signs the bundle so it launches
-#   • zips it for download (.build/GameNative.zip)
+#   • zips it for download (.build/BEER.zip)
 #
 # DepotDownloader, Goldberg and the GPTK runtime are still fetched by the app
 # itself on first run (the onboarding flow), so they are not bundled here.
@@ -19,14 +19,14 @@ VERSION="${1:-0.2.0}"
 echo "==> Building Swift app (release)…"
 swift build -c release
 
-APP_DIR="$ROOT_DIR/.build/GameNative.app"
+APP_DIR="$ROOT_DIR/.build/BEER.app"
 CONTENTS="$APP_DIR/Contents"
 MACOS="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
-cp "$ROOT_DIR/.build/release/GameNativeMac" "$MACOS/GameNativeMac"
+cp "$ROOT_DIR/.build/release/BEER" "$MACOS/BEER"
 
 echo "==> Publishing CloudSync helper (self-contained osx-arm64)…"
 dotnet publish "$ROOT_DIR/Tools/CloudSync/CloudSync.csproj" \
@@ -44,13 +44,13 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleExecutable</key>
-  <string>GameNativeMac</string>
+  <string>BEER</string>
   <key>CFBundleIdentifier</key>
-  <string>local.gamenative.mac</string>
+  <string>io.github.jarjarjames.beer</string>
   <key>CFBundleName</key>
-  <string>GameNative</string>
+  <string>BEER</string>
   <key>CFBundleDisplayName</key>
-  <string>GameNative</string>
+  <string>BEER</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
@@ -72,7 +72,7 @@ xattr -cr "$APP_DIR"
 codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Zipping for distribution…"
-ZIP="$ROOT_DIR/.build/GameNative.zip"
+ZIP="$ROOT_DIR/.build/BEER.zip"
 rm -f "$ZIP"
 ditto -c -k --keepParent "$APP_DIR" "$ZIP"
 

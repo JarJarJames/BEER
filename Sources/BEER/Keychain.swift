@@ -23,11 +23,14 @@ enum Keychain {
         }
     }
 
-    /// Service identifier all GameNative keychain items share.
-    private static let service = "com.gamenative.mac"
+    /// Service identifier all BEER keychain items share. Older builds (named
+    /// "GameNativeMac") used `legacyService`; see `SteamAuthStore.load()` for
+    /// the one-time migration.
+    static let defaultService = "io.github.jarjarjames.beer"
+    static let legacyService = "com.gamenative.mac"
 
     /// Store (or replace) the secret blob for `account`.
-    static func set(_ data: Data, account: String) throws {
+    static func set(_ data: Data, account: String, service: String = defaultService) throws {
         let match: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -52,7 +55,7 @@ enum Keychain {
     }
 
     /// Read the secret blob for `account`, or nil if absent.
-    static func get(account: String) -> Data? {
+    static func get(account: String, service: String = defaultService) -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -67,7 +70,7 @@ enum Keychain {
     }
 
     /// Remove the secret blob for `account` (no-op if absent).
-    static func delete(account: String) {
+    static func delete(account: String, service: String = defaultService) {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,

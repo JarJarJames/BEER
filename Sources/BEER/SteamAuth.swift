@@ -59,14 +59,23 @@ final class SteamAuthStore: ObservableObject {
     }
 
     func load() {
-        // Preferred: the Keychain.
+        // Preferred: the Keychain under the current (BEER) service.
         if let data = Keychain.get(account: Self.keychainAccount),
            let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
             account = payload
             return
         }
-        // Legacy: migrate a plaintext steam-cloud-auth.json from older builds
-        // into the Keychain, then delete the cleartext copy.
+        // Legacy 1: a Keychain item under the old "GameNativeMac" service —
+        // re-store it under the new service and drop the old entry.
+        if let data = Keychain.get(account: Self.keychainAccount, service: Keychain.legacyService),
+           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+            account = payload
+            persist()
+            Keychain.delete(account: Self.keychainAccount, service: Keychain.legacyService)
+            return
+        }
+        // Legacy 2: a plaintext steam-cloud-auth.json from even older builds —
+        // migrate it into the Keychain, then delete the cleartext copy.
         if let data = try? Data(contentsOf: AppPaths.steamCloudAuthStateURL),
            let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
             account = payload

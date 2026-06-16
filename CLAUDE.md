@@ -9,21 +9,21 @@ Guidance for AI agents working in this repo. Read `HANDOFF.md` for the full arch
 ## Commands
 ```bash
 swift build                      # compile the app
-swift run GameNativeMac          # run it (the user does this to test)
+swift run BEER          # run it (the user does this to test)
 ./scripts/build_cloudsync.sh     # build + install the CloudSync helper to App Support
 ./scripts/build_app.sh [version] # build distributable .app + zip (bundles helper, ad-hoc signs)
 ```
 The CloudSync helper lives in `Tools/CloudSync/` (C# / .NET 9 / SteamKit2). `dotnet` is installed. See `Tools/CloudSync/README.md`.
 
 ## Layout
-- `Sources/GameNativeMac/` — the SwiftUI app.
+- `Sources/BEER/` — the SwiftUI app.
 - `Tools/CloudSync/` — the native Steam-client helper (auth, owned games, cloud read/write).
 - `scripts/` — build scripts.
-- State lives in `~/Library/Application Support/GameNativeMac/` (see `Paths.swift`).
+- State lives in `~/Library/Application Support/BEER/` (see `Paths.swift`).
 
 ## Conventions
 - Apple Silicon + macOS 14+ only. Runtime is Apple GPTK Wine (`winemac.drv`).
 - Branch: work on a feature branch; `master` is the main line. Commit/push only when asked.
-- When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log` first, then the bottle's `gamenative.log`.
+- When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log` first, then the bottle's `beer.log`.
 - Don't reintroduce: per-file Steam logons (rate-limit), `wine explorer /desktop` for windowed mode (borderless/un-movable), or the real Steam client on GPTK (webhelper crash-loop). See `HANDOFF.md` §7.
 - **Wine username is pinned to `crossover`** (`USER`/`USERNAME` in `BottleStore.environment`). It's GPTK's hardcoded default; we force it on every runtime so save paths (`drive_c/users/crossover/…`) stay consistent when a bottle switches Wine. Not a CrossOver dependency — just a compatibility constant. Don't change it without migrating existing bottles' user folders.
