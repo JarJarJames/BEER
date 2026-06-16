@@ -631,6 +631,20 @@ final class BottleStore: ObservableObject {
 
         env["WINEPREFIX"] = prefix.path
         env["WINEARCH"] = "win64"
+        // Pin the Wine username to "crossover" for ALL runtimes so the user
+        // home — and therefore every game's save path
+        // (drive_c/users/<name>/…) — is identical no matter which Wine the
+        // bottle runs on.
+        //
+        // Why "crossover" specifically (and not, say, "gamenative"): Apple's
+        // GPTK is built on CrossOver's Wine and hardcodes the user "crossover"
+        // regardless of $USER. Mainline Wine instead uses the macOS login name.
+        // If those differ, switching a bottle's runtime strands its saves in a
+        // different users/ folder. We match GPTK's fixed name so saves line up
+        // across runtimes with zero migration. This is NOT a CrossOver
+        // dependency or endorsement — purely a compatibility constant.
+        env["USER"] = "crossover"
+        env["USERNAME"] = "crossover"
         env["WINEDLLOVERRIDES"] = dllOverrides(for: bottle.effectiveGraphicsBackend)
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"

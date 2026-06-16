@@ -26,3 +26,4 @@ The CloudSync helper lives in `Tools/CloudSync/` (C# / .NET 9 / SteamKit2). `dot
 - Branch: work on a feature branch; `master` is the main line. Commit/push only when asked.
 - When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log` first, then the bottle's `gamenative.log`.
 - Don't reintroduce: per-file Steam logons (rate-limit), `wine explorer /desktop` for windowed mode (borderless/un-movable), or the real Steam client on GPTK (webhelper crash-loop). See `HANDOFF.md` §7.
+- **Wine username is pinned to `crossover`** (`USER`/`USERNAME` in `BottleStore.environment`). It's GPTK's hardcoded default; we force it on every runtime so save paths (`drive_c/users/crossover/…`) stay consistent when a bottle switches Wine. Not a CrossOver dependency — just a compatibility constant. Don't change it without migrating existing bottles' user folders.
