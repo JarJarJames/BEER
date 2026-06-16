@@ -29,7 +29,7 @@ merit-based:
 1. Land a few solid, well-tested PRs (bug fixes or cleanup of the AI-generated
    cruft are the fastest way to build trust).
 2. Show good judgment in reviews and issues.
-3. Reach out to **[redacted]** expressing interest.
+3. Open an issue expressing interest (or comment on one you've contributed to).
 
 Senior maintainers get added to `CODEOWNERS` and granted the ability to review and
 merge. The aim is to grow a small group who can keep BEER moving without the
