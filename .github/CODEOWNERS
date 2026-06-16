@@ -1,0 +1,4 @@
+# Every change to BEER requires review and approval from the maintainer.
+# Combined with branch protection on master, this makes @JarJarJames the
+# required reviewer for all pull requests.
+* @JarJarJames

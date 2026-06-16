@@ -57,7 +57,10 @@ Game Porting Toolkit runtime (large) the first time you install a game.
 
 - `HANDOFF.md` — architecture, debugging entry points, and known sharp edges.
 - `CONTRIBUTING.md` — how to build, test, and submit a pull request.
-- `CLAUDE.md` — operating guide for AI agents working in this repo.
+- `CONVENTIONS.md` — coding conventions and what "done" means for a PR.
+- `GOVERNANCE.md` — how changes land and the senior-maintainer path.
+- `CODE_OF_CONDUCT.md` — expectations for everyone in the project's spaces.
+- `AGENTS.md` / `CLAUDE.md` — rules for AI coding agents working in this repo.
 - `Tools/CloudSync/README.md` — the SteamKit2 cloud helper.
 
 ## Project status
