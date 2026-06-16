@@ -3,17 +3,17 @@
 import PackageDescription
 
 let package = Package(
-    name: "GameNativeMac",
+    name: "BEER",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "GameNativeMac", targets: ["GameNativeMac"])
+        .executable(name: "BEER", targets: ["BEER"])
     ],
     targets: [
         .executableTarget(
-            name: "GameNativeMac",
-            path: "Sources/GameNativeMac"
+            name: "BEER",
+            path: "Sources/BEER"
         )
     ]
 )

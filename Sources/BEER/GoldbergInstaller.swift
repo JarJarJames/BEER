@@ -1,7 +1,7 @@
 import Foundation
 
 // Installs GBE_Fork (the actively-maintained Goldberg Steamworks emulator
-// fork by Detanup01) into ~/Library/Application Support/GameNativeMac/Goldberg/.
+// fork by Detanup01) into ~/Library/Application Support/BEER/Goldberg/.
 //
 // GBE_Fork ships a Windows .7z release containing replacement
 // steam_api.dll (32-bit) and steam_api64.dll (64-bit) stubs. We extract

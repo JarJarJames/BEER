@@ -16,7 +16,7 @@ could never do.
 # or, for the dev build the app also looks for:
 dotnet build -c Release
 ```
-`build_app.sh` bundles the published binary inside `GameNative.app/Contents/MacOS/CloudSync`.
+`build_app.sh` bundles the published binary inside `BEER.app/Contents/MacOS/CloudSync`.
 `CloudSyncClient.locateBinary()` (Swift) searches: App Support → next to the app
 executable → the repo dev build.
 

@@ -22,7 +22,7 @@ struct DepotDownloaderSetupView: View {
             Image(systemName: "arrow.down.circle.fill")
                 .font(.system(size: 64))
                 .foregroundStyle(.tint)
-            Text("Welcome to GameNative")
+            Text("Welcome to BEER")
                 .font(.largeTitle.bold())
             Text("First, we'll install DepotDownloader — an open-source, native macOS Steam downloader. No Wine, no Steam client UI, and you sign in by scanning a QR code with the Steam Mobile App instead of typing a password.")
                 .font(.title3)

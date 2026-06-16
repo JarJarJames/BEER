@@ -6,7 +6,7 @@ import Foundation
 // afford to lose. So:
 //   • Before any pull OR push that could change local files, we snapshot every
 //     tracked save file to a timestamped backup OUTSIDE the bottle
-//     (~/…/GameNativeMac/CloudSaveBackups/<appid>/<timestamp>/). A wiped bottle
+//     (~/…/BEER/CloudSaveBackups/<appid>/<timestamp>/). A wiped bottle
 //     never takes the backups with it.
 //   • Sync is conflict-aware: pull only overwrites a local file when the cloud
 //     copy is strictly newer; push only uploads when the local copy is strictly

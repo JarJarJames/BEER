@@ -1,4 +1,4 @@
-# GameNative for Mac — Agent Handoff
+# BEER — Agent Handoff
 
 Entry point for any new agent (or future you) picking up this project. **What it is, where the code lives, how it works today, how to build/debug, and the known sharp edges.** Keep it current — short bullets, no burying changes in chat.
 
@@ -18,7 +18,7 @@ It does NOT run the real Steam client (that path is a dead end on GPTK — see �
 ## 2. Architecture at a glance
 
 ```
-~/Library/Application Support/GameNativeMac/
+~/Library/Application Support/BEER/
   DepotDownloader/        native Steam downloader (SteamKit2); installed on first run
   CloudSync/CloudSync      our SteamKit2 cloud helper (also bundled inside the .app)
   Goldberg/                GBE_Fork steam_api shims
@@ -31,12 +31,12 @@ It does NOT run the real Steam client (that path is a dead end on GPTK — see �
 ```
 
 Two halves:
-- **Swift app** (`Sources/GameNativeMac/`) — UI, bottle management, install/launch, sync orchestration.
+- **Swift app** (`Sources/BEER/`) — UI, bottle management, install/launch, sync orchestration.
 - **CloudSync helper** (`Tools/CloudSync/`, C# / .NET 9 / SteamKit2) — speaks the real Steam *client* protocol for auth, owned-games, and cloud read/write. See `Tools/CloudSync/README.md`.
 
 ## 3. Code map (Swift)
 
-- `GameNativeMacApp.swift` — `@main`; wires all the `@StateObject` stores.
+- `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
 - `ContentView.swift` — router (onboarding → main shell) + `BottleDetailView` (the Display row, Steam Cloud row, Steam-emulator row, launch). `launch(_:)` does auto cloud sync: **pull before play, push after exit**.
 - `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games via QR/refresh-token.
@@ -81,18 +81,18 @@ What we actually do:
 ## 8. Build, run, release
 
 ```bash
-swift build && swift run GameNativeMac      # dev
+swift build && swift run BEER      # dev
 ./scripts/build_cloudsync.sh                # (re)build + install the helper to App Support
-./scripts/build_app.sh 0.2.0                # → .build/GameNative.app + .build/GameNative.zip (bundled helper, ad-hoc signed)
+./scripts/build_app.sh 0.2.0                # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
 ```
-- Release: merged to **`master`** (the real main branch; `cloud-saves` was the feature branch). Distributed via `gh release` — v0.2.0 at https://github.com/JarJarJames/GameNative-for-Mac/releases.
-- **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/GameNative.app`. A paid Apple Developer ID + notarization would remove that step.
+- Release: merged to **`master`** (the real main branch; `cloud-saves` was the feature branch). Distributed via `gh release` — v0.2.0 at https://github.com/JarJarJames/BEER/releases.
+- **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/BEER.app`. A paid Apple Developer ID + notarization would remove that step.
 - **Apple Silicon only** (helper is osx-arm64; GPTK is arm64).
 
 ## 9. Debugging entry points
 
 - **Cloud sync failures:** `CloudSaveBackups/<appid>/last-sync.log` — per-file `FAIL\t<name>\t<reason>` lines + a summary. This is the first place to look.
-- **Per-bottle Wine log:** `Bottles/<bottle>/gamenative.log` (the exact command run is logged with a `$` prefix).
+- **Per-bottle Wine log:** `Bottles/<bottle>/beer.log` (the exact command run is logged with a `$` prefix).
 - **Run the helper by hand (read-only is safe):** see `Tools/CloudSync/README.md` — `enumerate` just lists cloud files; `download` is safe; only `upload`/`batch`-with-uploads write.
 - **Recover a save:** copy from a `CloudSaveBackups/<appid>/<timestamp>-*/` folder back into the bottle.
 

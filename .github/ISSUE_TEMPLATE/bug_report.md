@@ -26,5 +26,5 @@ assignees: ''
 ## Logs
 
 <!-- For sync issues: CloudSaveBackups/<appid>/last-sync.log and the bottle's
-     gamenative.log are the most useful. REDACT your account name and any
+     beer.log are the most useful. REDACT your account name and any
      tokens before pasting. -->

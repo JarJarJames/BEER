@@ -420,7 +420,7 @@ final class BottleStore: ObservableObject {
 
             // Log the exact command we're about to run so issues like "is the
             // virtual desktop flag actually reaching wine?" are diagnosable
-            // from gamenative.log instead of guesswork.
+            // from beer.log instead of guesswork.
             let renderedArgs = command.arguments
                 .map { $0.contains(" ") ? "\"\($0)\"" : $0 }
                 .joined(separator: " ")
@@ -636,7 +636,7 @@ final class BottleStore: ObservableObject {
         // (drive_c/users/<name>/…) — is identical no matter which Wine the
         // bottle runs on.
         //
-        // Why "crossover" specifically (and not, say, "gamenative"): Apple's
+        // Why "crossover" specifically (and not, say, "beer"): Apple's
         // GPTK is built on CrossOver's Wine and hardcodes the user "crossover"
         // regardless of $USER. Mainline Wine instead uses the macOS login name.
         // If those differ, switching a bottle's runtime strands its saves in a

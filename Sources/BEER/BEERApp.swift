@@ -23,7 +23,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 }
 
 @main
-struct GameNativeMacApp: App {
+struct BEERApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var store = BottleStore()
     @StateObject private var detector = ToolchainDetector()

@@ -1,7 +1,7 @@
 import Foundation
 
 // Installs SteamRE/DepotDownloader (native macOS arm64 build) into
-// ~/Library/Application Support/GameNativeMac/DepotDownloader/.
+// ~/Library/Application Support/BEER/DepotDownloader/.
 //
 // DepotDownloader is a self-contained .NET 8 binary published by the same
 // group that maintains SteamKit. It speaks Steam's binary CM protocol
