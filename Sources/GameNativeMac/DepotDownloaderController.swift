@@ -320,7 +320,7 @@ private func parseLoggingInAs(_ line: String) -> String? {
 }
 
 private func parseNextTimeLogin(_ line: String) -> String? {
-    // "Success! Next time you can login with -username username -remember-password instead of -qr."
+    // "Success! Next time you can login with -username <name> -remember-password instead of -qr."
     if let match = line.firstMatch(of: /-username\s+([A-Za-z0-9._\-]+)\s+-remember-password/) {
         return String(match.output.1)
     }

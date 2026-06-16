@@ -56,5 +56,25 @@ Game Porting Toolkit runtime (large) the first time you install a game.
 ## More
 
 - `HANDOFF.md` — architecture, debugging entry points, and known sharp edges.
+- `CONTRIBUTING.md` — how to build, test, and submit a pull request.
 - `CLAUDE.md` — operating guide for AI agents working in this repo.
 - `Tools/CloudSync/README.md` — the SteamKit2 cloud helper.
+
+## Project status
+
+This is a working hobby project, now community-driven. The original author is
+stepping back from active development, so the best way forward is forks and pull
+requests — build your own launcher, fix what bugs you, send improvements back.
+Issues and PRs are welcome; see `CONTRIBUTING.md` to get started.
+
+## Contributing
+
+Contributions are welcome. Please read `CONTRIBUTING.md` first — the short
+version: Apple Silicon + macOS 14+ only, test only against your **own** Steam
+account, and never let anything touch saves without a backup.
+
+## License
+
+[MIT](LICENSE). DepotDownloader, Goldberg/GBE, and Apple's Game Porting Toolkit
+are fetched at runtime by the app and keep their own licenses — they are not
+redistributed in this repository.
