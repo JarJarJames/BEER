@@ -10,3 +10,7 @@ Tools/CloudSync/publish/
 
 # stray logs
 *.log
+
+# DXVK/DXMT state caches games drop in the working dir
+*.dxvk-cache
+*.dxmt-cache

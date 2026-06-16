@@ -127,24 +127,15 @@ final class BottleStore: ObservableObject {
     /// no winemac.drv "Decorated" key on macOS, so we don't try to set one.
     private func configureWindowMode(_ bottle: Bottle) async {
         let capture = bottle.effectiveUseVirtualDesktop ? "N" : "Y"
-        let reg = """
-        Windows Registry Editor Version 5.00
-
-        [HKEY_CURRENT_USER\\Software\\Wine\\Mac Driver]
-        "CaptureDisplaysForFullscreen"="\(capture)"
-
-        """
-        let regFile = AppPaths.prefixURL(for: bottle).appendingPathComponent("gn-window-mode.reg")
-        do {
-            try FileManager.default.createDirectory(at: regFile.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try reg.write(to: regFile, atomically: true, encoding: .utf8)
-        } catch {
-            return // non-fatal — fall through to launch with whatever's set
-        }
+        // Use `reg add` (no temp .reg file) — robust across Wine builds.
+        // Importing a .reg via a unix path fails on mainline Wine's regedit.
         await runBottleCommand(
             bottle,
             operation: "Configuring window mode",
-            mode: .wine(arguments: ["regedit", "/S", regFile.path])
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
+                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", capture, "/f"
+            ])
         )
     }
 
@@ -640,7 +631,7 @@ final class BottleStore: ObservableObject {
 
         env["WINEPREFIX"] = prefix.path
         env["WINEARCH"] = "win64"
-        env["WINEDLLOVERRIDES"] = dllOverrides(for: bottle.graphicsBackend)
+        env["WINEDLLOVERRIDES"] = dllOverrides(for: bottle.effectiveGraphicsBackend)
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"
         env["PATH"] = "\(runtimeDirectory):\(inheritedPath)"
@@ -653,13 +644,21 @@ final class BottleStore: ObservableObject {
                 .joined(separator: ":")
         }
 
-        switch bottle.graphicsBackend {
+        switch bottle.effectiveGraphicsBackend {
         case .d3dMetal:
             env["MTL_HUD_ENABLED"] = env["MTL_HUD_ENABLED"] ?? "0"
         case .dxmt:
             env["DXMT_CONFIG"] = env["DXMT_CONFIG"] ?? "hud=0"
+            if let unix = dxmtUnixLibDirectory() {
+                let existing = env["WINEDLLPATH"].map { "\($0):" } ?? ""
+                env["WINEDLLPATH"] = existing + unix
+            }
         case .dxvk:
             env["DXVK_HUD"] = env["DXVK_HUD"] ?? "0"
+            // Lets MoltenVK use Metal's private API so it can disable primitive
+            // restart (and other features DXVK needs) — without this, pipelines
+            // fail with "Metal does not support disabling primitive restart".
+            env["MVK_CONFIG_USE_METAL_PRIVATE_API"] = env["MVK_CONFIG_USE_METAL_PRIVATE_API"] ?? "1"
         case .automatic, .wineD3D:
             break
         }
@@ -706,14 +705,39 @@ final class BottleStore: ObservableObject {
         switch backend {
         case .automatic: ""
         case .d3dMetal: "d3d12,d3d11,dxgi=n,b"
-        case .dxmt: "d3d11,dxgi=n,b"
-        case .dxvk: "d3d11,dxgi=n,b"
+        case .dxmt: "d3d11,d3d10core,dxgi,winemetal=n,b"
+        case .dxvk: "dxgi,d3d11,d3d10core,d3d9=n,b"
         case .wineD3D: "d3d11,dxgi,d3d12=b"
         }
     }
 
+    /// DXMT ships a host-side `winemetal.so`; point Wine at it via WINEDLLPATH
+    /// so it loads alongside the winemetal.dll we copied into the prefix.
+    private func dxmtUnixLibDirectory() -> String? {
+        let root = AppPaths.translatorsDirectory.appendingPathComponent("DXMT", isDirectory: true)
+        guard let e = FileManager.default.enumerator(at: root, includingPropertiesForKeys: [.isDirectoryKey]) else { return nil }
+        for case let url as URL in e where url.lastPathComponent == "x86_64-unix" {
+            return url.path
+        }
+        return nil
+    }
+
     private func appendLog(_ message: String, bottleID: Bottle.ID, isError: Bool = false) {
-        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Drop the MoltenVK boilerplate (it dumps ~150 "VK_KHR_…" extension
+        // lines + GPU-feature lines on every device probe) so the log stays
+        // readable and copyable. Keep the version/GPU summary lines.
+        let filtered = message
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .filter { line in
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix("VK_") { return false }
+                if t == "The following 153 Vulkan extensions are supported:" { return false }
+                if t.hasPrefix("GPU Family ") || t == "Read-Write Texture Tier 2" { return false }
+                if t == "supports the following GPU Features:" { return false }
+                return true
+            }
+            .joined(separator: "\n")
+        let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         logs[bottleID, default: []].append(BottleLogEntry(date: Date(), message: trimmed, isError: isError))
         writeLogLine(trimmed, bottleID: bottleID)
