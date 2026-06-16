@@ -79,6 +79,12 @@ enum AppPaths {
         cloudSyncDirectory.appendingPathComponent("CloudSync", isDirectory: false)
     }
 
+    // Graphics translators (DXVK / DXMT) downloaded once at app level, then
+    // their DLLs are copied into each bottle that selects them.
+    static var translatorsDirectory: URL {
+        applicationSupport.appendingPathComponent("Translators", isDirectory: true)
+    }
+
     /// Timestamped, out-of-bottle backups of a game's save folders. We snapshot
     /// here before EVERY cloud pull/push and before any "clear local saves", so
     /// a long-played save can always be recovered — even if a bottle is wiped.

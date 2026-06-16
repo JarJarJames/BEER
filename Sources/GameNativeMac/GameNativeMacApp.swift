@@ -35,6 +35,7 @@ struct GameNativeMacApp: App {
     @StateObject private var goldberg = GoldbergInstaller()
     @StateObject private var cloudAuth = SteamAuthStore()
     @StateObject private var cloudSync = CloudSyncEngine()
+    @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
 
     var body: some Scene {
         WindowGroup {
@@ -49,6 +50,7 @@ struct GameNativeMacApp: App {
                 .environmentObject(goldberg)
                 .environmentObject(cloudAuth)
                 .environmentObject(cloudSync)
+                .environmentObject(graphicsTranslator)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -59,6 +61,7 @@ struct GameNativeMacApp: App {
                     depotCtl.load()
                     goldberg.refresh()
                     cloudAuth.load()
+                    graphicsTranslator.refresh()
                 }
         }
         .windowStyle(.titleBar)

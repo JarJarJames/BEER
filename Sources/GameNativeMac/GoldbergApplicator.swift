@@ -45,7 +45,7 @@ enum GoldbergApplicator {
     /// GBE_Fork stub. Idempotent: re-running is safe and only patches DLLs we
     /// haven't already patched.
     @MainActor
-    static func apply(installDir: URL, appID: Int, using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
+    static func apply(installDir: URL, appID: Int, account: String? = nil, steamID64: String? = nil, using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
         guard let stub64 = installer.steamApi64URL, let stub32 = installer.steamApi32URL else {
             throw GoldbergPatchError.stubsMissing
         }
@@ -74,7 +74,7 @@ enum GoldbergApplicator {
             if let existing = try? Data(contentsOf: dll), existing == stubData {
                 report.alreadyPatched += 1
                 // Still write the steam_settings folder in case it's missing.
-                let settings = try writeSteamSettings(beside: dll, appID: appID, fileManager: fm)
+                let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, fileManager: fm)
                 report.settingsDirs.append(settings)
                 continue
             }
@@ -94,7 +94,7 @@ enum GoldbergApplicator {
             report.patched.append(dll)
 
             // Write steam_settings/steam_appid.txt beside it.
-            let settings = try writeSteamSettings(beside: dll, appID: appID, fileManager: fm)
+            let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, fileManager: fm)
             report.settingsDirs.append(settings)
         }
 
@@ -150,11 +150,22 @@ enum GoldbergApplicator {
         return found
     }
 
-    private static func writeSteamSettings(beside dll: URL, appID: Int, fileManager fm: FileManager) throws -> URL {
+    private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, fileManager fm: FileManager) throws -> URL {
         let settingsDir = dll.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
         try fm.createDirectory(at: settingsDir, withIntermediateDirectories: true)
         let appidFile = settingsDir.appendingPathComponent("steam_appid.txt", isDirectory: false)
         try String(appID).write(to: appidFile, atomically: true, encoding: .utf8)
+
+        // Tell the emulator to present the user's REAL Steam identity, so games
+        // that key saves/profiles to the SteamID recognize their existing data
+        // instead of starting fresh under the emulator's default account.
+        if let steamID64, !steamID64.isEmpty, steamID64 != "0" {
+            var ini = "[user::general]\n"
+            if let account, !account.isEmpty { ini += "account_name=\(account)\n" }
+            ini += "account_steamid=\(steamID64)\n"
+            let userConfig = settingsDir.appendingPathComponent("configs.user.ini", isDirectory: false)
+            try ini.write(to: userConfig, atomically: true, encoding: .utf8)
+        }
         return settingsDir
     }
 }
