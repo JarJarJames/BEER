@@ -27,6 +27,7 @@ RESOURCES="$CONTENTS/Resources"
 rm -rf "$APP_DIR"
 mkdir -p "$MACOS" "$RESOURCES"
 cp "$ROOT_DIR/.build/release/BEER" "$MACOS/BEER"
+cp "$ROOT_DIR/icon/AppIcon.icns" "$RESOURCES/AppIcon.icns"
 
 echo "==> Publishing CloudSync helper (self-contained osx-arm64)…"
 dotnet publish "$ROOT_DIR/Tools/CloudSync/CloudSync.csproj" \
@@ -51,6 +52,8 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <string>BEER</string>
   <key>CFBundleDisplayName</key>
   <string>BEER</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleShortVersionString</key>
