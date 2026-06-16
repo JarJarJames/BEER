@@ -78,7 +78,7 @@ hardening, test coverage, and architectural judgment. Treat the current code as 
 working prototype to be cleaned up, not as a polished foundation.
 
 Pull requests are welcome, and if you're an experienced developer who'd like to
-help steer or co-maintain it, reach out at **[redacted]**. See
+help steer or co-maintain it, open an issue to start the conversation. See
 `CONTRIBUTING.md` to get started.
 
 ## Contributing
@@ -113,7 +113,8 @@ Please read these before using or distributing BEER. This is not legal advice.
   against your account.
 
 If you are a rights holder with a concern about this repository, please open an
-issue or contact the maintainer at **[redacted]**.
+issue, or use **Security → Report a vulnerability** on this repo for a private
+channel to the maintainer.
 
 ## License
 
