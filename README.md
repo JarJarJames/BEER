@@ -40,7 +40,7 @@ swift run BEER
 ## Build a distributable app
 
 ```bash
-scripts/build_app.sh 0.2.0      # → .build/BEER.app + .build/BEER.zip
+scripts/build_app.sh 0.3.1      # → .build/BEER.app + .build/BEER.zip
 ```
 The script compiles the app, bundles the native CloudSync helper, ad-hoc signs, and
 zips it. The build isn't notarized, so a downloader must run once:
@@ -82,6 +82,34 @@ are welcome regardless; see `CONTRIBUTING.md` to get started.
 Contributions are welcome. Please read `CONTRIBUTING.md` first — the short
 version: Apple Silicon + macOS 14+ only, test only against your **own** Steam
 account, and never let anything touch saves without a backup.
+
+## Disclaimers
+
+Please read these before using or distributing BEER. This is not legal advice.
+
+- **For games you own.** BEER uses *your own* Steam account to download games
+  *you have purchased*, via [DepotDownloader](https://github.com/SteamRE/DepotDownloader).
+  It is not a piracy tool and does not unlock, crack, or grant access to content
+  you don't own. Don't use it to obtain or run software you haven't bought.
+- **Steam Subscriber Agreement / account risk.** Downloading outside the official
+  client, running games outside it, and applying the Goldberg/GBE Steamworks shim
+  may violate Steam's terms of service and could put your Steam account at risk,
+  up to suspension or ban. **Use entirely at your own risk.** Only ever sign in
+  with your own account.
+- **Goldberg/GBE.** BEER applies the Goldberg/GBE Steamworks emulator so games
+  that call the Steamworks API can run without the official client. It emulates
+  that API for games you own; it is not a means of bypassing purchase.
+- **Not affiliated.** BEER is an independent project. It is not affiliated with,
+  endorsed by, or sponsored by Valve, Steam, Apple, or the GameNative project.
+  "Steam" and all other trademarks belong to their respective owners; names are
+  used only to describe interoperability.
+- **No warranty.** Provided "as is" under the MIT license, with no warranty of
+  any kind. BEER manipulates game files and save data; despite automatic save
+  backups, the authors are not liable for lost saves, data, or any action taken
+  against your account.
+
+If you are a rights holder with a concern about this repository, please open an
+issue or contact the maintainer at **[redacted]**.
 
 ## License
 
