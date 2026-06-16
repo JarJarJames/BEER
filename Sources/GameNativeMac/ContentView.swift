@@ -203,6 +203,7 @@ struct GameDetailView: View {
     @EnvironmentObject private var goldberg: GoldbergInstaller
     @EnvironmentObject private var cloudAuth: SteamAuthStore
     @EnvironmentObject private var cloudSync: CloudSyncEngine
+    @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
     @State private var qrArt: String = ""
     @State private var isShowingQR: Bool = false
     @State private var isShowingCloudConnect: Bool = false
@@ -436,8 +437,8 @@ struct GameDetailView: View {
         if let bottle = installedBottle {
             VStack(alignment: .leading, spacing: 10) {
                 Text("Compatibility").font(.headline)
-                LabeledValue(key: "Runtime", value: bottle.runtimeLabel)
-                LabeledValue(key: "Graphics", value: bottle.graphicsBackend.label)
+                runtimeRow(bottle: bottle)
+                graphicsRow(bottle: bottle)
                 if let exe = bottle.gameLaunchExecutable {
                     LabeledValue(key: "Launch executable", value: exe)
                 }
@@ -450,10 +451,60 @@ struct GameDetailView: View {
                 steamEmulatorRow(bottle: bottle)
                 steamCloudRow(bottle: bottle)
 
-                Text("Switch to the Compatibility tab in the sidebar to change runtime, graphics backend, or launch arguments.")
+                Text("Changing the runtime swaps the Wine build this game runs on — useful if a game crashes on GPTK (try a mainline-Wine runtime). For launch arguments and advanced tweaks, use the Compatibility tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
+        }
+    }
+
+    @ViewBuilder
+    private func runtimeRow(bottle: Bottle) -> some View {
+        let bottleID = bottle.id
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Runtime")
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+
+            if detector.candidates.isEmpty {
+                Text(bottle.runtimeLabel).font(.callout)
+            } else {
+                Picker("Runtime", selection: Binding(
+                    get: { bottles.bottles.first(where: { $0.id == bottleID })?.runtimeLocationPath ?? bottle.runtimeLocationPath },
+                    set: { newID in
+                        guard let runtime = detector.candidates.first(where: { $0.id == newID }) else { return }
+                        bottles.mutate(bottleID: bottleID) { $0.useRuntime(runtime) }
+                    }
+                )) {
+                    ForEach(detector.candidates) { rt in
+                        Text(rt.displayName).tag(rt.id)
+                    }
+                }
+                .labelsHidden().pickerStyle(.menu).fixedSize()
+            }
+            Spacer()
+        }
+    }
+
+    @ViewBuilder
+    private func graphicsRow(bottle: Bottle) -> some View {
+        let bottleID = bottle.id
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text("Graphics")
+                .font(.callout).foregroundStyle(.secondary)
+                .frame(width: 130, alignment: .leading)
+            Picker("Graphics", selection: Binding(
+                get: { bottles.bottles.first(where: { $0.id == bottleID })?.effectiveGraphicsBackend ?? bottle.effectiveGraphicsBackend },
+                set: { newValue in bottles.mutate(bottleID: bottleID) { $0.graphicsBackend = newValue } }
+            )) {
+                ForEach(bottle.availableGraphicsBackends) { Text($0.label).tag($0) }
+            }
+            .labelsHidden().pickerStyle(.menu).fixedSize()
+            if graphicsTranslator.busy != nil {
+                ProgressView().controlSize(.small)
+            }
+            Spacer()
         }
     }
 
@@ -847,6 +898,8 @@ struct GameDetailView: View {
                 let report = try GoldbergApplicator.apply(
                     installDir: installDir,
                     appID: game.appID,
+                    account: cloudAuth.account?.accountName,
+                    steamID64: cloudAuth.account?.steamID64,
                     using: goldberg
                 )
                 // Make sure the bottle has the install dir recorded for future ops.
@@ -891,11 +944,22 @@ struct GameDetailView: View {
         startInstall()
     }
 
+    /// New game bottles default to GPTK (fastest, D3DMetal). Managed GPTK
+    /// runtimes are named "Managed GPTK-…" but resolve to a wine64 executable
+    /// (kind .systemWine), so match by name as well as kind. Falls back to the
+    /// first available runtime.
+    private var preferredDefaultRuntime: RuntimeCandidate? {
+        let c = detector.candidates
+        return c.first { $0.displayName.localizedCaseInsensitiveContains("GPTK") || $0.displayName.localizedCaseInsensitiveContains("Game Porting") }
+            ?? c.first { $0.kind == .gamePortingToolkit }
+            ?? c.first
+    }
+
     private func startInstall() {
         // Synchronous re-entry guard: a second click while the first is
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
-        guard let runtime = detector.candidates.first else { return }
+        guard let runtime = preferredDefaultRuntime else { return }
         isStartingInstall = true
 
         Task { @MainActor in
@@ -964,6 +1028,8 @@ struct GameDetailView: View {
                         let report = try GoldbergApplicator.apply(
                             installDir: result.installDirectory,
                             appID: game.appID,
+                            account: cloudAuth.account?.accountName,
+                            steamID64: cloudAuth.account?.steamID64,
                             using: goldberg
                         )
                         downloads.append(
@@ -1021,6 +1087,19 @@ struct GameDetailView: View {
     private func launch(_ bottle: Bottle) {
         guard let exe = bottle.gameLaunchExecutable else { return }
         Task {
+            // Ensure the selected graphics translator (DXVK/DXMT) is downloaded
+            // and its DLLs are in the prefix before launch. No-op for D3DMetal /
+            // WineD3D / automatic.
+            let backend = bottle.effectiveGraphicsBackend
+            if GraphicsTranslator.from(backend) != nil {
+                do {
+                    try await graphicsTranslator.apply(backend, to: bottle)
+                } catch {
+                    cloudSyncIsError = true
+                    cloudSyncMessage = "Couldn't set up \(backend.label): \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+                    return
+                }
+            }
             // Auto cloud sync: pull the latest saves down before play, and push
             // whatever changed back up after the game exits. Best-effort — a
             // sync hiccup must never block launching the game. Backups are taken
@@ -1446,98 +1525,157 @@ struct RuntimeManagerView: View {
     @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var detector: ToolchainDetector
     @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @EnvironmentObject private var translators: GraphicsTranslatorInstaller
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Runtime Manager")
                         .font(.title2.bold())
-                    Text("Install a managed GPTK runtime for Steam bottles.")
+                    Text("Download Game Porting Toolkit versions. Different games run best on different builds — assign one per game in its Compatibility section.")
+                        .font(.callout)
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
                 Button("Done") { dismiss() }
             }
 
-            GroupBox {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .top) {
-                        Image(systemName: "gamecontroller.fill")
-                            .font(.title2)
-                            .foregroundStyle(.tint)
-                            .frame(width: 34)
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(runtimeInstaller.latestGPTK?.name ?? "Game Porting Toolkit")
-                                .font(.headline)
-                            Text(releaseSummary)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        Spacer()
-                        if runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling {
-                            ProgressView()
-                                .controlSize(.small)
-                        }
-                    }
-
-                    Divider()
-
-                    Text(runtimeInstaller.statusMessage)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-
-                    HStack {
-                        Button {
-                            Task {
-                                await runtimeInstaller.refresh()
-                                await detector.refresh()
-                            }
-                        } label: {
-                            Label("Refresh", systemImage: "arrow.clockwise")
-                        }
-                        .disabled(runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling)
-
-                        Spacer()
-
-                        Button {
-                            Task {
-                                await runtimeInstaller.installLatestGPTK()
-                                await detector.refresh()
-                            }
-                        } label: {
-                            Label(installButtonTitle, systemImage: "arrow.down.circle.fill")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling)
-                    }
+            HStack {
+                Text("Game Porting Toolkit versions").font(.headline)
+                if runtimeInstaller.isRefreshing { ProgressView().controlSize(.small) }
+                Spacer()
+                Button {
+                    Task { await runtimeInstaller.refresh(); await detector.refresh() }
+                } label: {
+                    Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
                 }
-                .padding(4)
+                .disabled(runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling)
             }
 
-            Text("This downloads the current Gcenx Game Porting Toolkit archive from GitHub, verifies SHA-256 when GitHub provides a digest, extracts it into Application Support, and makes it available in the New Bottle runtime picker.")
-                .font(.callout)
+            ScrollView {
+                VStack(spacing: 0) {
+                    if runtimeInstaller.availableReleases.isEmpty {
+                        Text(runtimeInstaller.isRefreshing ? "Loading releases…" : "No releases loaded. Click Refresh.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.vertical, 12)
+                    } else {
+                        ForEach(runtimeInstaller.availableReleases, id: \.tag) { release in
+                            releaseRow(release)
+                            Divider()
+                        }
+                    }
+
+                    if !runtimeInstaller.availableWineBuilds.isEmpty {
+                        HStack(spacing: 6) {
+                            Text("Mainline Wine").font(.headline)
+                            Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                        }
+                        .padding(.top, 14)
+                        Text("Newer Wine for games GPTK can't run (e.g. missing-function crashes). No D3DMetal — set the game's Graphics to WineD3D. Slower than GPTK, but it runs. (DXVK needs separate setup; that's coming later.)")
+                            .font(.caption).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.bottom, 4)
+                        ForEach(runtimeInstaller.availableWineBuilds, id: \.tag) { release in
+                            releaseRow(release)
+                            Divider()
+                        }
+                    }
+
+                    HStack(spacing: 6) {
+                        Text("Graphics translators").font(.headline)
+                        Spacer()
+                    }
+                    .padding(.top, 14)
+                    Text("D3D→Metal/Vulkan layers for mainline Wine (GPTK has its own D3DMetal). Auto-installed into a game's bottle when you pick that backend; download here to pre-stage.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.bottom, 4)
+                    ForEach(GraphicsTranslator.allCases) { t in
+                        translatorRow(t)
+                        Divider()
+                    }
+                }
+            }
+            .frame(maxHeight: 340)
+
+            Text(runtimeInstaller.statusMessage)
+                .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(24)
-        .frame(width: 620)
+        .frame(width: 640)
         .task {
-            if runtimeInstaller.latestGPTK == nil {
+            if runtimeInstaller.availableReleases.isEmpty {
                 await runtimeInstaller.refresh()
             }
         }
     }
 
-    private var releaseSummary: String {
-        guard let release = runtimeInstaller.latestGPTK else {
-            return "Fetches the latest Gcenx GPTK release from GitHub."
+    @ViewBuilder
+    private func releaseRow(_ release: RuntimeRelease) -> some View {
+        let installed = runtimeInstaller.isInstalled(release)
+        let busy = runtimeInstaller.installingTag == release.tag
+        HStack(spacing: 12) {
+            Image(systemName: "shippingbox")
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(release.tag).font(.callout.weight(.medium))
+                Text("\(release.assetName) · \(release.displaySize)")
+                    .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer()
+            if busy {
+                ProgressView().controlSize(.small)
+            } else if installed {
+                Label("Installed", systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+            } else {
+                Button {
+                    Task { await runtimeInstaller.install(release); await detector.refresh() }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .controlSize(.small)
+                .disabled(runtimeInstaller.isInstalling)
+            }
         }
-        return "\(release.tag) - \(release.assetName) - \(release.displaySize)"
+        .padding(.vertical, 8)
     }
 
-    private var installButtonTitle: String {
-        runtimeInstaller.installedRuntime == nil ? "Install GPTK" : "Reinstall GPTK"
+    @ViewBuilder
+    private func translatorRow(_ t: GraphicsTranslator) -> some View {
+        let downloaded = translators.installed.contains(t)
+        let busy = translators.busy == t
+        HStack(spacing: 12) {
+            Image(systemName: "cpu")
+                .foregroundStyle(.secondary)
+                .frame(width: 22)
+            Text(t.displayName).font(.callout.weight(.medium))
+            Spacer()
+            if busy {
+                ProgressView().controlSize(.small)
+            } else if downloaded {
+                Label("Downloaded", systemImage: "checkmark.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+            } else {
+                Button {
+                    Task { try? await translators.ensureDownloaded(t) }
+                } label: {
+                    Label("Download", systemImage: "arrow.down.circle")
+                }
+                .controlSize(.small)
+                .disabled(translators.busy != nil)
+            }
+        }
+        .padding(.vertical, 8)
     }
 }
 

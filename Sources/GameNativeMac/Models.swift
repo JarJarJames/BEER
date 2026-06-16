@@ -133,6 +133,47 @@ struct Bottle: Identifiable, Codable, Hashable {
         runtimeBundlePath ?? runtimePath
     }
 
+    /// True when this bottle runs on a GPTK-derived Wine (Apple's D3DMetal is
+    /// present). Managed GPTK runtimes resolve to a wine64 exe (kind
+    /// .systemWine), so we also match on the display name.
+    var isGPTKRuntime: Bool {
+        if runtimeKind == .gamePortingToolkit { return true }
+        let n = (runtimeDisplayName ?? "")
+        return n.localizedCaseInsensitiveContains("GPTK") || n.localizedCaseInsensitiveContains("Game Porting")
+    }
+
+    /// Graphics backends offered for this bottle, scoped to what actually works
+    /// on its runtime:
+    ///   • GPTK      — Apple D3DMetal (built in) + WineD3D.
+    ///   • CrossOver — D3DMetal + DXVK (CrossOver ships a DXVK-aware DXGI).
+    ///   • mainline Wine — DXMT (D3D→Metal, self-contained) + WineD3D. DXVK is
+    ///     NOT offered: Gcenx's DXVK-macOS has no DXGI of its own and relies on
+    ///     CrossOver's, so it can't enumerate a device on mainline Wine.
+    var availableGraphicsBackends: [GraphicsBackend] {
+        if isGPTKRuntime {
+            return [.automatic, .d3dMetal, .wineD3D]
+        }
+        if runtimeKind == .crossOver {
+            return [.automatic, .d3dMetal, .dxvk, .wineD3D]
+        }
+        // Mainline Wine: DXVK (ships its own DXGI) and DXMT both work.
+        return [.automatic, .dxvk, .dxmt, .wineD3D]
+    }
+
+    /// The stored backend, coerced to a valid one for the current runtime.
+    /// Prevents a stale selection (e.g. DXVK left over after switching to
+    /// mainline Wine) from silently being applied.
+    var effectiveGraphicsBackend: GraphicsBackend {
+        availableGraphicsBackends.contains(graphicsBackend) ? graphicsBackend : .automatic
+    }
+
+    /// Reset the backend to a valid one when it no longer fits the runtime.
+    mutating func normalizeGraphicsBackend() {
+        if !availableGraphicsBackends.contains(graphicsBackend) {
+            graphicsBackend = .automatic
+        }
+    }
+
     mutating func useRuntime(_ runtime: RuntimeCandidate) {
         runtimePath = runtime.executablePath
         runtimeKind = runtime.kind
@@ -140,6 +181,7 @@ struct Bottle: Identifiable, Codable, Hashable {
         runtimeDisplayName = runtime.displayName
         runtimeVersion = runtime.version
         runtimeEntrypoints = runtime.entrypoints
+        normalizeGraphicsBackend()  // drop a backend the new runtime can't use
     }
 
     static func make(
