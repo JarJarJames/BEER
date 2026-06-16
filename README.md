@@ -66,19 +66,20 @@ Game Porting Toolkit runtime (large) the first time you install a game.
 ## Project status
 
 This started with one goal: play **Kingdom Come: Deliverance** on a MacBook,
-seamlessly. That goal is met — the game runs well, saves sync, and the original
-author has largely wrapped up active development.
+seamlessly. That goal is met — the game runs well and saves sync.
+
+It's still maintained, but **updates will be infrequent and support is limited**.
+It's worked on in spare time, not on a schedule — expect slow responses on issues
+and pull requests, and don't depend on it for anything critical.
 
 **Honest disclaimer:** most of this codebase was written by AI, and it shows.
 It works, but it is heavily AI-generated and needs real human hands — refactoring,
 hardening, test coverage, and architectural judgment. Treat the current code as a
 working prototype to be cleaned up, not as a polished foundation.
 
-The maintainer is a senior developer and can review pull requests, but can't push
-the project forward alone. **If you're an experienced developer who wants to help
-steer it** — clean up the AI cruft, own a subsystem, or come on as a senior
-maintainer — reach out at **[redacted]**. Forks and PRs from anyone
-are welcome regardless; see `CONTRIBUTING.md` to get started.
+Pull requests are welcome, and if you're an experienced developer who'd like to
+help steer or co-maintain it, reach out at **[redacted]**. See
+`CONTRIBUTING.md` to get started.
 
 ## Contributing
 
