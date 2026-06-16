@@ -9,8 +9,10 @@ import Foundation
 // API as InvalidPassword.) The helper streams the challenge URL as it rotates,
 // and finally the account name + refresh token, which we persist here.
 //
-// The token is the user's Steam credential; we keep it in Application Support
-// like our other state. TODO(security): move into the Keychain.
+// The token is the user's Steam credential, so it lives in the macOS Keychain
+// (see `Keychain`), encrypted at rest and gated on login — not in a readable
+// file. Installs that predate this still have a plaintext `steam-cloud-auth.json`
+// from older builds; `load()` migrates it into the Keychain and deletes it.
 
 struct SteamCloudAccount: Codable, Equatable {
     var accountName: String
@@ -47,6 +49,9 @@ final class SteamAuthStore: ObservableObject {
 
     private let client = CloudSyncClient()
 
+    /// Keychain account key under which the encoded `SteamCloudAccount` lives.
+    private static let keychainAccount = "steam-cloud-auth"
+
     /// What the QR sheet renders. The helper hands us a fresh challenge URL
     /// each time Steam rotates it (~every 30s).
     struct QRSession {
@@ -54,16 +59,27 @@ final class SteamAuthStore: ObservableObject {
     }
 
     func load() {
-        guard let data = try? Data(contentsOf: AppPaths.steamCloudAuthStateURL),
-              let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) else {
+        // Preferred: the Keychain.
+        if let data = Keychain.get(account: Self.keychainAccount),
+           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+            account = payload
             return
         }
-        account = payload
+        // Legacy: migrate a plaintext steam-cloud-auth.json from older builds
+        // into the Keychain, then delete the cleartext copy.
+        if let data = try? Data(contentsOf: AppPaths.steamCloudAuthStateURL),
+           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+            account = payload
+            persist()
+            try? FileManager.default.removeItem(at: AppPaths.steamCloudAuthStateURL)
+        }
     }
 
     func signOut() {
         account = nil
         sessionExpired = false
+        Keychain.delete(account: Self.keychainAccount)
+        // Remove any leftover legacy plaintext file too.
         try? FileManager.default.removeItem(at: AppPaths.steamCloudAuthStateURL)
     }
 
@@ -76,9 +92,15 @@ final class SteamAuthStore: ObservableObject {
     }
 
     private func persist() {
-        guard let account else { return }
-        if let data = try? JSONEncoder.gamenative.encode(account) {
-            try? data.write(to: AppPaths.steamCloudAuthStateURL, options: .atomic)
+        guard let account, let data = try? JSONEncoder.gamenative.encode(account) else { return }
+        do {
+            // Deliberately no plaintext fallback: if the Keychain write fails,
+            // the token stays in memory for this session and the user re-auths
+            // next launch — we never put the credential back on disk in cleartext.
+            try Keychain.set(data, account: Self.keychainAccount)
+        } catch {
+            lastError = (error as? Keychain.KeychainError)?.errorDescription
+                ?? "Couldn't securely save your Steam sign-in."
         }
     }
 
