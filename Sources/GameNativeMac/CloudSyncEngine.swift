@@ -286,9 +286,12 @@ final class CloudSyncEngine: ObservableObject {
             .appendingPathComponent("drive_c", isDirectory: true)
             .appendingPathComponent("users", isDirectory: true)
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: usersDir.path)) ?? []
-        let candidate = entries
-            .filter { !$0.hasPrefix(".") }
-            .first(where: { $0 != "Public" }) ?? entries.first
+        // Prefer "crossover" — our pinned Wine username (see BottleStore). A
+        // bottle may also have a stale login-named folder from before we pinned
+        // it; the game now always uses crossover, so sync must target it too.
+        let candidate = entries.first(where: { $0 == "crossover" })
+            ?? entries.filter { !$0.hasPrefix(".") }.first(where: { $0 != "Public" })
+            ?? entries.first
         guard let user = candidate else { throw CloudSyncError.userHomeNotFound(usersDir) }
         return usersDir.appendingPathComponent(user, isDirectory: true)
     }
