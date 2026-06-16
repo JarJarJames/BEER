@@ -60,10 +60,9 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("steam-library.json")
     }
 
-    /// Persisted Steam Cloud auth (refresh token + cached access token).
-    /// TODO(security): move into the Keychain — refresh tokens grant access
-    /// to the user's Steam account. For v1 we keep them in Application
-    /// Support like the rest of our state.
+    /// Legacy plaintext Steam Cloud auth file from older builds. The refresh
+    /// token now lives in the Keychain (see `Keychain` / `SteamAuthStore`);
+    /// this path only exists so `load()` can migrate and delete it.
     static var steamCloudAuthStateURL: URL {
         applicationSupport.appendingPathComponent("steam-cloud-auth.json")
     }
