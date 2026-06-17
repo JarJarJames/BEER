@@ -174,6 +174,31 @@ struct Bottle: Identifiable, Codable, Hashable {
         }
     }
 
+    /// Rewrite stored absolute paths after the support dir was renamed
+    /// (GameNativeMac → BEER). bottles.json holds baked absolute paths that the
+    /// directory rename in AppPaths doesn't touch, so stale paths point at the
+    /// now-gone old folder and games fail to launch. Returns true if changed.
+    mutating func rewriteStoragePaths(from legacy: String, to current: String) -> Bool {
+        var changed = false
+        func fix(_ s: inout String) {
+            guard s.contains(legacy) else { return }
+            s = s.replacingOccurrences(of: legacy, with: current); changed = true
+        }
+        func fixOpt(_ s: inout String?) {
+            guard var v = s else { return }
+            fix(&v); s = v
+        }
+        fix(&runtimePath)
+        fixOpt(&runtimeBundlePath)
+        fixOpt(&gameInstallDirectory)
+        fixOpt(&gameLaunchExecutable)
+        if var e = runtimeEntrypoints {
+            fix(&e.wine); fixOpt(&e.wineboot); fixOpt(&e.wineserver)
+            runtimeEntrypoints = e
+        }
+        return changed
+    }
+
     mutating func useRuntime(_ runtime: RuntimeCandidate) {
         runtimePath = runtime.executablePath
         runtimeKind = runtime.kind
