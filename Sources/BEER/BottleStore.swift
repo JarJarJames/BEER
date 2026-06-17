@@ -24,6 +24,20 @@ final class BottleStore: ObservableObject {
             }
             let data = try Data(contentsOf: AppPaths.metadataURL)
             bottles = try JSONDecoder.gamenative.decode([Bottle].self, from: data)
+
+            // One-time fix-up after the GameNativeMac → BEER rename: rewrite any
+            // stored absolute paths still pointing at the old support dir.
+            let current = AppPaths.applicationSupport.path
+            let legacy = AppPaths.applicationSupport.deletingLastPathComponent()
+                .appendingPathComponent("GameNativeMac", isDirectory: true).path
+            if legacy != current {
+                var migrated = false
+                for i in bottles.indices where bottles[i].rewriteStoragePaths(from: legacy, to: current) {
+                    migrated = true
+                }
+                if migrated { await save() }
+            }
+
             selectedBottleID = bottles.first?.id
             loadPersistedLogs()
         } catch {
