@@ -60,7 +60,7 @@ Game Porting Toolkit runtime (large) the first time you install a game.
 - `CONVENTIONS.md` — coding conventions and what "done" means for a PR.
 - `GOVERNANCE.md` — how changes land and the senior-maintainer path.
 - `CODE_OF_CONDUCT.md` — expectations for everyone in the project's spaces.
-- `AGENTS.md` / `CLAUDE.md` — rules for AI coding agents working in this repo.
+- `AGENTS.md` / `CLAUDE.md` — repo conventions and guardrails for contributors and tooling.
 - `Tools/CloudSync/README.md` — the SteamKit2 cloud helper.
 
 ## Project status
@@ -72,10 +72,9 @@ It's still maintained, but **updates will be infrequent and support is limited**
 It's worked on in spare time, not on a schedule — expect slow responses on issues
 and pull requests, and don't depend on it for anything critical.
 
-**Honest disclaimer:** most of this codebase was written by AI, and it shows.
-It works, but it is heavily AI-generated and needs real human hands — refactoring,
-hardening, test coverage, and architectural judgment. Treat the current code as a
-working prototype to be cleaned up, not as a polished foundation.
+**Maturity:** treat the current code as a working prototype, not a polished
+foundation. It runs, but it still needs real hardening — refactoring, test
+coverage, and architectural cleanup.
 
 Pull requests are welcome, and if you're an experienced developer who'd like to
 help steer or co-maintain it, open an issue to start the conversation. See
