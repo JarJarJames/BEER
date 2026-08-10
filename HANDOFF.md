@@ -37,7 +37,13 @@ Two halves:
 ## 3. Code map (Swift)
 
 - `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
-- `ContentView.swift` — router (onboarding → main shell) + `BottleDetailView` (the Display row, Steam Cloud row, Steam-emulator row, launch). `launch(_:)` does auto cloud sync: **pull before play, push after exit**.
+- `ContentView.swift` — onboarding router, sidebar, and the library/detail navigation boundary.
+- `GameDetailView.swift` — Steam game hero, install/play actions, compatibility summary, and auto cloud sync: **pull before play, push after exit**.
+- `DownloadsView.swift` — active and completed download UI.
+- `CompatibilityViews.swift` — compatibility overview and navigation.
+- `RuntimeManagerView.swift` / `RuntimeMenuView.swift` — runtime installation and per-bottle selection.
+- `CreateBottleView.swift` — manual bottle creation for power users.
+- `BottleDetailView.swift` — advanced per-bottle runtime, display, launch, and file settings.
 - `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games via QR/refresh-token.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
@@ -46,7 +52,8 @@ Two halves:
   - `CloudSyncClient.swift` — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
   - `CloudSyncEngine.swift` — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
 - `SteamLibraryStore.swift` — owned games. `signInWithQR(auth:)` (primary) + legacy Web-API-key path (`signIn`, dormant fallback).
-- `SteamLibraryView.swift` — onboarding (`SteamSignInView` = QR), library grid.
+- `DepotDownloaderSetupView.swift` / `SteamSignInView.swift` — first-run installation and QR onboarding.
+- `SteamLibraryView.swift` — owned-game library grid and cards.
 - `Paths.swift` — all the Application Support locations, incl. `cloudSyncExecutableURL`, `cloudSaveBackupsDirectory`.
 
 ## 4. Cloud saves — how it works
