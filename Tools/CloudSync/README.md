@@ -34,7 +34,10 @@ Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv
 | `batch --appid N --jobs JSON` | many downloads+uploads in ONE logon | local + cloud |
 
 `batch` jobs file: `{ "appid": N, "downloads":[{"filename","out"}], "uploads":[{"filename","in","mtime"}] }`.
-Per-op it emits `{op, filename, ok|error}`, then `{summary, downloaded, uploaded, failed}`.
+It runs up to four file transfers concurrently, reusing one HTTP connection pool,
+while keeping every operation inside the same Steam login. Downloads finish
+before uploads begin. Per-op it emits `{op, filename, ok|error}`, then
+`{summary, downloaded, uploaded, failed}`.
 
 Errors: a logon rejection emits `{error, auth_failed:true}` (revoked/expired → reconnect)
 or `{error, rate_limited:true}` (throttled → **wait, don't re-auth**).

@@ -59,8 +59,8 @@ Two halves:
 ## 4. Cloud saves — how it works
 
 1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**. Persisted to `steam-cloud-auth.json`. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
-2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
-3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
+2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
+3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side; when timestamps differ but Steam's SHA-1 matches the local content, the unchanged file is skipped. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
 4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
 
 ## 5. Re-auth & rate-limit handling

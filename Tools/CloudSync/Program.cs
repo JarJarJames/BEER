@@ -195,58 +195,87 @@ static class Program
 
     // Process many downloads/uploads in ONE logged-on session. Spawning a fresh
     // process (= fresh Steam logon) per file gets the account throttled by the
-    // CM after ~100 logons; batching keeps it to a single logon per sync.
+    // CM after ~100 logons; batching keeps it to a single logon per sync. File
+    // transfers are bounded so high-file-count games do not pay every Steam +
+    // HTTP round trip serially, without flooding the service.
     static async Task Batch(SteamSession s, uint appid, string jobsPath)
     {
         using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(jobsPath));
         var root = doc.RootElement;
         int downloaded = 0, uploaded = 0, failed = 0;
+        using var http = NewHttpClient();
 
         if (root.TryGetProperty("downloads", out var dls))
         {
-            foreach (var d in dls.EnumerateArray())
+            var jobs = dls.EnumerateArray()
+                .Select(d => (
+                    Filename: d.GetProperty("filename").GetString()!,
+                    OutputPath: d.GetProperty("out").GetString()!))
+                .ToList();
+            await RunTransfers(jobs, async d =>
             {
-                var filename = d.GetProperty("filename").GetString()!;
-                var outp = d.GetProperty("out").GetString()!;
                 try
                 {
-                    await DownloadCore(s, appid, filename, outp);
-                    downloaded++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = filename, ["ok"] = true });
+                    await DownloadCore(s, appid, d.Filename, d.OutputPath, http);
+                    Interlocked.Increment(ref downloaded);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = d.Filename, ["ok"] = true });
                 }
                 catch (Exception ex)
                 {
-                    failed++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = filename, ["error"] = ex.Message });
+                    Interlocked.Increment(ref failed);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = d.Filename, ["error"] = ex.Message });
                 }
-            }
+            });
         }
 
         if (root.TryGetProperty("uploads", out var uls))
         {
-            foreach (var u in uls.EnumerateArray())
+            var jobs = uls.EnumerateArray()
+                .Select(u => (
+                    Filename: u.GetProperty("filename").GetString()!,
+                    InputPath: u.GetProperty("in").GetString()!,
+                    MTime: u.GetProperty("mtime").GetInt64()))
+                .ToList();
+            await RunTransfers(jobs, async u =>
             {
-                var filename = u.GetProperty("filename").GetString()!;
-                var inp = u.GetProperty("in").GetString()!;
-                var mtime = u.GetProperty("mtime").GetInt64();
                 try
                 {
-                    await UploadCore(s, appid, filename, inp, mtime);
-                    uploaded++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = filename, ["ok"] = true });
+                    await UploadCore(s, appid, u.Filename, u.InputPath, u.MTime, http);
+                    Interlocked.Increment(ref uploaded);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = u.Filename, ["ok"] = true });
                 }
                 catch (Exception ex)
                 {
-                    failed++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = filename, ["error"] = ex.Message });
+                    Interlocked.Increment(ref failed);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = u.Filename, ["error"] = ex.Message });
                 }
-            }
+            });
         }
 
         EmitJson(new Dictionary<string, object?> { ["summary"] = true, ["downloaded"] = downloaded, ["uploaded"] = uploaded, ["failed"] = failed });
     }
 
+    const int MaxConcurrentTransfers = 4;
+
+    static async Task RunTransfers<T>(IEnumerable<T> jobs, Func<T, Task> transfer)
+    {
+        using var gate = new SemaphoreSlim(MaxConcurrentTransfers);
+        var tasks = jobs.Select(async job =>
+        {
+            await gate.WaitAsync();
+            try { await transfer(job); }
+            finally { gate.Release(); }
+        });
+        await Task.WhenAll(tasks);
+    }
+
     static async Task DownloadCore(SteamSession s, uint appid, string filename, string outPath)
+    {
+        using var http = NewHttpClient();
+        await DownloadCore(s, appid, filename, outPath, http);
+    }
+
+    static async Task DownloadCore(SteamSession s, uint appid, string filename, string outPath, HttpClient http)
     {
         var job = s.Cloud.ClientFileDownload(new CCloud_ClientFileDownload_Request
         {
@@ -269,7 +298,6 @@ static class Program
         foreach (var h in body.request_headers)
             req.Headers.TryAddWithoutValidation(h.name, h.value);
 
-        using var http = NewHttpClient();
         using var httpResp = await http.SendAsync(req);
         httpResp.EnsureSuccessStatusCode();
         var bytes = await httpResp.Content.ReadAsByteArrayAsync();
@@ -284,6 +312,12 @@ static class Program
     }
 
     static async Task UploadCore(SteamSession s, uint appid, string filename, string inPath, long mtime)
+    {
+        using var http = NewHttpClient();
+        await UploadCore(s, appid, filename, inPath, mtime, http);
+    }
+
+    static async Task UploadCore(SteamSession s, uint appid, string filename, string inPath, long mtime, HttpClient http)
     {
         var data = await File.ReadAllBytesAsync(inPath);
         var sha1 = SHA1.HashData(data); // Steam keys cloud files by SHA1 of contents.
@@ -304,7 +338,6 @@ static class Program
         if (begin.Body.encrypt_file)
             throw new Exception("Steam requires an encrypted upload for this file; not supported. Aborting before any commit so nothing is corrupted.");
 
-        using var http = NewHttpClient();
         foreach (var block in begin.Body.block_requests)
         {
             var scheme = block.use_https ? "https" : "http";
@@ -394,8 +427,13 @@ static class Program
         return d;
     }
 
+    static readonly object JsonOutputLock = new();
+
     static void EmitJson(object o)
-        => Console.WriteLine(JsonSerializer.Serialize(o));
+    {
+        lock (JsonOutputLock)
+            Console.WriteLine(JsonSerializer.Serialize(o));
+    }
 }
 
 // Owns a logged-on SteamClient + the Cloud unified service. Pumps callbacks on
