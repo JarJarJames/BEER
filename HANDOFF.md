@@ -37,23 +37,27 @@ Two halves:
 ## 3. Code map (Swift)
 
 - `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
-- `ContentView.swift` — router (onboarding → main shell) + `BottleDetailView` (the Display row, Steam Cloud row, Steam-emulator row, launch). `launch(_:)` does auto cloud sync: **pull before play, push after exit**.
-- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
-- `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games via QR/refresh-token.
+- `ContentView.swift` — onboarding router, sidebar, and the library/detail navigation boundary.
+- `GameDetailView.swift` — game hero, install/play actions, per-game runtime/graphics/display/cloud controls, collapsible advanced bottle settings, and auto cloud sync: **pull before play, push after exit**.
+- `DownloadsView.swift` — active and completed download UI.
+- `RuntimeManagerView.swift` — sidebar destination for installing Wine/GPTK runtimes and graphics translators.
+- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
+- `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
   - `SteamAuth.swift` (`SteamAuthStore`) — QR sign-in **via the helper**; holds account + refresh token; `sessionExpired` flag + `noteCloudError`.
   - `CloudSyncClient.swift` — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
   - `CloudSyncEngine.swift` — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
 - `SteamLibraryStore.swift` — owned games. `signInWithQR(auth:)` (primary) + legacy Web-API-key path (`signIn`, dormant fallback).
-- `SteamLibraryView.swift` — onboarding (`SteamSignInView` = QR), library grid.
+- `DepotDownloaderSetupView.swift` / `SteamSignInView.swift` — first-run installation and QR onboarding.
+- `SteamLibraryView.swift` — owned-game library grid and cards.
 - `Paths.swift` — all the Application Support locations, incl. `cloudSyncExecutableURL`, `cloudSaveBackupsDirectory`.
 
 ## 4. Cloud saves — how it works
 
 1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**. Persisted to `steam-cloud-auth.json`. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
-2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
-3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
+2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
+3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side; when timestamps differ but Steam's SHA-1 matches the local content, the unchanged file is skipped. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
 4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
 
 ## 5. Re-auth & rate-limit handling
@@ -68,13 +72,13 @@ Researched June 2026 — a native, movable/resizable macOS window with the green
 
 What we actually do:
 - `BottleStore.launchGameExecutable` runs the game `.exe` **directly** (no `wine explorer /desktop`).
-- `configureWindowMode` writes one real winemac.drv key: `CaptureDisplaysForFullscreen` = N when the toggle is on (fullscreen scales to the current display instead of switching modes → no stretch on odd resolutions) / Y when off (game may take exclusive fullscreen and change resolution).
-- The toggle (`Bottle.useVirtualDesktop`, legacy field name) is surfaced as **"Keep my display resolution"**. Default ON for Steam-app bottles.
+- `configureDisplayMode` writes winemac.drv's `RetinaMode`, Windows `LogPixels` (96/192), and Wine 10's global `HIGHDPIAWARE` compatibility override before restarting the Wine server. Standard uses macOS point dimensions; High Resolution doubles the dimensions exposed to the game. It also pins `CaptureDisplaysForFullscreen` to N so Wine does not switch the macOS display mode.
+- Library games store executable-specific flags in `gameLaunchArguments`. `BottleStore.load` migrates custom values from the old Steam-only field once; unknown legacy display fields in existing JSON are ignored by `Codable`.
 - For a smaller view, the user sets the game's own Windowed video option — the app can't impose it.
 
 ## 7. Dead ends / history (don't redo)
 
-- **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. That's why we use DepotDownloader, not the Steam client. The legacy full-Steam bottle path still exists behind "New Bottle (Manual)" for anyone who installs CrossOver/Whisky.
+- **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. The old manual full-Steam-bottle workflow was removed; use DepotDownloader's per-game path.
 - **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
 - **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
 

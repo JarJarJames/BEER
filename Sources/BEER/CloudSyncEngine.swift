@@ -154,6 +154,11 @@ final class CloudSyncEngine: ObservableObject {
                 if let mtime = fileMTime(target), mtime >= rf.timestamp.addingTimeInterval(-2) {
                     report.skipped += 1; continue
                 }
+                // Wine and some games touch every save on shutdown. Steam's
+                // content hash is authoritative when only metadata changed.
+                if localFileMatchesRemote(target, remote: rf) {
+                    report.skipped += 1; continue
+                }
                 downloads.append(.init(filename: rf.filename, out: target))
             }
         }
@@ -186,6 +191,9 @@ final class CloudSyncEngine: ObservableObject {
                     let remoteName: String
                     if let existing = remoteByLocalPath[fileURL.path] {
                         if localMTime <= existing.timestamp.addingTimeInterval(2) { report.skipped += 1; continue }
+                        if localFileMatchesRemote(fileURL, remote: existing) {
+                            report.skipped += 1; continue
+                        }
                         remoteName = existing.filename
                     } else if let prefix = remoteDirByLocalDir[dir.path] {
                         remoteName = prefix.isEmpty ? fileURL.lastPathComponent : "\(prefix)/\(fileURL.lastPathComponent)"
@@ -348,6 +356,13 @@ final class CloudSyncEngine: ObservableObject {
 
     private func fileMTime(_ url: URL) -> Date? {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
+    }
+
+    private func localFileMatchesRemote(_ url: URL, remote: CloudRemoteFile) -> Bool {
+        guard let size = (try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize,
+              size == remote.size
+        else { return false }
+        return SHA1Digest.fileMatches(url, remoteDigest: remote.sha)
     }
 
     private func summary(_ r: CloudSyncReport, doPull: Bool, doPush: Bool) -> String {

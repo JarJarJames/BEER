@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.IO.IsolatedStorage;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ProtoBuf;
 using SteamKit2;
 using SteamKit2.Authentication;
 using SteamKit2.Internal;
@@ -28,6 +33,7 @@ using SteamKit2.Internal;
 //   enumerate --appid N
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
+//   prepare-depot-auth --depot-executable <path>
 //
 // Auth (all commands): --token <refreshToken> --account <name>
 //   Prefer --token-file <path> so the token never appears in argv / ps output.
@@ -49,6 +55,24 @@ static class Program
             if (cmd == "auth")
             {
                 await Auth();
+                return 0;
+            }
+
+            // DepotDownloader has no CLI flag for an existing SteamClient
+            // refresh token. Bridge BEER's Keychain-owned token into its
+            // account cache; Swift removes this file as soon as the process
+            // exits and records its path for crash cleanup.
+            if (cmd == "prepare-depot-auth")
+            {
+                var bridgeToken = ReadToken(args);
+                var bridgeAccount = Require(args, "account");
+                var config = PrepareDepotAuth(
+                    Require(args, "depot-executable"), bridgeAccount, bridgeToken);
+                EmitJson(new Dictionary<string, object?>
+                {
+                    ["prepared"] = true,
+                    ["config_path"] = config,
+                });
                 return 0;
             }
 
@@ -101,6 +125,82 @@ static class Program
     }
 
     // MARK: - Commands
+
+    static string PrepareDepotAuth(string depotExecutable, string account, string token)
+    {
+        var configPath = DepotAuthConfigPath(depotExecutable);
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+
+        var settings = new DepotAccountSettings();
+        settings.LoginTokens[account] = token;
+
+        var tempPath = $"{configPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var deflate = new DeflateStream(file, CompressionMode.Compress))
+                Serializer.Serialize(deflate, settings);
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.Move(tempPath, configPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+        return configPath;
+    }
+
+    static string DepotAuthConfigPath(string depotExecutable)
+    {
+        var isolatedRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "IsolatedStorage");
+        Directory.CreateDirectory(isolatedRoot);
+
+        var first = Directory.GetDirectories(isolatedRoot)
+            .FirstOrDefault(path => Path.GetFileName(path).Length == 12);
+        if (first == null)
+        {
+            first = Path.Combine(isolatedRoot, Path.GetRandomFileName());
+            Directory.CreateDirectory(first);
+        }
+        var second = Directory.GetDirectories(first)
+            .FirstOrDefault(path => Path.GetFileName(path).Length == 12);
+        if (second == null)
+        {
+            second = Path.Combine(first, Path.GetRandomFileName());
+            Directory.CreateDirectory(second);
+        }
+
+        var identityHelper = typeof(IsolatedStorageFile).Assembly
+            .GetType("System.Security.IdentityHelper")
+            ?? throw new Exception("Could not locate .NET isolated-storage identity support.");
+        var hashMethod = identityHelper.GetMethod(
+            "GetNormalizedUriHash", BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new Exception("Could not calculate DepotDownloader's isolated-storage identity.");
+        var executableUri = new Uri(Path.GetFullPath(depotExecutable));
+        var hash = hashMethod.Invoke(null, [executableUri]) as string
+            ?? throw new Exception("Could not calculate DepotDownloader's isolated-storage path.");
+
+        return Path.Combine(second, $"Url.{hash}", "AssemFiles", "account.config");
+    }
+
+    [ProtoContract]
+    sealed class DepotAccountSettings
+    {
+        [ProtoMember(2)]
+        public ConcurrentDictionary<string, int> ContentServerPenalty { get; } = new();
+
+        [ProtoMember(4)]
+        public Dictionary<string, string> LoginTokens { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        [ProtoMember(5)]
+        public Dictionary<string, string> GuardData { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+    }
 
     // QR sign-in that yields a SteamClient-audience refresh token (the kind the
     // Cloud client protocol accepts). Emits the challenge URL as JSON so the
@@ -195,58 +295,87 @@ static class Program
 
     // Process many downloads/uploads in ONE logged-on session. Spawning a fresh
     // process (= fresh Steam logon) per file gets the account throttled by the
-    // CM after ~100 logons; batching keeps it to a single logon per sync.
+    // CM after ~100 logons; batching keeps it to a single logon per sync. File
+    // transfers are bounded so high-file-count games do not pay every Steam +
+    // HTTP round trip serially, without flooding the service.
     static async Task Batch(SteamSession s, uint appid, string jobsPath)
     {
         using var doc = JsonDocument.Parse(await File.ReadAllTextAsync(jobsPath));
         var root = doc.RootElement;
         int downloaded = 0, uploaded = 0, failed = 0;
+        using var http = NewHttpClient();
 
         if (root.TryGetProperty("downloads", out var dls))
         {
-            foreach (var d in dls.EnumerateArray())
+            var jobs = dls.EnumerateArray()
+                .Select(d => (
+                    Filename: d.GetProperty("filename").GetString()!,
+                    OutputPath: d.GetProperty("out").GetString()!))
+                .ToList();
+            await RunTransfers(jobs, async d =>
             {
-                var filename = d.GetProperty("filename").GetString()!;
-                var outp = d.GetProperty("out").GetString()!;
                 try
                 {
-                    await DownloadCore(s, appid, filename, outp);
-                    downloaded++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = filename, ["ok"] = true });
+                    await DownloadCore(s, appid, d.Filename, d.OutputPath, http);
+                    Interlocked.Increment(ref downloaded);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = d.Filename, ["ok"] = true });
                 }
                 catch (Exception ex)
                 {
-                    failed++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = filename, ["error"] = ex.Message });
+                    Interlocked.Increment(ref failed);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "download", ["filename"] = d.Filename, ["error"] = ex.Message });
                 }
-            }
+            });
         }
 
         if (root.TryGetProperty("uploads", out var uls))
         {
-            foreach (var u in uls.EnumerateArray())
+            var jobs = uls.EnumerateArray()
+                .Select(u => (
+                    Filename: u.GetProperty("filename").GetString()!,
+                    InputPath: u.GetProperty("in").GetString()!,
+                    MTime: u.GetProperty("mtime").GetInt64()))
+                .ToList();
+            await RunTransfers(jobs, async u =>
             {
-                var filename = u.GetProperty("filename").GetString()!;
-                var inp = u.GetProperty("in").GetString()!;
-                var mtime = u.GetProperty("mtime").GetInt64();
                 try
                 {
-                    await UploadCore(s, appid, filename, inp, mtime);
-                    uploaded++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = filename, ["ok"] = true });
+                    await UploadCore(s, appid, u.Filename, u.InputPath, u.MTime, http);
+                    Interlocked.Increment(ref uploaded);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = u.Filename, ["ok"] = true });
                 }
                 catch (Exception ex)
                 {
-                    failed++;
-                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = filename, ["error"] = ex.Message });
+                    Interlocked.Increment(ref failed);
+                    EmitJson(new Dictionary<string, object?> { ["op"] = "upload", ["filename"] = u.Filename, ["error"] = ex.Message });
                 }
-            }
+            });
         }
 
         EmitJson(new Dictionary<string, object?> { ["summary"] = true, ["downloaded"] = downloaded, ["uploaded"] = uploaded, ["failed"] = failed });
     }
 
+    const int MaxConcurrentTransfers = 4;
+
+    static async Task RunTransfers<T>(IEnumerable<T> jobs, Func<T, Task> transfer)
+    {
+        using var gate = new SemaphoreSlim(MaxConcurrentTransfers);
+        var tasks = jobs.Select(async job =>
+        {
+            await gate.WaitAsync();
+            try { await transfer(job); }
+            finally { gate.Release(); }
+        });
+        await Task.WhenAll(tasks);
+    }
+
     static async Task DownloadCore(SteamSession s, uint appid, string filename, string outPath)
+    {
+        using var http = NewHttpClient();
+        await DownloadCore(s, appid, filename, outPath, http);
+    }
+
+    static async Task DownloadCore(SteamSession s, uint appid, string filename, string outPath, HttpClient http)
     {
         var job = s.Cloud.ClientFileDownload(new CCloud_ClientFileDownload_Request
         {
@@ -269,7 +398,6 @@ static class Program
         foreach (var h in body.request_headers)
             req.Headers.TryAddWithoutValidation(h.name, h.value);
 
-        using var http = NewHttpClient();
         using var httpResp = await http.SendAsync(req);
         httpResp.EnsureSuccessStatusCode();
         var bytes = await httpResp.Content.ReadAsByteArrayAsync();
@@ -284,6 +412,12 @@ static class Program
     }
 
     static async Task UploadCore(SteamSession s, uint appid, string filename, string inPath, long mtime)
+    {
+        using var http = NewHttpClient();
+        await UploadCore(s, appid, filename, inPath, mtime, http);
+    }
+
+    static async Task UploadCore(SteamSession s, uint appid, string filename, string inPath, long mtime, HttpClient http)
     {
         var data = await File.ReadAllBytesAsync(inPath);
         var sha1 = SHA1.HashData(data); // Steam keys cloud files by SHA1 of contents.
@@ -304,7 +438,6 @@ static class Program
         if (begin.Body.encrypt_file)
             throw new Exception("Steam requires an encrypted upload for this file; not supported. Aborting before any commit so nothing is corrupted.");
 
-        using var http = NewHttpClient();
         foreach (var block in begin.Body.block_requests)
         {
             var scheme = block.use_https ? "https" : "http";
@@ -394,8 +527,13 @@ static class Program
         return d;
     }
 
+    static readonly object JsonOutputLock = new();
+
     static void EmitJson(object o)
-        => Console.WriteLine(JsonSerializer.Serialize(o));
+    {
+        lock (JsonOutputLock)
+            Console.WriteLine(JsonSerializer.Serialize(o));
+    }
 }
 
 // Owns a logged-on SteamClient + the Cloud unified service. Pumps callbacks on

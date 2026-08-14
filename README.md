@@ -18,18 +18,19 @@ fit better than Docker-style containers.
 - **Install per game** — downloads each game with [DepotDownloader](https://github.com/SteamRE/DepotDownloader)
   into its own Wine bottle, drops in the Goldberg/GBE Steamworks shim where needed,
   and runs it on Apple's Game Porting Toolkit (GPTK) Wine.
-- **Display handling** — a per-game "Keep my display resolution" option makes
-  fullscreen scale to your current resolution instead of switching modes (no
-  stretching on unusual Mac resolutions). Note: GPTK runs games borderless and
-  owns the window itself, so there's no macOS title bar or green fullscreen
-  button — use the game's own Windowed video option for a smaller view.
+- **Display handling** — choose Standard mode for performance and compatibility,
+  or High Resolution mode to expose Retina resolutions to games. Note: GPTK runs
+  games borderless and owns the window itself, so there's no macOS title bar or
+  green fullscreen button.
+- **Per-game launch arguments** — add engine or compatibility flags from the
+  installed game's page; arguments are passed directly to its executable.
 - **Cloud saves** — saves sync both ways with Steam Cloud automatically (pull before
   play, push after). Every sync backs up local saves first, so nothing is overwritten
   without a recoverable copy.
 
 This does **not** run the real Steam client and does not bypass DRM, anti-cheat, or
-platform restrictions. (A legacy "run the Steam client in Wine" path still exists
-behind Compatibility → New Manual Bottle, but it's parked — see `HANDOFF.md` §7.)
+platform restrictions. Games are downloaded individually and run in isolated
+per-game bottles.
 
 ## Run (development)
 

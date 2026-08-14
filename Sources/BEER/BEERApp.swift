@@ -30,12 +30,7 @@ struct BEERApp: App {
     @StateObject private var runtimeInstaller = RuntimeInstaller()
     @StateObject private var library = SteamLibraryStore()
     @StateObject private var depotDownloader = DepotDownloaderInstaller()
-    @StateObject private var depotCtl = DepotDownloaderController()
-    @StateObject private var downloads = DownloadsStore()
-    @StateObject private var goldberg = GoldbergInstaller()
     @StateObject private var cloudAuth = SteamAuthStore()
-    @StateObject private var cloudSync = CloudSyncEngine()
-    @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
 
     var body: some Scene {
         WindowGroup {
@@ -45,12 +40,7 @@ struct BEERApp: App {
                 .environmentObject(runtimeInstaller)
                 .environmentObject(library)
                 .environmentObject(depotDownloader)
-                .environmentObject(depotCtl)
-                .environmentObject(downloads)
-                .environmentObject(goldberg)
                 .environmentObject(cloudAuth)
-                .environmentObject(cloudSync)
-                .environmentObject(graphicsTranslator)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -58,10 +48,7 @@ struct BEERApp: App {
                     await detector.refresh()
                     depotDownloader.refresh()
                     library.load()
-                    depotCtl.load()
-                    goldberg.refresh()
                     cloudAuth.load()
-                    graphicsTranslator.refresh()
                 }
         }
         .windowStyle(.titleBar)

@@ -4,16 +4,9 @@ import Foundation
 @MainActor
 final class BottleStore: ObservableObject {
     @Published private(set) var bottles: [Bottle] = []
-    @Published var selectedBottleID: Bottle.ID?
     @Published private(set) var logs: [Bottle.ID: [BottleLogEntry]] = [:]
     @Published private(set) var activeBottleIDs: Set<Bottle.ID> = []
-    @Published private(set) var webHelperHealth: [Bottle.ID: WebHelperHealth] = [:]
     @Published var lastError: String?
-
-    var selectedBottle: Bottle? {
-        guard let selectedBottleID else { return bottles.first }
-        return bottles.first { $0.id == selectedBottleID } ?? bottles.first
-    }
 
     func load() async {
         do {
@@ -25,20 +18,26 @@ final class BottleStore: ObservableObject {
             let data = try Data(contentsOf: AppPaths.metadataURL)
             bottles = try JSONDecoder.gamenative.decode([Bottle].self, from: data)
 
+            var metadataChanged = false
+
+            // Older Library bottles stored game flags in the Steam-only field.
+            // Move custom values once, then keep the two launch paths separate.
+            for index in bottles.indices where bottles[index].migrateLegacyLibraryLaunchArguments() {
+                metadataChanged = true
+            }
+
             // One-time fix-up after the GameNativeMac → BEER rename: rewrite any
             // stored absolute paths still pointing at the old support dir.
             let current = AppPaths.applicationSupport.path
             let legacy = AppPaths.applicationSupport.deletingLastPathComponent()
                 .appendingPathComponent("GameNativeMac", isDirectory: true).path
             if legacy != current {
-                var migrated = false
                 for i in bottles.indices where bottles[i].rewriteStoragePaths(from: legacy, to: current) {
-                    migrated = true
+                    metadataChanged = true
                 }
-                if migrated { await save() }
             }
+            if metadataChanged { await save() }
 
-            selectedBottleID = bottles.first?.id
             loadPersistedLogs()
         } catch {
             lastError = "Could not load bottles: \(error.localizedDescription)"
@@ -48,9 +47,8 @@ final class BottleStore: ObservableObject {
     @discardableResult
     func createBottle(name: String, runtime: RuntimeCandidate, graphicsBackend: GraphicsBackend) async -> Bottle {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let bottle = Bottle.make(name: trimmed.isEmpty ? "Steam Bottle" : trimmed, runtime: runtime, graphicsBackend: graphicsBackend)
+        let bottle = Bottle.make(name: trimmed.isEmpty ? "Game" : trimmed, runtime: runtime, graphicsBackend: graphicsBackend)
         bottles.insert(bottle, at: 0)
-        selectedBottleID = bottle.id
         appendLog("Created metadata for \(bottle.name).", bottleID: bottle.id)
         await save()
         await initializeBottle(bottle)
@@ -97,28 +95,16 @@ final class BottleStore: ObservableObject {
         )
     }
 
-    func installSteam(in bottle: Bottle, installerURL: URL) async {
-        await runBottleCommand(
-            bottle,
-            operation: "Installing Steam",
-            mode: .wine(arguments: [installerURL.path])
-        )
-    }
-
     /// Launch a specific .exe (Wine-style path like `C:\Games\Hades\x64\Hades.exe`)
     /// inside the bottle's prefix. Used by the per-game Library flow once
     /// the game is installed.
     ///
     /// We run the game's .exe directly (no `wine explorer /desktop` wrapper).
-    /// The Wine macOS driver (winemac.drv) then gives the game a REAL native
-    /// macOS window — movable, resizable, with a working green fullscreen
-    /// button — instead of the borderless, un-movable "virtual desktop" the
-    /// /desktop wrapper produced. `configureWindowMode` sets the driver's
-    /// registry so windows are decorated and fullscreen never changes the
-    /// display resolution (no stretching on odd Mac resolutions).
+    /// `configureDisplayMode` applies the selected Wine Mac driver resolution
+    /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
-        await configureWindowMode(bottle)
+        await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
         if let arguments, !arguments.isEmpty {
@@ -131,25 +117,54 @@ final class BottleStore: ObservableObject {
         )
     }
 
-    /// Apply the winemac.drv window settings for this bottle before launch.
-    ///   • CaptureDisplaysForFullscreen = N when the toggle is on → Wine never
-    ///     switches the macOS display mode, so fullscreen scales to the screen
-    ///     instead of changing resolution. Off → the game may capture the
-    ///     display for classic exclusive fullscreen.
-    /// Note: GPTK does NOT give games native macOS window chrome (no title bar
-    /// or traffic-light buttons) — the game controls its own window. There is
-    /// no winemac.drv "Decorated" key on macOS, so we don't try to set one.
-    private func configureWindowMode(_ bottle: Bottle) async {
-        let capture = bottle.effectiveUseVirtualDesktop ? "N" : "Y"
-        // Use `reg add` (no temp .reg file) — robust across Wine builds.
-        // Importing a .reg via a unix path fails on mainline Wine's regedit.
+    /// High Resolution mirrors CrossOver's mode: Retina backing, 192 DPI, and a
+    /// Wine 10 compatibility override so games misclassified as DPI-unaware are
+    /// not silently pixel-doubled back to Standard dimensions.
+    private func configureDisplayMode(_ bottle: Bottle) async {
+        let highResolution = bottle.effectiveDisplayResolutionMode == .highResolution
+        let retina = highResolution ? "Y" : "N"
+        let logPixels = highResolution ? "192" : "96"
+        let dpiAwareness = highResolution ? "~ HIGHDPIAWARE" : ""
+
         await runBottleCommand(
             bottle,
-            operation: "Configuring window mode",
+            operation: "Configuring display capture",
             mode: .wine(arguments: [
                 "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
-                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", capture, "/f"
+                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", "N", "/f"
             ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring \(bottle.effectiveDisplayResolutionMode.label) mode",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
+                "/v", "RetinaMode", "/t", "REG_SZ", "/d", retina, "/f"
+            ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring display DPI",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Control Panel\Desktop"#,
+                "/v", "LogPixels", "/t", "REG_DWORD", "/d", logPixels, "/f"
+            ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring DPI awareness",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"#,
+                "/ve", "/t", "REG_SZ", "/d", dpiAwareness, "/f"
+            ])
+        )
+
+        // These values are process-wide. Ensure the game starts in a fresh Wine
+        // session instead of inheriting the mode used by the registry commands.
+        await runBottleCommand(
+            bottle,
+            operation: "Restarting Wine display services",
+            mode: .winebootKill
         )
     }
 
@@ -169,56 +184,10 @@ final class BottleStore: ObservableObject {
         bottles[index].gameInstallDirectory = installDirectory
         bottles[index].gameInstallStatus = .installed
         if let launchArguments, !launchArguments.isEmpty {
-            bottles[index].launchArguments = launchArguments
+            bottles[index].gameLaunchArguments = launchArguments
         }
         bottles[index].updatedAt = Date()
         await save()
-    }
-
-    func launchSteam(in bottle: Bottle) async {
-        resetLog(for: bottle, reason: "Launching Steam")
-        webHelperHealth[bottle.id] = nil
-        scheduleWebHelperHealthChecks(for: bottle)
-        var args = ["C:\\Program Files (x86)\\Steam\\steam.exe"]
-        args.append(contentsOf: bottle.launchArguments.split(separator: " ").map(String.init))
-        await runBottleCommand(
-            bottle,
-            operation: "Launching Steam",
-            mode: .wine(arguments: args)
-        )
-    }
-
-    func launchSteamDiagnostic(in bottle: Bottle) async {
-        resetLog(for: bottle, reason: "Launching Steam with Wine diagnostics")
-        webHelperHealth[bottle.id] = nil
-        scheduleWebHelperHealthChecks(for: bottle)
-        var args = ["C:\\Program Files (x86)\\Steam\\steam.exe"]
-        args.append(contentsOf: bottle.launchArguments.split(separator: " ").map(String.init))
-        await runBottleCommand(
-            bottle,
-            operation: "Launching Steam with Wine diagnostics",
-            mode: .wine(arguments: args),
-            environmentOverrides: [
-                "WINEDEBUG": "+timestamp,+pid,+tid,+seh,+loaddll,+module"
-            ]
-        )
-    }
-
-    func launchSteamBigPicture(in bottle: Bottle) async {
-        resetLog(for: bottle, reason: "Launching Steam (Big Picture / -tenfoot)")
-        webHelperHealth[bottle.id] = nil
-        scheduleWebHelperHealthChecks(for: bottle)
-        var args = ["C:\\Program Files (x86)\\Steam\\steam.exe"]
-        args.append(contentsOf: SteamLaunchDefaults.bigPictureArguments.split(separator: " ").map(String.init))
-        // Append any user-set launch args that don't conflict with -tenfoot.
-        for token in bottle.launchArguments.split(separator: " ").map(String.init) where !args.contains(token) {
-            args.append(token)
-        }
-        await runBottleCommand(
-            bottle,
-            operation: "Launching Steam (Big Picture)",
-            mode: .wine(arguments: args)
-        )
     }
 
     func stopBottleProcesses(_ bottle: Bottle) async {
@@ -230,135 +199,12 @@ final class BottleStore: ObservableObject {
         )
     }
 
-    func restartSteamWithWebHelperFix(_ bottle: Bottle) async {
-        var fixedBottle = bottle
-        fixedBottle.launchArguments = SteamLaunchDefaults.mergedWithWebHelperSafeArguments(bottle.launchArguments)
-        await update(fixedBottle)
-        await stopBottleProcesses(fixedBottle)
-        try? await Task.sleep(for: .seconds(1))
-        await launchSteam(in: fixedBottle)
-    }
-
-    func resetSteamArguments(_ bottle: Bottle) async {
-        var resetBottle = bottle
-        resetBottle.launchArguments = SteamLaunchDefaults.basicArguments
-        await update(resetBottle)
-        appendLog("Reset Steam launch arguments to \(SteamLaunchDefaults.basicArguments).", bottleID: bottle.id)
-    }
-
-    func writeSteamUpdateLock(_ bottle: Bottle) async {
-        let steamDirectory = steamDirectoryURL(for: bottle)
-        let configURL = steamDirectory.appendingPathComponent("steam.cfg")
-
-        do {
-            try FileManager.default.createDirectory(at: steamDirectory, withIntermediateDirectories: true)
-            let contents = """
-            BootStrapperInhibitAll=enable
-            BootStrapperForceSelfUpdate=disable
-
-            """
-            try contents.write(to: configURL, atomically: true, encoding: .utf8)
-            appendLog("Wrote Steam update lock to \(configURL.path).", bottleID: bottle.id)
-        } catch {
-            appendLog("Could not write Steam update lock: \(error.localizedDescription)", bottleID: bottle.id, isError: true)
-            lastError = error.localizedDescription
-        }
-    }
-
-    func removeSteamUpdateLock(_ bottle: Bottle) async {
-        let configURL = steamDirectoryURL(for: bottle).appendingPathComponent("steam.cfg")
-
-        do {
-            guard FileManager.default.fileExists(atPath: configURL.path) else {
-                appendLog("Steam update lock is already removed.", bottleID: bottle.id)
-                return
-            }
-            try FileManager.default.removeItem(at: configURL)
-            appendLog("Removed Steam update lock from \(configURL.path).", bottleID: bottle.id)
-        } catch {
-            appendLog("Could not remove Steam update lock: \(error.localizedDescription)", bottleID: bottle.id, isError: true)
-            lastError = error.localizedDescription
-        }
-    }
-
-    func refreshSteamClientPackage(_ bottle: Bottle) async {
-        resetLog(for: bottle, reason: "Refreshing Steam client package")
-        await stopBottleProcesses(bottle)
-        await removeSteamUpdateLock(bottle)
-
-        let steamDirectory = steamDirectoryURL(for: bottle)
-        let packageURL = steamDirectory.appendingPathComponent("package", isDirectory: true)
-
-        do {
-            if FileManager.default.fileExists(atPath: packageURL.path) {
-                let backupURL = steamDirectory.appendingPathComponent("package.gamenative-backup-\(Int(Date().timeIntervalSince1970))", isDirectory: true)
-                try FileManager.default.moveItem(at: packageURL, to: backupURL)
-                appendLog("Moved Steam package cache to \(backupURL.path).", bottleID: bottle.id)
-            } else {
-                appendLog("No Steam package cache was present.", bottleID: bottle.id)
-            }
-        } catch {
-            appendLog("Could not move Steam package cache: \(error.localizedDescription)", bottleID: bottle.id, isError: true)
-            lastError = error.localizedDescription
-            return
-        }
-
-        await runBottleCommand(
-            bottle,
-            operation: "Forcing Steam client refresh",
-            mode: .wine(arguments: [
-                "C:\\Program Files (x86)\\Steam\\steam.exe",
-                "-forcesteamupdate",
-                "-forcepackagedownload",
-                "-exitsteam"
-            ]),
-            allowWhileActive: true
-        )
-    }
-
-    func downgradeSteamClient(_ bottle: Bottle) async {
-        resetLog(for: bottle, reason: "Downgrading Steam client")
-        await stopBottleProcesses(bottle)
-        await writeSteamUpdateLock(bottle)
-        await runBottleCommand(
-            bottle,
-            operation: "Downgrading Steam client",
-            mode: .wine(arguments: [
-                "C:\\Program Files (x86)\\Steam\\steam.exe",
-                "-forcesteamupdate",
-                "-forcepackagedownload",
-                "-overridepackageurl",
-                "http://web.archive.org/web/20240520if_/media.steampowered.com/client",
-                "-exitsteam"
-            ]),
-            allowWhileActive: true
-        )
-    }
-
     func reveal(_ bottle: Bottle) {
         NSWorkspace.shared.activateFileViewerSelecting([AppPaths.prefixURL(for: bottle)])
     }
 
     func revealLog(_ bottle: Bottle) {
         NSWorkspace.shared.activateFileViewerSelecting([AppPaths.logsURL(for: bottle)])
-    }
-
-    func revealSteamLogs(_ bottle: Bottle) {
-        let url = AppPaths.steamLogsDirectoryURL(for: bottle)
-        if FileManager.default.fileExists(atPath: url.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } else {
-            appendLog("No Steam logs directory yet at \(url.path). Launch Steam first.", bottleID: bottle.id)
-        }
-    }
-
-    func revealSteamLog(_ bottle: Bottle, file: SteamLogFile) {
-        let url = AppPaths.steamLogURL(for: bottle, name: file.rawValue)
-        if FileManager.default.fileExists(atPath: url.path) {
-            NSWorkspace.shared.activateFileViewerSelecting([url])
-        } else {
-            appendLog("Steam log \(file.rawValue) does not exist yet at \(url.path).", bottleID: bottle.id)
-        }
     }
 
     func copyLogToClipboard(_ bottle: Bottle) {
@@ -386,7 +232,6 @@ final class BottleStore: ObservableObject {
             }
             bottles.removeAll { $0.id == bottle.id }
             logs[bottle.id] = nil
-            selectedBottleID = bottles.first?.id
             await save()
         } catch {
             lastError = "Could not delete bottle: \(error.localizedDescription)"
@@ -401,16 +246,23 @@ final class BottleStore: ObservableObject {
         await save()
     }
 
-    /// Synchronous mutation helper so Toggle / Picker bindings can observe
-    /// the change in the next render without the @Published lag that `update`'s
-    /// async wrapper introduces. The disk save is fired off afterward.
-    func mutate(bottleID: UUID, _ apply: (inout Bottle) -> Void) {
-        guard let index = bottles.firstIndex(where: { $0.id == bottleID }) else { return }
-        var copy = bottles[index]
-        apply(&copy)
-        copy.updatedAt = Date()
-        bottles[index] = copy   // synchronous @Published fire
-        Task { await save() }   // best-effort persist
+    /// Schedule a control-originated mutation for the next main run-loop turn.
+    /// SwiftUI may invoke Picker bindings while it is still updating the view;
+    /// publishing synchronously from that setter causes undefined behavior.
+    func scheduleMutation(
+        bottleID: UUID,
+        _ apply: @escaping @MainActor @Sendable (inout Bottle) -> Void
+    ) {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  let index = self.bottles.firstIndex(where: { $0.id == bottleID }) else { return }
+            var copy = self.bottles[index]
+            apply(&copy)
+            copy.updatedAt = Date()
+            self.bottles[index] = copy
+            Task { await self.save() }
+        }
     }
 
     private func runBottleCommand(
@@ -432,9 +284,8 @@ final class BottleStore: ObservableObject {
 
             let command = command(for: bottle, prefix: prefix, mode: mode)
 
-            // Log the exact command we're about to run so issues like "is the
-            // virtual desktop flag actually reaching wine?" are diagnosable
-            // from beer.log instead of guesswork.
+            // Log the exact command we're about to run so launch configuration
+            // issues are diagnosable from beer.log instead of guesswork.
             let renderedArgs = command.arguments
                 .map { $0.contains(" ") ? "\"\($0)\"" : $0 }
                 .joined(separator: " ")
@@ -560,82 +411,6 @@ final class BottleStore: ObservableObject {
             .appendingPathComponent("wineserver")
             .path
         return FileManager.default.isExecutableFile(atPath: sibling) ? sibling : nil
-    }
-
-    private func steamDirectoryURL(for bottle: Bottle) -> URL {
-        AppPaths.steamDirectoryURL(for: bottle)
-    }
-
-    // Steam's UI is rendered by `steamwebhelper.exe` (CEF). On Wine/macOS the
-    // helper often crashes inside Chromium's `NetworkChangeNotifierWin` because
-    // `ws2_32.WSALookupServiceBeginW` is incomplete in vanilla Wine / GPTK. The
-    // helper dies, Steam respawns it, and the loop continues forever — the
-    // parent Wine process stays alive and looks "healthy" so the launch never
-    // reports a failure.
-    //
-    // We fire three checks (+15s, +45s, +90s after launch). Each one reads
-    // `steamui_html.txt` and counts recent webhelper start/shutdown events,
-    // plus grabs the tail of `cef_log.txt` for the actual error snippet. We
-    // only log the warning once per launch (when state transitions to
-    // crash-looping) so the UI doesn't fill up with duplicate messages.
-    private func scheduleWebHelperHealthChecks(for bottle: Bottle) {
-        let bottleID = bottle.id
-        for delay in [15, 45, 90] {
-            Task { [weak self] in
-                try? await Task.sleep(for: .seconds(delay))
-                self?.checkWebHelperHealth(bottleID: bottleID, isFinal: delay == 90)
-            }
-        }
-    }
-
-    private func checkWebHelperHealth(bottleID: Bottle.ID, isFinal: Bool) {
-        guard let bottle = bottles.first(where: { $0.id == bottleID }) else { return }
-
-        let uiLogURL = AppPaths.steamLogURL(for: bottle, name: SteamLogFile.steamui.rawValue)
-        let cefLogURL = AppPaths.steamLogURL(for: bottle, name: SteamLogFile.cef.rawValue)
-
-        guard let uiLog = readTail(of: uiLogURL, lines: 400) else {
-            if isFinal {
-                appendLog("Webhelper health: \(SteamLogFile.steamui.rawValue) is missing. Steam may not have started.", bottleID: bottleID)
-            }
-            return
-        }
-
-        let started = uiLog.filter { $0.contains("Started webhelper process") }.count
-        let shutdown = uiLog.filter { $0.contains("Shutting down webhelper process") }.count
-        // Threshold: ≥2 start/shutdown pairs is enough to call it a loop. A
-        // healthy Steam starts exactly one webhelper and keeps it alive.
-        let isLooping = started >= 2 && shutdown >= 2
-
-        let snippet = (readTail(of: cefLogURL, lines: 8) ?? [])
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-        let next = WebHelperHealth(restartCount: started, lastCEFError: snippet.isEmpty ? nil : snippet)
-        let previous = webHelperHealth[bottleID]
-        webHelperHealth[bottleID] = next
-
-        // Only log on a transition (or on the final check, so the user always
-        // gets a definitive answer).
-        let wasLooping = previous?.isCrashLooping ?? false
-        if isLooping && !wasLooping {
-            appendLog(
-                "Steam UI failed to render: steamwebhelper.exe restarted \(started) times. Almost certainly Wine's ws2_32.WSALookupServiceBeginW failing — see cef_log.txt and the banner above for options.",
-                bottleID: bottleID,
-                isError: true
-            )
-        } else if isFinal && !isLooping && previous == nil {
-            appendLog("Webhelper looks stable (\(started) start / \(shutdown) shutdown events).", bottleID: bottleID)
-        }
-    }
-
-    private func readTail(of url: URL, lines: Int) -> [String]? {
-        guard let data = try? Data(contentsOf: url),
-              let text = String(data: data, encoding: .utf8) else {
-            return nil
-        }
-        return text.split(separator: "\n", omittingEmptySubsequences: true)
-            .suffix(lines)
-            .map(String.init)
     }
 
     private func environment(for bottle: Bottle, prefix: URL) -> [String: String] {
