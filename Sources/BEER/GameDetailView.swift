@@ -22,6 +22,7 @@ struct GameDetailView: View {
     @State private var patchStatusMessage: String?
     @State private var patchStatusIsError: Bool = false
     @State private var isPatching: Bool = false
+    @State private var isAdvancedExpanded: Bool = false
     /// Bumped after every Apply/Restore so the patch-status row re-reads
     /// the install dir from disk.
     @State private var patchProbeTick: Int = 0
@@ -192,7 +193,7 @@ struct GameDetailView: View {
                 }
 
                 if detector.candidates.isEmpty {
-                    Text("No Wine runtime available. Open Compatibility → Runtime Manager.")
+                    Text("No Wine runtime available. Open Runtime Manager in the sidebar.")
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -241,28 +242,155 @@ struct GameDetailView: View {
     private var installedDetails: some View {
         if let bottle = installedBottle {
             VStack(alignment: .leading, spacing: 10) {
-                Text("Compatibility").font(.headline)
+                Text("Game Settings").font(.headline)
                 runtimeRow(bottle: bottle)
                 graphicsRow(bottle: bottle)
-                if let exe = bottle.gameLaunchExecutable {
-                    LabeledValue(key: "Launch executable", value: exe)
-                }
-                if let installDir = resolvedInstallDirectory(for: bottle) {
-                    LabeledValue(key: "Install location", value: installDir.path)
-                }
-                LabeledValue(key: "Bottle path", value: AppPaths.prefixURL(for: bottle).path)
-
                 displayModeRow(bottle: bottle)
                 gameLaunchArgumentsRow(bottle: bottle)
                 steamEmulatorRow(bottle: bottle)
                 steamCloudRow(bottle: bottle)
 
-                Text("Changing the runtime swaps the Wine build this game runs on — useful if a game crashes on GPTK (try a mainline-Wine runtime). For other advanced tweaks, use the Compatibility tab.")
+                DisclosureGroup(isExpanded: $isAdvancedExpanded) {
+                    advancedSettings(bottle: bottle)
+                        .padding(.top, 10)
+                } label: {
+                    Label("Advanced", systemImage: "gearshape.2")
+                        .font(.headline)
+                }
+                .padding(.top, 6)
+
+                Text("Changing the runtime swaps the Wine build this game runs on. Install additional Wine or GPTK versions from Runtime Manager in the sidebar.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+
+    @ViewBuilder
+    private func advancedSettings(bottle: Bottle) -> some View {
+        let bottleID = bottle.id
+        let liveBottle = bottles.bottles.first(where: { $0.id == bottleID }) ?? bottle
+        let isBusy = bottles.activeBottleIDs.contains(bottleID)
+        let logEntries = bottles.logs[bottleID] ?? []
+
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Windows version")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 130, alignment: .leading)
+                TextField("win10", text: Binding(
+                    get: {
+                        bottles.bottles.first(where: { $0.id == bottleID })?.windowsVersion
+                            ?? liveBottle.windowsVersion
+                    },
+                    set: { newValue in
+                        bottles.mutate(bottleID: bottleID) { $0.windowsVersion = newValue }
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 180)
+                Spacer()
+            }
+
+            HStack(alignment: .top, spacing: 12) {
+                Text("Notes")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 130, alignment: .leading)
+                TextField("Compatibility notes", text: Binding(
+                    get: {
+                        bottles.bottles.first(where: { $0.id == bottleID })?.notes
+                            ?? liveBottle.notes
+                    },
+                    set: { newValue in
+                        bottles.mutate(bottleID: bottleID) { $0.notes = newValue }
+                    }
+                ), axis: .vertical)
+                .textFieldStyle(.roundedBorder)
+                .lineLimit(2...4)
+                .frame(maxWidth: 520)
+                Spacer()
+            }
+
+            Divider()
+
+            if let exe = liveBottle.gameLaunchExecutable {
+                LabeledValue(key: "Launch executable", value: exe)
+            }
+            if let installDir = resolvedInstallDirectory(for: liveBottle) {
+                LabeledValue(key: "Install location", value: installDir.path)
+            }
+            LabeledValue(key: "Bottle path", value: AppPaths.prefixURL(for: liveBottle).path)
+            LabeledValue(key: "Runtime path", value: liveBottle.runtimeLocationPath)
+
+            HStack(spacing: 10) {
+                Button {
+                    Task { await bottles.initializeBottle(liveBottle) }
+                } label: {
+                    Label("Repair Prefix", systemImage: "wrench.adjustable")
+                }
+                .disabled(isBusy)
+
+                Button {
+                    Task { await bottles.stopBottleProcesses(liveBottle) }
+                } label: {
+                    Label("Stop Processes", systemImage: "stop.fill")
+                }
+
+                Button {
+                    bottles.reveal(liveBottle)
+                } label: {
+                    Label("Reveal Bottle", systemImage: "folder")
+                }
+
+                Button {
+                    bottles.copyLogToClipboard(liveBottle)
+                } label: {
+                    Label("Copy Log", systemImage: "doc.on.doc")
+                }
+
+                Button {
+                    bottles.revealLog(liveBottle)
+                } label: {
+                    Label("Reveal Log", systemImage: "doc.text.magnifyingglass")
+                }
+            }
+            .controlSize(.small)
+
+            Text("Repair reinitializes the Wine prefix without reinstalling the game. Stop ends processes running inside this bottle.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            DisclosureGroup("Wine log") {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 6) {
+                        ForEach(logEntries) { entry in
+                            Text(entry.message)
+                                .font(.system(.caption, design: .monospaced))
+                                .foregroundStyle(entry.isError ? .red : .primary)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .padding(10)
+                }
+                .frame(minHeight: 120, maxHeight: 240)
+                .background(Color(nsColor: .textBackgroundColor))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay {
+                    if logEntries.isEmpty {
+                        Text("No log output yet.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(.top, 6)
+            }
+            .font(.callout)
+        }
+        .padding(14)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
     }
 
     @ViewBuilder

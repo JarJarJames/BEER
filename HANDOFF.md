@@ -38,11 +38,9 @@ Two halves:
 
 - `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
 - `ContentView.swift` — onboarding router, sidebar, and the library/detail navigation boundary.
-- `GameDetailView.swift` — Steam game hero, install/play actions, compatibility summary, and auto cloud sync: **pull before play, push after exit**.
+- `GameDetailView.swift` — game hero, install/play actions, per-game runtime/graphics/display/cloud controls, collapsible advanced bottle settings, and auto cloud sync: **pull before play, push after exit**.
 - `DownloadsView.swift` — active and completed download UI.
-- `CompatibilityViews.swift` — compatibility overview and navigation.
-- `RuntimeManagerView.swift` / `RuntimeMenuView.swift` — runtime installation and per-bottle selection.
-- `BottleDetailView.swift` — advanced per-game-bottle runtime, graphics, and file settings.
+- `RuntimeManagerView.swift` — sidebar destination for installing Wine/GPTK runtimes and graphics translators.
 - `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.

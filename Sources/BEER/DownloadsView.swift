@@ -106,6 +106,5 @@ private struct DownloadRow: View {
     }
 }
 
-// MARK: - Compatibility pane (power-user bottle access)
-
+// MARK: - Download detail
 

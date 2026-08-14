@@ -22,7 +22,7 @@ enum GoldbergPatchError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .stubsMissing:
-            return "The Steam emulator binaries weren't found. Open the Compatibility tab and reinstall the Steam emulator."
+            return "The Steam emulator binaries weren't found. Reapply it from this game's settings."
         case .unreadableInstallDir(let path):
             return "Could not read the game's install directory at \(path)."
         case .noSteamApiFound:

@@ -4,9 +4,8 @@ import SwiftUI
 
 // ContentView is just a router. Onboarding flows take over the entire window
 // until the user has DepotDownloader installed and is signed in. After that, the
-// main app shell (sidebar + content) takes over. Bottles are never shown to
-// users on the primary path — they live behind the Compatibility sidebar
-// item, for power users.
+// main app shell (sidebar + content) takes over. Bottle-specific controls live
+// in each installed game's Advanced section; the sidebar manages runtimes.
 struct ContentView: View {
     @EnvironmentObject private var depot: DepotDownloaderInstaller
     @EnvironmentObject private var library: SteamLibraryStore
@@ -66,7 +65,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
     case library
     case installed
     case downloads
-    case compatibility
+    case runtimes
 
     var id: String { rawValue }
 
@@ -75,7 +74,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
         case .library: "Library"
         case .installed: "Installed"
         case .downloads: "Downloads"
-        case .compatibility: "Compatibility"
+        case .runtimes: "Runtime Manager"
         }
     }
 
@@ -84,7 +83,7 @@ enum AppSidebarItem: String, Hashable, CaseIterable, Identifiable {
         case .library: "rectangle.stack.fill"
         case .installed: "internaldrive.fill"
         case .downloads: "arrow.down.circle"
-        case .compatibility: "wineglass"
+        case .runtimes: "shippingbox.fill"
         }
     }
 }
@@ -174,8 +173,8 @@ struct MainShellView: View {
                 DownloadsPane()
                     .environmentObject(depotController)
                     .environmentObject(downloads)
-            case .compatibility:
-                CompatibilityPane()
+            case .runtimes:
+                RuntimeManagerView()
                     .environmentObject(graphicsTranslator)
             }
         }

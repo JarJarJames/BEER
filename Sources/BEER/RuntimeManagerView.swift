@@ -1,48 +1,29 @@
 import SwiftUI
 
-struct RuntimeSummaryView: View {
-    @EnvironmentObject private var detector: ToolchainDetector
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Runtime")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            if detector.isRefreshing {
-                Label("Scanning...", systemImage: "magnifyingglass")
-                    .font(.callout)
-            } else if detector.candidates.isEmpty {
-                Label("No Wine runtime found", systemImage: "exclamationmark.triangle")
-                    .font(.callout)
-                    .foregroundStyle(.orange)
-            } else {
-                Label("\(detector.candidates.count) available", systemImage: "checkmark.circle")
-                    .font(.callout)
-                    .foregroundStyle(.green)
-            }
-        }
-    }
-}
-
 struct RuntimeManagerView: View {
-    @Environment(\.dismiss) private var dismiss
     @EnvironmentObject private var detector: ToolchainDetector
     @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
     @EnvironmentObject private var translators: GraphicsTranslatorInstaller
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            HStack {
+            HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Runtime Manager")
-                        .font(.title2.bold())
-                    Text("Download Game Porting Toolkit versions. Different games run best on different builds — assign one per game in its Compatibility section.")
+                        .font(.largeTitle.bold())
+                    Text("Install and manage Wine and Game Porting Toolkit runtimes. Assign a runtime to a game from that game's settings.")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
-                Button("Done") { dismiss() }
+                if detector.isRefreshing {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Label("\(detector.candidates.count) detected", systemImage: "checkmark.circle")
+                        .font(.callout)
+                        .foregroundStyle(detector.candidates.isEmpty ? .orange : .green)
+                }
             }
 
             HStack {
@@ -105,19 +86,18 @@ struct RuntimeManagerView: View {
                     }
                 }
             }
-            .frame(maxHeight: 340)
-
             Text(runtimeInstaller.statusMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(24)
-        .frame(width: 640)
+        .padding(28)
+        .frame(maxWidth: 900, maxHeight: .infinity, alignment: .topLeading)
         .task {
             if runtimeInstaller.availableReleases.isEmpty {
                 await runtimeInstaller.refresh()
             }
+            await detector.refresh()
         }
     }
 
@@ -181,5 +161,4 @@ struct RuntimeManagerView: View {
         .padding(.vertical, 8)
     }
 }
-
 

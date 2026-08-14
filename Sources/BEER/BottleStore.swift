@@ -4,15 +4,9 @@ import Foundation
 @MainActor
 final class BottleStore: ObservableObject {
     @Published private(set) var bottles: [Bottle] = []
-    @Published var selectedBottleID: Bottle.ID?
     @Published private(set) var logs: [Bottle.ID: [BottleLogEntry]] = [:]
     @Published private(set) var activeBottleIDs: Set<Bottle.ID> = []
     @Published var lastError: String?
-
-    var selectedBottle: Bottle? {
-        guard let selectedBottleID else { return bottles.first }
-        return bottles.first { $0.id == selectedBottleID } ?? bottles.first
-    }
 
     func load() async {
         do {
@@ -44,7 +38,6 @@ final class BottleStore: ObservableObject {
             }
             if metadataChanged { await save() }
 
-            selectedBottleID = bottles.first(where: { $0.steamAppID != nil })?.id
             loadPersistedLogs()
         } catch {
             lastError = "Could not load bottles: \(error.localizedDescription)"
@@ -56,7 +49,6 @@ final class BottleStore: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let bottle = Bottle.make(name: trimmed.isEmpty ? "Game" : trimmed, runtime: runtime, graphicsBackend: graphicsBackend)
         bottles.insert(bottle, at: 0)
-        selectedBottleID = bottle.id
         appendLog("Created metadata for \(bottle.name).", bottleID: bottle.id)
         await save()
         await initializeBottle(bottle)
@@ -240,7 +232,6 @@ final class BottleStore: ObservableObject {
             }
             bottles.removeAll { $0.id == bottle.id }
             logs[bottle.id] = nil
-            selectedBottleID = bottles.first?.id
             await save()
         } catch {
             lastError = "Could not delete bottle: \(error.localizedDescription)"
