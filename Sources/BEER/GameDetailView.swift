@@ -153,12 +153,11 @@ struct GameDetailView: View {
                 .controlSize(.large)
                 .disabled(bottles.activeBottleIDs.contains(bottle.id))
 
-                Button(action: { bottles.reveal(bottle) }) {
-                    Label("Reveal Files", systemImage: "folder")
-                }
-                .controlSize(.large)
-
                 Menu {
+                    Button(action: { bottles.reveal(bottle) }) {
+                        Label("Reveal Files", systemImage: "folder")
+                    }
+                    Divider()
                     Button("Reinstall / Validate", action: startInstallOrLogin)
                     Button("Uninstall", role: .destructive, action: uninstall)
                 } label: {
@@ -485,7 +484,8 @@ struct GameDetailView: View {
                 .labelsHidden()
                 .pickerStyle(.segmented)
                 .controlSize(.small)
-                .frame(width: 240)
+                .fixedSize()
+                .frame(width: 240, alignment: .leading)
 
                 Spacer()
             }
@@ -596,10 +596,9 @@ struct GameDetailView: View {
                         Label("Restore original Steam DLLs", systemImage: "arrow.uturn.backward")
                     }
                 } label: {
-                    Label("Manage", systemImage: "ellipsis.circle")
+                    Image(systemName: "ellipsis.circle")
                 }
-                .menuStyle(.borderedButton)
-                .controlSize(.small)
+                .menuStyle(.borderlessButton)
                 .fixedSize()
                 .disabled(isPatching)
             case .noDLLsFound, .installDirMissing:
