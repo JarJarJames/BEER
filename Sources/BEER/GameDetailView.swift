@@ -301,7 +301,7 @@ struct GameDetailView: View {
                             ?? liveBottle.windowsVersion
                     },
                     set: { newValue in
-                        bottles.mutate(bottleID: bottleID) { $0.windowsVersion = newValue }
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.windowsVersion = newValue }
                     }
                 ))
                 .textFieldStyle(.roundedBorder)
@@ -320,7 +320,7 @@ struct GameDetailView: View {
                             ?? liveBottle.notes
                     },
                     set: { newValue in
-                        bottles.mutate(bottleID: bottleID) { $0.notes = newValue }
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.notes = newValue }
                     }
                 ), axis: .vertical)
                 .textFieldStyle(.roundedBorder)
@@ -423,7 +423,7 @@ struct GameDetailView: View {
                     get: { bottles.bottles.first(where: { $0.id == bottleID })?.runtimeLocationPath ?? bottle.runtimeLocationPath },
                     set: { newID in
                         guard let runtime = detector.candidates.first(where: { $0.id == newID }) else { return }
-                        bottles.mutate(bottleID: bottleID) { $0.useRuntime(runtime) }
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.useRuntime(runtime) }
                     }
                 )) {
                     ForEach(detector.candidates) { rt in
@@ -445,7 +445,7 @@ struct GameDetailView: View {
                 .frame(width: 130, alignment: .leading)
             Picker("Graphics", selection: Binding(
                 get: { bottles.bottles.first(where: { $0.id == bottleID })?.effectiveGraphicsBackend ?? bottle.effectiveGraphicsBackend },
-                set: { newValue in bottles.mutate(bottleID: bottleID) { $0.graphicsBackend = newValue } }
+                set: { newValue in bottles.scheduleMutation(bottleID: bottleID) { $0.graphicsBackend = newValue } }
             )) {
                 ForEach(bottle.availableGraphicsBackends) { Text($0.label).tag($0) }
             }
@@ -475,7 +475,7 @@ struct GameDetailView: View {
                         bottles.bottles.first(where: { $0.id == bottleID })?.effectiveDisplayResolutionMode ?? resolutionMode
                     },
                     set: { newValue in
-                        bottles.mutate(bottleID: bottleID) { $0.displayResolutionMode = newValue }
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.displayResolutionMode = newValue }
                     }
                 )) {
                     ForEach(DisplayResolutionMode.allCases) { mode in
@@ -517,7 +517,7 @@ struct GameDetailView: View {
                             ?? bottle.effectiveGameLaunchArguments
                     },
                     set: { newValue in
-                        bottles.mutate(bottleID: bottleID) { $0.gameLaunchArguments = newValue }
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.gameLaunchArguments = newValue }
                     }
                 ))
                 .textFieldStyle(.roundedBorder)

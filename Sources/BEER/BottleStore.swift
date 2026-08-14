@@ -246,16 +246,23 @@ final class BottleStore: ObservableObject {
         await save()
     }
 
-    /// Synchronous mutation helper so Toggle / Picker bindings can observe
-    /// the change in the next render without the @Published lag that `update`'s
-    /// async wrapper introduces. The disk save is fired off afterward.
-    func mutate(bottleID: UUID, _ apply: (inout Bottle) -> Void) {
-        guard let index = bottles.firstIndex(where: { $0.id == bottleID }) else { return }
-        var copy = bottles[index]
-        apply(&copy)
-        copy.updatedAt = Date()
-        bottles[index] = copy   // synchronous @Published fire
-        Task { await save() }   // best-effort persist
+    /// Schedule a control-originated mutation for the next main run-loop turn.
+    /// SwiftUI may invoke Picker bindings while it is still updating the view;
+    /// publishing synchronously from that setter causes undefined behavior.
+    func scheduleMutation(
+        bottleID: UUID,
+        _ apply: @escaping @MainActor @Sendable (inout Bottle) -> Void
+    ) {
+        Task { @MainActor [weak self] in
+            await Task.yield()
+            guard let self,
+                  let index = self.bottles.firstIndex(where: { $0.id == bottleID }) else { return }
+            var copy = self.bottles[index]
+            apply(&copy)
+            copy.updatedAt = Date()
+            self.bottles[index] = copy
+            Task { await self.save() }
+        }
     }
 
     private func runBottleCommand(
