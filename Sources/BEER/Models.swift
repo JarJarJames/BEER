@@ -42,6 +42,20 @@ enum GraphicsBackend: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+enum DisplayResolutionMode: String, Codable, CaseIterable, Identifiable {
+    case standard
+    case highResolution
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .standard: "Standard"
+        case .highResolution: "High Resolution"
+        }
+    }
+}
+
 struct RuntimeCandidate: Identifiable, Codable, Hashable {
     var id: String { bundlePath ?? executablePath }
     var kind: RuntimeKind
@@ -90,28 +104,36 @@ struct Bottle: Identifiable, Codable, Hashable {
     var steamGameName: String? = nil
     var gameInstallStatus: SteamGameInstallStatus? = nil
     var gameLaunchExecutable: String? = nil
+    /// Arguments passed to the installed game's executable. Optional so older
+    /// bottle metadata still decodes; `launchArguments` remains for Steam.
+    var gameLaunchArguments: String? = nil
     /// Host filesystem path to the game's install root (the directory that
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
     /// when reapplying or restoring on an already-installed game.
     var gameInstallDirectory: String? = nil
 
-    // --- Display mode ---
-    // "Windowed mode" controls how the game's window is presented by the Wine
-    // macOS driver at launch (see BottleStore.configureWindowMode):
-    //   ON  → native, decorated, movable/resizable macOS window; fullscreen
-    //         scales to the display without changing its resolution (no stretch).
-    //   OFF → the game may capture the display for classic exclusive fullscreen.
-    // The field keeps its legacy name `useVirtualDesktop` so existing bottles
-    // decode unchanged. `virtualDesktopResolution` is retained only for decode
-    // compatibility — the game now controls its own resolution.
-    var useVirtualDesktop: Bool? = nil
-    var virtualDesktopResolution: String? = nil
+    // --- Display resolution ---
+    // Retina mode makes Wine expose twice the macOS point dimensions to Windows
+    // games. Optional so bottles written by older releases still decode.
+    var displayResolutionMode: DisplayResolutionMode? = nil
 
-    /// Effective windowed-mode toggle. Defaults to ON for any bottle that's
-    /// associated with a Steam appID (i.e. installed via the Library flow),
-    /// OFF for manual / legacy bottles.
-    var effectiveUseVirtualDesktop: Bool {
-        useVirtualDesktop ?? (steamAppID != nil)
+    var effectiveDisplayResolutionMode: DisplayResolutionMode {
+        displayResolutionMode ?? .standard
+    }
+
+    var effectiveGameLaunchArguments: String {
+        gameLaunchArguments ?? ""
+    }
+
+    /// Move arguments entered through the old Steam-only field into the game
+    /// field. Returns whether the bottle changed and needs to be persisted.
+    mutating func migrateLegacyLibraryLaunchArguments() -> Bool {
+        guard steamAppID != nil, !launchArguments.isEmpty else { return false }
+        if gameLaunchArguments == nil && launchArguments != SteamLaunchDefaults.basicArguments {
+            gameLaunchArguments = launchArguments
+        }
+        launchArguments = ""
+        return true
     }
 
     var folderName: String {

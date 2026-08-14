@@ -44,7 +44,7 @@ Two halves:
 - `RuntimeManagerView.swift` / `RuntimeMenuView.swift` — runtime installation and per-bottle selection.
 - `CreateBottleView.swift` — manual bottle creation for power users.
 - `BottleDetailView.swift` — advanced per-bottle runtime, display, launch, and file settings.
-- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
+- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
@@ -75,8 +75,8 @@ Researched June 2026 — a native, movable/resizable macOS window with the green
 
 What we actually do:
 - `BottleStore.launchGameExecutable` runs the game `.exe` **directly** (no `wine explorer /desktop`).
-- `configureWindowMode` writes one real winemac.drv key: `CaptureDisplaysForFullscreen` = N when the toggle is on (fullscreen scales to the current display instead of switching modes → no stretch on odd resolutions) / Y when off (game may take exclusive fullscreen and change resolution).
-- The toggle (`Bottle.useVirtualDesktop`, legacy field name) is surfaced as **"Keep my display resolution"**. Default ON for Steam-app bottles.
+- `configureDisplayMode` writes winemac.drv's `RetinaMode`, Windows `LogPixels` (96/192), and Wine 10's global `HIGHDPIAWARE` compatibility override before restarting the Wine server. Standard uses macOS point dimensions; High Resolution doubles the dimensions exposed to the game. It also pins `CaptureDisplaysForFullscreen` to N so Wine does not switch the macOS display mode.
+- Library games store executable-specific flags in `gameLaunchArguments`. `BottleStore.load` migrates custom values from the old Steam-only field once; unknown legacy display fields in existing JSON are ignored by `Codable`.
 - For a smaller view, the user sets the game's own Windowed video option — the app can't impose it.
 
 ## 7. Dead ends / history (don't redo)

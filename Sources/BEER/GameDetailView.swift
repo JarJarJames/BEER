@@ -253,10 +253,11 @@ struct GameDetailView: View {
                 LabeledValue(key: "Bottle path", value: AppPaths.prefixURL(for: bottle).path)
 
                 displayModeRow(bottle: bottle)
+                gameLaunchArgumentsRow(bottle: bottle)
                 steamEmulatorRow(bottle: bottle)
                 steamCloudRow(bottle: bottle)
 
-                Text("Changing the runtime swaps the Wine build this game runs on — useful if a game crashes on GPTK (try a mainline-Wine runtime). For launch arguments and advanced tweaks, use the Compatibility tab.")
+                Text("Changing the runtime swaps the Wine build this game runs on — useful if a game crashes on GPTK (try a mainline-Wine runtime). For other advanced tweaks, use the Compatibility tab.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -315,37 +316,74 @@ struct GameDetailView: View {
 
     @ViewBuilder
     private func displayModeRow(bottle: Bottle) -> some View {
-        // Read live from the store on every render so the Toggle binding
-        // reflects canonical state, not a snapshot at first call.
         let bottleID = bottle.id
         let liveBottle = bottles.bottles.first(where: { $0.id == bottleID }) ?? bottle
-        let windowedOn = liveBottle.effectiveUseVirtualDesktop
+        let resolutionMode = liveBottle.effectiveDisplayResolutionMode
 
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Display")
+                Text("Resolution")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .frame(width: 130, alignment: .leading)
 
-                Toggle("Keep my display resolution", isOn: Binding(
+                Picker("Resolution", selection: Binding(
                     get: {
-                        bottles.bottles.first(where: { $0.id == bottleID })?.effectiveUseVirtualDesktop ?? windowedOn
+                        bottles.bottles.first(where: { $0.id == bottleID })?.effectiveDisplayResolutionMode ?? resolutionMode
                     },
                     set: { newValue in
-                        bottles.mutate(bottleID: bottleID) { $0.useVirtualDesktop = newValue }
+                        bottles.mutate(bottleID: bottleID) { $0.displayResolutionMode = newValue }
                     }
-                ))
-                .toggleStyle(.switch)
+                )) {
+                    ForEach(DisplayResolutionMode.allCases) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.segmented)
                 .controlSize(.small)
-                .fixedSize()
+                .frame(width: 240)
 
                 Spacer()
             }
 
-            Text(windowedOn
-                ? "Fullscreen scales to your current display resolution instead of switching modes — avoids stretching on unusual Mac resolutions. Note: GPTK runs games borderless and controls the window itself, so there's no macOS title bar or green fullscreen button. Use the game's own Windowed video option if you want a smaller view."
-                : "Lets the game take exclusive fullscreen and change your screen resolution (closer to a real PC, but may flicker the display and hide the menu bar).")
+            Text(resolutionMode == .highResolution
+                ? "Exposes Retina resolutions to the game (up to twice the width and height) and treats it as DPI-aware. Sharper, but substantially more demanding; some games may not handle high-DPI mode correctly."
+                : "Uses macOS point dimensions for better performance and compatibility. On Retina displays this limits games to half the high-resolution width and height.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, 142)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func gameLaunchArgumentsRow(bottle: Bottle) -> some View {
+        let bottleID = bottle.id
+
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("Launch arguments")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 130, alignment: .leading)
+
+                TextField("Optional game arguments", text: Binding(
+                    get: {
+                        bottles.bottles.first(where: { $0.id == bottleID })?.effectiveGameLaunchArguments
+                            ?? bottle.effectiveGameLaunchArguments
+                    },
+                    set: { newValue in
+                        bottles.mutate(bottleID: bottleID) { $0.gameLaunchArguments = newValue }
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .frame(maxWidth: 520)
+
+                Spacer()
+            }
+
+            Text("Passed directly to the game executable. For Unity games, for example: -screen-width 3024 -screen-height 1964 -screen-fullscreen 0")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, 142)
@@ -930,7 +968,11 @@ struct GameDetailView: View {
                 }
             }
 
-            await bottles.launchGameExecutable(bottle, executable: exe, arguments: nil)
+            await bottles.launchGameExecutable(
+                bottle,
+                executable: exe,
+                arguments: bottle.effectiveGameLaunchArguments
+            )
 
             // Re-check: the token may have expired during the pull above.
             if cloudAuth.account != nil && !cloudAuth.sessionExpired {

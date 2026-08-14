@@ -25,18 +25,25 @@ final class BottleStore: ObservableObject {
             let data = try Data(contentsOf: AppPaths.metadataURL)
             bottles = try JSONDecoder.gamenative.decode([Bottle].self, from: data)
 
+            var metadataChanged = false
+
+            // Older Library bottles stored game flags in the Steam-only field.
+            // Move custom values once, then keep the two launch paths separate.
+            for index in bottles.indices where bottles[index].migrateLegacyLibraryLaunchArguments() {
+                metadataChanged = true
+            }
+
             // One-time fix-up after the GameNativeMac → BEER rename: rewrite any
             // stored absolute paths still pointing at the old support dir.
             let current = AppPaths.applicationSupport.path
             let legacy = AppPaths.applicationSupport.deletingLastPathComponent()
                 .appendingPathComponent("GameNativeMac", isDirectory: true).path
             if legacy != current {
-                var migrated = false
                 for i in bottles.indices where bottles[i].rewriteStoragePaths(from: legacy, to: current) {
-                    migrated = true
+                    metadataChanged = true
                 }
-                if migrated { await save() }
             }
+            if metadataChanged { await save() }
 
             selectedBottleID = bottles.first?.id
             loadPersistedLogs()
@@ -66,6 +73,7 @@ final class BottleStore: ObservableObject {
         bottles[index].steamAppID = appID
         bottles[index].steamGameName = gameName
         bottles[index].gameInstallStatus = .installing
+        bottles[index].launchArguments = ""
         bottles[index].updatedAt = Date()
         await save()
     }
@@ -110,15 +118,11 @@ final class BottleStore: ObservableObject {
     /// the game is installed.
     ///
     /// We run the game's .exe directly (no `wine explorer /desktop` wrapper).
-    /// The Wine macOS driver (winemac.drv) then gives the game a REAL native
-    /// macOS window — movable, resizable, with a working green fullscreen
-    /// button — instead of the borderless, un-movable "virtual desktop" the
-    /// /desktop wrapper produced. `configureWindowMode` sets the driver's
-    /// registry so windows are decorated and fullscreen never changes the
-    /// display resolution (no stretching on odd Mac resolutions).
+    /// `configureDisplayMode` applies the selected Wine Mac driver resolution
+    /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
-        await configureWindowMode(bottle)
+        await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
         if let arguments, !arguments.isEmpty {
@@ -131,25 +135,54 @@ final class BottleStore: ObservableObject {
         )
     }
 
-    /// Apply the winemac.drv window settings for this bottle before launch.
-    ///   • CaptureDisplaysForFullscreen = N when the toggle is on → Wine never
-    ///     switches the macOS display mode, so fullscreen scales to the screen
-    ///     instead of changing resolution. Off → the game may capture the
-    ///     display for classic exclusive fullscreen.
-    /// Note: GPTK does NOT give games native macOS window chrome (no title bar
-    /// or traffic-light buttons) — the game controls its own window. There is
-    /// no winemac.drv "Decorated" key on macOS, so we don't try to set one.
-    private func configureWindowMode(_ bottle: Bottle) async {
-        let capture = bottle.effectiveUseVirtualDesktop ? "N" : "Y"
-        // Use `reg add` (no temp .reg file) — robust across Wine builds.
-        // Importing a .reg via a unix path fails on mainline Wine's regedit.
+    /// High Resolution mirrors CrossOver's mode: Retina backing, 192 DPI, and a
+    /// Wine 10 compatibility override so games misclassified as DPI-unaware are
+    /// not silently pixel-doubled back to Standard dimensions.
+    private func configureDisplayMode(_ bottle: Bottle) async {
+        let highResolution = bottle.effectiveDisplayResolutionMode == .highResolution
+        let retina = highResolution ? "Y" : "N"
+        let logPixels = highResolution ? "192" : "96"
+        let dpiAwareness = highResolution ? "~ HIGHDPIAWARE" : ""
+
         await runBottleCommand(
             bottle,
-            operation: "Configuring window mode",
+            operation: "Configuring display capture",
             mode: .wine(arguments: [
                 "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
-                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", capture, "/f"
+                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", "N", "/f"
             ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring \(bottle.effectiveDisplayResolutionMode.label) mode",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
+                "/v", "RetinaMode", "/t", "REG_SZ", "/d", retina, "/f"
+            ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring display DPI",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Control Panel\Desktop"#,
+                "/v", "LogPixels", "/t", "REG_DWORD", "/d", logPixels, "/f"
+            ])
+        )
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring DPI awareness",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKEY_CURRENT_USER\Software\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\Layers"#,
+                "/ve", "/t", "REG_SZ", "/d", dpiAwareness, "/f"
+            ])
+        )
+
+        // These values are process-wide. Ensure the game starts in a fresh Wine
+        // session instead of inheriting the mode used by the registry commands.
+        await runBottleCommand(
+            bottle,
+            operation: "Restarting Wine display services",
+            mode: .winebootKill
         )
     }
 
@@ -169,7 +202,7 @@ final class BottleStore: ObservableObject {
         bottles[index].gameInstallDirectory = installDirectory
         bottles[index].gameInstallStatus = .installed
         if let launchArguments, !launchArguments.isEmpty {
-            bottles[index].launchArguments = launchArguments
+            bottles[index].gameLaunchArguments = launchArguments
         }
         bottles[index].updatedAt = Date()
         await save()
@@ -432,9 +465,8 @@ final class BottleStore: ObservableObject {
 
             let command = command(for: bottle, prefix: prefix, mode: mode)
 
-            // Log the exact command we're about to run so issues like "is the
-            // virtual desktop flag actually reaching wine?" are diagnosable
-            // from beer.log instead of guesswork.
+            // Log the exact command we're about to run so launch configuration
+            // issues are diagnosable from beer.log instead of guesswork.
             let renderedArgs = command.arguments
                 .map { $0.contains(" ") ? "\"\($0)\"" : $0 }
                 .joined(separator: " ")
