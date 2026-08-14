@@ -6,99 +6,171 @@ struct RuntimeManagerView: View {
     @EnvironmentObject private var translators: GraphicsTranslatorInstaller
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Runtime Manager")
-                        .font(.largeTitle.bold())
-                    Text("Install and manage Wine and Game Porting Toolkit runtimes. Assign a runtime to a game from that game's settings.")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                Spacer()
-                if detector.isRefreshing {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Label("\(detector.candidates.count) detected", systemImage: "checkmark.circle")
-                        .font(.callout)
-                        .foregroundStyle(detector.candidates.isEmpty ? .orange : .green)
-                }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 24) {
+                header
+                installedRuntimes
+                gptkCatalog
+                wineCatalog
+                graphicsTranslators
+
+                Text(runtimeInstaller.statusMessage)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-
-            HStack {
-                Text("Game Porting Toolkit versions").font(.headline)
-                if runtimeInstaller.isRefreshing { ProgressView().controlSize(.small) }
-                Spacer()
-                Button {
-                    Task { await runtimeInstaller.refresh(); await detector.refresh() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise").labelStyle(.iconOnly)
-                }
-                .disabled(runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling)
+            .frame(maxWidth: 900, alignment: .leading)
+            .padding(28)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .task {
+            await detector.refresh()
+            if runtimeInstaller.availableReleases.isEmpty {
+                await runtimeInstaller.refresh()
+                await detector.refresh()
             }
+        }
+    }
 
-            ScrollView {
-                VStack(spacing: 0) {
-                    if runtimeInstaller.availableReleases.isEmpty {
-                        Text(runtimeInstaller.isRefreshing ? "Loading releases…" : "No releases loaded. Click Refresh.")
-                            .font(.callout).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .center)
-                            .padding(.vertical, 12)
-                    } else {
-                        ForEach(runtimeInstaller.availableReleases, id: \.tag) { release in
-                            releaseRow(release)
-                            Divider()
-                        }
-                    }
+    private var header: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Runtime Manager")
+                    .font(.largeTitle.bold())
+                Text("Install and manage Wine and Game Porting Toolkit runtimes. Assign a runtime to a game from that game's settings.")
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            Button {
+                Task {
+                    await detector.refresh()
+                    await runtimeInstaller.refresh()
+                    await detector.refresh()
+                }
+            } label: {
+                Label("Refresh", systemImage: "arrow.clockwise")
+            }
+            .disabled(detector.isRefreshing || runtimeInstaller.isRefreshing || runtimeInstaller.isInstalling)
+        }
+    }
 
-                    if !runtimeInstaller.availableWineBuilds.isEmpty {
-                        HStack(spacing: 6) {
-                            Text("Mainline Wine").font(.headline)
-                            Image(systemName: "info.circle").font(.caption).foregroundStyle(.secondary)
-                            Spacer()
+    private var installedRuntimes: some View {
+        runtimeSection(title: "Installed runtimes", description: "Wine and GPTK builds currently available to installed games.") {
+            if detector.isRefreshing && detector.candidates.isEmpty {
+                loadingRow("Scanning for installed runtimes…")
+            } else if detector.candidates.isEmpty {
+                emptyRow("No Wine or GPTK runtimes were detected.")
+            } else {
+                ForEach(detector.candidates) { runtime in
+                    HStack(spacing: 12) {
+                        Image(systemName: runtime.kind == .gamePortingToolkit ? "hammer.fill" : "wineglass.fill")
+                            .foregroundStyle(.secondary)
+                            .frame(width: 22)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(runtime.displayName)
+                                .font(.callout.weight(.medium))
+                            Text("\(runtime.kind.label) · \(runtime.locationPath)")
+                                .font(.caption2)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
                         }
-                        .padding(.top, 14)
-                        Text("Newer Wine for games GPTK can't run (e.g. missing-function crashes). No D3DMetal — set the game's Graphics to WineD3D. Slower than GPTK, but it runs. (DXVK needs separate setup; that's coming later.)")
-                            .font(.caption).foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .padding(.bottom, 4)
-                        ForEach(runtimeInstaller.availableWineBuilds, id: \.tag) { release in
-                            releaseRow(release)
-                            Divider()
-                        }
-                    }
-
-                    HStack(spacing: 6) {
-                        Text("Graphics translators").font(.headline)
                         Spacer()
+                        Label("Ready", systemImage: "checkmark.circle.fill")
+                            .font(.caption)
+                            .foregroundStyle(.green)
                     }
-                    .padding(.top, 14)
-                    Text("D3D→Metal/Vulkan layers for mainline Wine (GPTK has its own D3DMetal). Auto-installed into a game's bottle when you pick that backend; download here to pre-stage.")
-                        .font(.caption).foregroundStyle(.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.bottom, 4)
-                    ForEach(GraphicsTranslator.allCases) { t in
-                        translatorRow(t)
-                        Divider()
-                    }
+                    .padding(.vertical, 8)
+                    Divider()
                 }
             }
-            Text(runtimeInstaller.statusMessage)
+        }
+    }
+
+    private var gptkCatalog: some View {
+        runtimeSection(title: "Game Porting Toolkit", description: "Apple-focused Wine builds with D3DMetal for the best DirectX performance on Apple silicon.") {
+            if runtimeInstaller.availableReleases.isEmpty {
+                catalogPlaceholder
+            } else {
+                ForEach(runtimeInstaller.availableReleases, id: \.tag) { release in
+                    releaseRow(release)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var wineCatalog: some View {
+        runtimeSection(title: "Mainline Wine", description: "Newer Wine builds for games GPTK cannot run. Use WineD3D, DXVK, or DXMT instead of D3DMetal.") {
+            if runtimeInstaller.availableWineBuilds.isEmpty {
+                catalogPlaceholder
+            } else {
+                ForEach(runtimeInstaller.availableWineBuilds, id: \.tag) { release in
+                    releaseRow(release)
+                    Divider()
+                }
+            }
+        }
+    }
+
+    private var graphicsTranslators: some View {
+        runtimeSection(title: "Graphics translators", description: "D3D→Metal/Vulkan layers for mainline Wine. GPTK includes its own D3DMetal translator.") {
+            ForEach(GraphicsTranslator.allCases) { translator in
+                translatorRow(translator)
+                Divider()
+            }
+        }
+    }
+
+    private var catalogPlaceholder: some View {
+        Group {
+            if runtimeInstaller.isRefreshing {
+                loadingRow("Loading available releases…")
+            } else {
+                emptyRow("No releases loaded. Use Refresh to try again.")
+            }
+        }
+    }
+
+    private func runtimeSection<Content: View>(
+        title: String,
+        description: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.title3.bold())
+            Text(description)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(28)
-        .frame(maxWidth: 900, maxHeight: .infinity, alignment: .topLeading)
-        .task {
-            if runtimeInstaller.availableReleases.isEmpty {
-                await runtimeInstaller.refresh()
+            VStack(spacing: 0) {
+                content()
             }
-            await detector.refresh()
+            .padding(.horizontal, 14)
+            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
         }
+    }
+
+    private func loadingRow(_ text: String) -> some View {
+        HStack(spacing: 8) {
+            ProgressView().controlSize(.small)
+            Text(text)
+        }
+        .font(.callout)
+        .foregroundStyle(.secondary)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.vertical, 14)
+    }
+
+    private func emptyRow(_ text: String) -> some View {
+        Text(text)
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.vertical, 14)
     }
 
     @ViewBuilder
@@ -161,4 +233,3 @@ struct RuntimeManagerView: View {
         .padding(.vertical, 8)
     }
 }
-

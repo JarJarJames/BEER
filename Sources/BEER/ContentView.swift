@@ -99,9 +99,10 @@ struct MainShellView: View {
     @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
     @State private var sidebar: AppSidebarItem = .library
     @State private var selectedGameAppID: Int?
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columnVisibility) {
             List(selection: $sidebar) {
                 Section {
                     ForEach(AppSidebarItem.allCases) { item in
@@ -109,6 +110,7 @@ struct MainShellView: View {
                     }
                 }
             }
+            .listStyle(.sidebar)
             .navigationTitle("BEER")
             .safeAreaInset(edge: .bottom) {
                 VStack(alignment: .leading, spacing: 6) {
@@ -178,9 +180,13 @@ struct MainShellView: View {
                     .environmentObject(graphicsTranslator)
             }
         }
+        .navigationSplitViewStyle(.balanced)
         // Switching tabs returns to that tab's grid rather than carrying a
         // selected game across (e.g. Library → Installed shouldn't show a detail).
-        .onChange(of: sidebar) { _, _ in selectedGameAppID = nil }
+        .onChange(of: sidebar) { _, _ in
+            selectedGameAppID = nil
+            columnVisibility = .all
+        }
         .task {
             depotController.load()
             goldberg.refresh()
