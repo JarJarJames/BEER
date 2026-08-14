@@ -290,6 +290,17 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     var headerImage: URL? {
         URL(string: headerImageURL ?? "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/header.jpg")
     }
+
+    /// Steam's wide, high-resolution Library backdrop. Unlike `header.jpg`,
+    /// this contains artwork without a baked-in oversized game logo.
+    var libraryHeroImage: URL? {
+        URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_hero.jpg")
+    }
+
+    /// Transparent title treatment Steam layers over its Library hero art.
+    var libraryLogoImage: URL? {
+        URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/logo.png")
+    }
 }
 
 enum SteamGameInstallStatus: String, Codable {

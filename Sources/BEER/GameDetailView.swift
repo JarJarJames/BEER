@@ -43,9 +43,7 @@ struct GameDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 22) {
-                heroImage
-                titleRow
-                actionRow
+                hero
                 if let download, download.isActive {
                     Divider()
                     downloadProgressView(download)
@@ -90,40 +88,57 @@ struct GameDetailView: View {
         }
     }
 
-    private var heroImage: some View {
-        AsyncImage(url: game.headerImage) { phase in
-            switch phase {
-            case .empty:
-                Rectangle().fill(Color.secondary.opacity(0.15))
-            case .success(let image):
-                image.resizable().aspectRatio(contentMode: .fill)
-            case .failure:
-                Rectangle().fill(Color.secondary.opacity(0.15))
-                    .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
-            @unknown default:
-                Rectangle().fill(Color.secondary.opacity(0.15))
+    private var hero: some View {
+        ZStack(alignment: .bottomLeading) {
+            SteamHeroArtwork(game: game)
+
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0.28),
+                    .init(color: .black.opacity(0.34), location: 0.55),
+                    .init(color: .black.opacity(0.88), location: 1)
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+
+            LinearGradient(
+                colors: [.black.opacity(0.38), .clear],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+
+            VStack(alignment: .leading, spacing: 10) {
+                SteamLibraryLogo(game: game)
+                    .frame(maxWidth: 420, maxHeight: 150, alignment: .leading)
+
+                HStack(spacing: 12) {
+                    Label("appID \(game.appID)", systemImage: "number")
+                    if installedBottle != nil {
+                        Label("Installed", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Label("Not installed", systemImage: "circle.dashed")
+                            .foregroundStyle(.white.opacity(0.78))
+                    }
+                }
+                .font(.callout)
+                .foregroundStyle(.white.opacity(0.78))
+
+                actionRow
             }
+            .padding(26)
+            .environment(\.colorScheme, .dark)
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 240)
+        .aspectRatio(1920.0 / 620.0, contentMode: .fit)
         .clipped()
         .clipShape(RoundedRectangle(cornerRadius: 12))
-    }
-
-    private var titleRow: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(game.name).font(.system(size: 36, weight: .bold))
-            HStack(spacing: 12) {
-                Label("appID \(game.appID)", systemImage: "number")
-                if installedBottle != nil {
-                    Label("Installed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-                } else {
-                    Label("Not installed", systemImage: "circle.dashed").foregroundStyle(.secondary)
-                }
-            }
-            .font(.callout)
-            .foregroundStyle(.secondary)
+        .overlay {
+            RoundedRectangle(cornerRadius: 12)
+                .stroke(.white.opacity(0.10), lineWidth: 1)
         }
+        .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
     }
 
     private var actionRow: some View {
@@ -1135,6 +1150,68 @@ struct GameDetailView: View {
 
     private func formatBytes(_ bytes: Int64) -> String {
         ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
+    }
+}
+
+private struct SteamHeroArtwork: View {
+    let game: SteamLibraryGame
+
+    var body: some View {
+        AsyncImage(url: game.libraryHeroImage) { phase in
+            switch phase {
+            case .empty:
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay { ProgressView().controlSize(.small) }
+            case .success(let image):
+                image
+                    .resizable()
+                    .scaledToFill()
+            case .failure:
+                fallbackArtwork
+            @unknown default:
+                fallbackArtwork
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+
+    private var fallbackArtwork: some View {
+        AsyncImage(url: game.headerImage) { phase in
+            if case .success(let image) = phase {
+                image
+                    .resizable()
+                    .scaledToFill()
+                    .blur(radius: 2)
+            } else {
+                Rectangle()
+                    .fill(Color.secondary.opacity(0.15))
+                    .overlay(Image(systemName: "photo").foregroundStyle(.secondary))
+            }
+        }
+    }
+}
+
+private struct SteamLibraryLogo: View {
+    let game: SteamLibraryGame
+
+    var body: some View {
+        AsyncImage(url: game.libraryLogoImage) { phase in
+            if case .success(let image) = phase {
+                image
+                    .resizable()
+                    .scaledToFit()
+                    .accessibilityLabel(game.name)
+            } else {
+                Text(game.name)
+                    .font(.system(size: 36, weight: .bold))
+                    .foregroundStyle(.white)
+                    .lineLimit(2)
+                    .minimumScaleFactor(0.7)
+            }
+        }
+        .shadow(color: .black.opacity(0.65), radius: 8, y: 2)
     }
 }
 
