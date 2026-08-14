@@ -1,12 +1,17 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
+using System.IO.IsolatedStorage;
 using System.Linq;
 using System.Net.Http;
+using System.Reflection;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using ProtoBuf;
 using SteamKit2;
 using SteamKit2.Authentication;
 using SteamKit2.Internal;
@@ -28,6 +33,7 @@ using SteamKit2.Internal;
 //   enumerate --appid N
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
+//   prepare-depot-auth --depot-executable <path>
 //
 // Auth (all commands): --token <refreshToken> --account <name>
 //   Prefer --token-file <path> so the token never appears in argv / ps output.
@@ -49,6 +55,24 @@ static class Program
             if (cmd == "auth")
             {
                 await Auth();
+                return 0;
+            }
+
+            // DepotDownloader has no CLI flag for an existing SteamClient
+            // refresh token. Bridge BEER's Keychain-owned token into its
+            // account cache; Swift removes this file as soon as the process
+            // exits and records its path for crash cleanup.
+            if (cmd == "prepare-depot-auth")
+            {
+                var bridgeToken = ReadToken(args);
+                var bridgeAccount = Require(args, "account");
+                var config = PrepareDepotAuth(
+                    Require(args, "depot-executable"), bridgeAccount, bridgeToken);
+                EmitJson(new Dictionary<string, object?>
+                {
+                    ["prepared"] = true,
+                    ["config_path"] = config,
+                });
                 return 0;
             }
 
@@ -101,6 +125,82 @@ static class Program
     }
 
     // MARK: - Commands
+
+    static string PrepareDepotAuth(string depotExecutable, string account, string token)
+    {
+        var configPath = DepotAuthConfigPath(depotExecutable);
+        Directory.CreateDirectory(Path.GetDirectoryName(configPath)!);
+
+        var settings = new DepotAccountSettings();
+        settings.LoginTokens[account] = token;
+
+        var tempPath = $"{configPath}.{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var file = new FileStream(tempPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var deflate = new DeflateStream(file, CompressionMode.Compress))
+                Serializer.Serialize(deflate, settings);
+
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(tempPath, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            File.Move(tempPath, configPath, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(tempPath)) File.Delete(tempPath);
+        }
+        return configPath;
+    }
+
+    static string DepotAuthConfigPath(string depotExecutable)
+    {
+        var isolatedRoot = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "IsolatedStorage");
+        Directory.CreateDirectory(isolatedRoot);
+
+        var first = Directory.GetDirectories(isolatedRoot)
+            .FirstOrDefault(path => Path.GetFileName(path).Length == 12);
+        if (first == null)
+        {
+            first = Path.Combine(isolatedRoot, Path.GetRandomFileName());
+            Directory.CreateDirectory(first);
+        }
+        var second = Directory.GetDirectories(first)
+            .FirstOrDefault(path => Path.GetFileName(path).Length == 12);
+        if (second == null)
+        {
+            second = Path.Combine(first, Path.GetRandomFileName());
+            Directory.CreateDirectory(second);
+        }
+
+        var identityHelper = typeof(IsolatedStorageFile).Assembly
+            .GetType("System.Security.IdentityHelper")
+            ?? throw new Exception("Could not locate .NET isolated-storage identity support.");
+        var hashMethod = identityHelper.GetMethod(
+            "GetNormalizedUriHash", BindingFlags.Static | BindingFlags.NonPublic)
+            ?? throw new Exception("Could not calculate DepotDownloader's isolated-storage identity.");
+        var executableUri = new Uri(Path.GetFullPath(depotExecutable));
+        var hash = hashMethod.Invoke(null, [executableUri]) as string
+            ?? throw new Exception("Could not calculate DepotDownloader's isolated-storage path.");
+
+        return Path.Combine(second, $"Url.{hash}", "AssemFiles", "account.config");
+    }
+
+    [ProtoContract]
+    sealed class DepotAccountSettings
+    {
+        [ProtoMember(2)]
+        public ConcurrentDictionary<string, int> ContentServerPenalty { get; } = new();
+
+        [ProtoMember(4)]
+        public Dictionary<string, string> LoginTokens { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+
+        [ProtoMember(5)]
+        public Dictionary<string, string> GuardData { get; } =
+            new(StringComparer.OrdinalIgnoreCase);
+    }
 
     // QR sign-in that yields a SteamClient-audience refresh token (the kind the
     // Cloud client protocol accepts). Emits the challenge URL as JSON so the

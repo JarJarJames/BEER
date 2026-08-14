@@ -139,7 +139,10 @@ struct MainShellView: View {
                         Spacer()
                         Menu {
                             Button("Refresh Library") { Task { await library.fetchLibrary(auth: cloudAuth) } }
-                            Button("Sign Out", role: .destructive) { library.signOut() }
+                            Button("Sign Out", role: .destructive) {
+                                library.signOut()
+                                cloudAuth.signOut()
+                            }
                         } label: {
                             Image(systemName: "ellipsis.circle")
                         }

@@ -36,7 +36,7 @@ enum CloudSyncClientError: LocalizedError {
         case .rateLimited:
             return "Steam is temporarily rate-limiting sign-ins for your account (too many recent logins). Wait a few minutes, then try again — don't re-sign-in, that only extends the cooldown. Your saves are safe."
         case .badOutput(let detail):
-            return "Couldn't understand the CloudSync helper's output: \(detail.prefix(200))"
+            return "Couldn't understand the CloudSync helper's output: \(detail.prefix(200)). The helper may be out of date; rebuild BEER so the app and helper versions match."
         }
     }
 }
@@ -46,13 +46,14 @@ struct CloudSyncClient {
     // MARK: - Locating the helper binary
 
     /// Find the helper executable. Checked in order:
-    ///   1. App Support install dir (where scripts/build_cloudsync.sh puts it).
-    ///   2. Next to / near the running app executable.
-    ///   3. The dev build output, relative to the current working directory
+    ///   1. Next to / near the running app executable. The helper bundled with
+    ///      this app build must win over a potentially stale standalone copy.
+    ///   2. The dev build output, relative to the current working directory
     ///      (so `swift run` from the repo root just works).
+    ///   3. App Support install dir (where scripts/build_cloudsync.sh puts it).
     static func locateBinary() -> URL? {
         let fm = FileManager.default
-        var candidates: [URL] = [AppPaths.cloudSyncExecutableURL]
+        var candidates: [URL] = []
 
         let exeDir = URL(fileURLWithPath: CommandLine.arguments.first ?? "")
             .deletingLastPathComponent()
@@ -64,6 +65,7 @@ struct CloudSyncClient {
                     "Tools/CloudSync/bin/Release/net8.0/CloudSync"] {
             candidates.append(cwd.appendingPathComponent(sub))
         }
+        candidates.append(AppPaths.cloudSyncExecutableURL)
 
         return candidates.first { fm.isExecutableFile(atPath: $0.path) }
     }
@@ -76,6 +78,27 @@ struct CloudSyncClient {
     // MARK: - Auth
 
     struct AuthResult { let account: String; let refreshToken: String }
+
+    /// Make BEER's existing SteamClient token available to DepotDownloader for
+    /// one process invocation. The returned cache URL contains a credential and
+    /// must be removed by the caller immediately after DepotDownloader exits.
+    func prepareDepotDownloaderAuth(
+        executable: URL,
+        account: String,
+        refreshToken: String
+    ) async throws -> URL {
+        let obj = try await runOnce(
+            args: ["prepare-depot-auth", "--depot-executable", executable.resolvingSymlinksInPath().path],
+            account: account,
+            refreshToken: refreshToken
+        )
+        guard obj["prepared"] as? Bool == true,
+              let path = obj["config_path"] as? String
+        else {
+            throw CloudSyncClientError.badOutput("DepotDownloader auth bridge did not return a cache path")
+        }
+        return URL(fileURLWithPath: path)
+    }
 
     /// Run the QR sign-in. `onChallenge` is called with each challenge URL
     /// (Steam rotates it every ~30s, so the UI should re-render the QR each

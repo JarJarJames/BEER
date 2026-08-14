@@ -32,6 +32,7 @@ Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv
 | `download --appid N --file F --out PATH` | download one cloud file | local only |
 | `upload --appid N --file F --in PATH [--mtime T]` | upload one file (begin → PUT blocks → commit) | **writes cloud** |
 | `batch --appid N --jobs JSON` | many downloads+uploads in ONE logon | local + cloud |
+| `prepare-depot-auth --depot-executable PATH` | bridge the existing token into DepotDownloader for one invocation | short-lived local credential cache |
 
 `batch` jobs file: `{ "appid": N, "downloads":[{"filename","out"}], "uploads":[{"filename","in","mtime"}] }`.
 It runs up to four file transfers concurrently, reusing one HTTP connection pool,
@@ -41,6 +42,16 @@ before uploads begin. Per-op it emits `{op, filename, ok|error}`, then
 
 Errors: a logon rejection emits `{error, auth_failed:true}` (revoked/expired → reconnect)
 or `{error, rate_limited:true}` (throttled → **wait, don't re-auth**).
+
+## DepotDownloader authentication bridge
+
+DepotDownloader does not expose a command-line option for an existing
+SteamClient refresh token, although internally it logs on with one from its
+`account.config`. BEER's download controller calls `prepare-depot-auth` with the
+same Keychain-owned token used for library and cloud access, runs
+DepotDownloader with `-remember-password`, then immediately removes the cache.
+The token is passed to this helper through a temporary file, never argv. BEER
+also records the cache path so a launch after an app crash removes any remnant.
 
 ## Critical design note
 **One logon per process; one process per sync.** Spawning a process (= a fresh

@@ -14,9 +14,8 @@ struct GameDetailView: View {
     @EnvironmentObject private var cloudAuth: SteamAuthStore
     @EnvironmentObject private var cloudSync: CloudSyncEngine
     @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
-    @State private var qrArt: String = ""
-    @State private var isShowingQR: Bool = false
     @State private var isShowingCloudConnect: Bool = false
+    @State private var shouldResumeInstallAfterCloudConnect: Bool = false
     @State private var cloudSyncMessage: String?
     @State private var cloudSyncIsError: Bool = false
     @State private var confirmClearBottle: Bottle?
@@ -65,18 +64,14 @@ struct GameDetailView: View {
                 }
             }
         }
-        .sheet(isPresented: $isShowingQR) {
-            QRCodeSheet(
-                asciiArt: qrArt,
-                gameName: game.name,
-                onCancel: { cancelInstall(reason: "Cancelled.") }
-            )
-            .interactiveDismissDisabled(true)
-        }
         .sheet(isPresented: $isShowingCloudConnect) {
             SteamCloudQRSheet(onConnected: {
                 cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
                 cloudSyncIsError = false
+                if shouldResumeInstallAfterCloudConnect {
+                    shouldResumeInstallAfterCloudConnect = false
+                    startInstall()
+                }
             })
         }
         .confirmationDialog(
@@ -770,6 +765,11 @@ struct GameDetailView: View {
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
         guard let runtime = preferredDefaultRuntime else { return }
+        guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
+            shouldResumeInstallAfterCloudConnect = true
+            isShowingCloudConnect = true
+            return
+        }
         isStartingInstall = true
 
         Task { @MainActor in
@@ -804,18 +804,13 @@ struct GameDetailView: View {
                     appID: game.appID,
                     gameName: game.name,
                     bottle: bottle,
+                    auth: steamAccount,
                     events: { event in
                         switch event {
                         case .log(let line):
                             downloads.append(appID: game.appID, log: line)
                         case .status(let phase):
                             downloads.setStatus(appID: game.appID, phase: phase)
-                        case .qrCode(let ascii):
-                            qrArt = ascii
-                            isShowingQR = true
-                        case .loggedIn:
-                            isShowingQR = false
-                            downloads.setStatus(appID: game.appID, phase: "Signed in. Preparing download…")
                         case .progress(let fraction):
                             downloads.setProgress(appID: game.appID, fraction: fraction,
                                                    downloaded: nil, total: nil)
@@ -868,13 +863,15 @@ struct GameDetailView: View {
                     )
                 }
                 downloads.complete(appID: game.appID)
-                isShowingQR = false
+            } catch DepotDownloaderError.sessionExpired {
+                cloudAuth.sessionExpired = true
+                shouldResumeInstallAfterCloudConnect = true
+                downloads.fail(appID: game.appID, reason: "Steam sign-in expired. Reconnect to resume the download.")
+                isShowingCloudConnect = true
             } catch let err as DepotDownloaderError {
                 downloads.fail(appID: game.appID, reason: err.errorDescription ?? "Install failed")
-                isShowingQR = false
             } catch {
                 downloads.fail(appID: game.appID, reason: error.localizedDescription)
-                isShowingQR = false
             }
         }
     }
@@ -883,7 +880,6 @@ struct GameDetailView: View {
         // We don't have process-kill plumbing yet; mark the UI state and
         // remove the bottle. The running DepotDownloader will eventually
         // exit on its own (it'll fail when its install dir disappears).
-        isShowingQR = false
         downloads.fail(appID: game.appID, reason: reason)
         if let bottle = installedBottle {
             Task {
@@ -972,129 +968,6 @@ struct GameDetailView: View {
     }
 }
 
-// MARK: - QR sheet shown during first-time DepotDownloader auth
-
-private struct QRCodeSheet: View {
-    let asciiArt: String
-    let gameName: String
-    let onCancel: () -> Void
-
-    var body: some View {
-        VStack(spacing: 18) {
-            VStack(alignment: .center, spacing: 6) {
-                Image(systemName: "qrcode")
-                    .font(.title)
-                    .foregroundStyle(.tint)
-                Text("Sign in with Steam Mobile")
-                    .font(.title2.bold())
-                Text("Open the Steam Mobile App, tap the QR icon at the top, scan this code, then tap **Approve**.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: 380)
-            }
-
-            QRBitmapView(asciiArt: asciiArt)
-                .frame(width: 280, height: 280)
-                .padding(16)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-
-            VStack(spacing: 4) {
-                Text("Installing **\(gameName)**")
-                    .font(.callout)
-                Text("Session is cached after approval — future installs skip the QR step.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            .frame(maxWidth: 380)
-
-            HStack(spacing: 12) {
-                ProgressView().controlSize(.small)
-                Text("Waiting for approval…")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Button(role: .destructive, action: onCancel) {
-                    Text("Cancel")
-                }
-            }
-            .frame(maxWidth: 380)
-        }
-        .padding(28)
-        .frame(width: 440)
-    }
-}
-
-// Renders DepotDownloader's ASCII QR as a proper square bitmap. QRCoder's
-// default ASCII rendering uses TWO characters per module ("██" dark, "  "
-// light, one line tall) so the input is twice as wide as it is tall — we
-// must collapse pairs back into single modules to draw a square QR. We also
-// tolerate the 1-char-per-module variant just in case.
-private struct QRBitmapView: View {
-    let asciiArt: String
-
-    private struct ParsedQR {
-        var matrix: [[Bool]]
-        var size: Int  // square dimension
-    }
-
-    private var parsed: ParsedQR {
-        let lines = asciiArt
-            .split(whereSeparator: { $0 == "\n" })
-            .map(String.init)
-        guard let first = lines.first, !first.isEmpty else {
-            return ParsedQR(matrix: [], size: 0)
-        }
-        let cols = first.count
-        // 2-char modules: rows == cols/2. 1-char modules: rows == cols.
-        let moduleWidth: Int = (lines.count * 2 == cols) ? 2
-                              : (lines.count == cols ? 1 : 2)   // assume 2 as fallback
-        let modulesPerRow = cols / moduleWidth
-
-        let matrix: [[Bool]] = lines.map { line in
-            let chars = Array(line)
-            var row: [Bool] = []
-            row.reserveCapacity(modulesPerRow)
-            var i = 0
-            while i < chars.count && row.count < modulesPerRow {
-                // Module is dark iff the first char of its slot is a block char.
-                let c = chars[i]
-                row.append(c == "█" || c == "▀" || c == "▄" || c == "▌" || c == "▐")
-                i += moduleWidth
-            }
-            while row.count < modulesPerRow { row.append(false) }
-            return row
-        }
-
-        return ParsedQR(matrix: matrix, size: max(matrix.count, modulesPerRow))
-    }
-
-    var body: some View {
-        let p = parsed
-        Canvas(rendersAsynchronously: false) { context, size in
-            context.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
-            guard p.size > 0, !p.matrix.isEmpty else { return }
-            let cell = min(size.width, size.height) / CGFloat(p.size)
-            for (y, row) in p.matrix.enumerated() {
-                for (x, dark) in row.enumerated() where dark {
-                    let rect = CGRect(
-                        x: CGFloat(x) * cell,
-                        y: CGFloat(y) * cell,
-                        width: cell + 0.5,   // small overlap to kill hairline gaps
-                        height: cell + 0.5
-                    )
-                    context.fill(Path(rect), with: .color(.black))
-                }
-            }
-        }
-        .aspectRatio(1, contentMode: .fit)
-    }
-}
-
 private struct LabeledValue: View {
     let key: String
     let value: String
@@ -1116,5 +989,3 @@ private struct LabeledValue: View {
 }
 
 // MARK: - Downloads pane (stub)
-
-

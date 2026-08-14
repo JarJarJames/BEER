@@ -45,7 +45,7 @@ Two halves:
 - `CreateBottleView.swift` — manual bottle creation for power users.
 - `BottleDetailView.swift` — advanced per-bottle runtime, display, launch, and file settings.
 - `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureWindowMode` (windowed mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
-- `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games via QR/refresh-token.
+- `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
   - `SteamAuth.swift` (`SteamAuthStore`) — QR sign-in **via the helper**; holds account + refresh token; `sessionExpired` flag + `noteCloudError`.
