@@ -93,19 +93,21 @@ struct Bottle: Identifiable, Codable, Hashable {
     var runtimeEntrypoints: RuntimeEntrypoints?
     var graphicsBackend: GraphicsBackend
     var windowsVersion: String
+    /// Retained only to migrate game arguments written by older builds. The
+    /// retired full-Steam-client workflow no longer reads or writes this field.
     var launchArguments: String
     var environmentOverrides: [String: String]
     var notes: String
 
     // When this bottle was created by the library install flow, these
     // identify the Steam game it belongs to. Legacy bottles created via the
-    // manual "New Bottle" flow leave these nil and use the full Steam client.
+    // retired manual-bottle flow leave these nil.
     var steamAppID: Int? = nil
     var steamGameName: String? = nil
     var gameInstallStatus: SteamGameInstallStatus? = nil
     var gameLaunchExecutable: String? = nil
     /// Arguments passed to the installed game's executable. Optional so older
-    /// bottle metadata still decodes; `launchArguments` remains for Steam.
+    /// bottle metadata still decodes.
     var gameLaunchArguments: String? = nil
     /// Host filesystem path to the game's install root (the directory that
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
@@ -129,7 +131,7 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// field. Returns whether the bottle changed and needs to be persisted.
     mutating func migrateLegacyLibraryLaunchArguments() -> Bool {
         guard steamAppID != nil, !launchArguments.isEmpty else { return false }
-        if gameLaunchArguments == nil && launchArguments != SteamLaunchDefaults.basicArguments {
+        if gameLaunchArguments == nil && launchArguments != "-no-cef-sandbox" {
             gameLaunchArguments = launchArguments
         }
         launchArguments = ""
@@ -249,74 +251,11 @@ struct Bottle: Identifiable, Codable, Hashable {
             runtimeEntrypoints: runtime.entrypoints,
             graphicsBackend: graphicsBackend,
             windowsVersion: "win10",
-            launchArguments: SteamLaunchDefaults.basicArguments,
+            launchArguments: "",
             environmentOverrides: [:],
             notes: ""
         )
     }
-}
-
-enum SteamLaunchDefaults {
-    static let basicArguments = "-no-cef-sandbox"
-
-    // Extra CEF flags that sometimes stabilize steamwebhelper.exe on Wine/macOS.
-    // These help when the helper dies in the GPU / sandbox / breakpad path, but
-    // they will NOT fix the `NetworkChangeNotifierWin → WSALookupServiceBeginW`
-    // crash, which lives inside Chromium and only goes away with a runtime that
-    // has a working `ws2_32.WSALookupServiceBeginW` (CrossOver-style patches or
-    // a Wine-Staging build with the relevant patch).
-    static let webHelperSafeArguments = "-no-cef-sandbox -cef-disable-gpu -cef-disable-gpu-compositing -cef-in-process-gpu -cef-disable-breakpad"
-
-    // Big Picture / tenfoot launch. Worth trying when the desktop UI's CEF
-    // helper is crash-looping, because it goes through a different rendering
-    // entry point. No guarantee — modern Steam still uses CEF for Big Picture
-    // ("gamepadui"), but `-tenfoot` is the documented opt-in and sometimes
-    // gets past the initial helper crash.
-    static let bigPictureArguments = "-tenfoot -no-cef-sandbox"
-
-    static func mergedWithWebHelperSafeArguments(_ existing: String) -> String {
-        var parts = existing
-            .split(separator: " ")
-            .map(String.init)
-            .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-
-        for required in webHelperSafeArguments.split(separator: " ").map(String.init) where !parts.contains(required) {
-            parts.append(required)
-        }
-
-        return parts.joined(separator: " ")
-    }
-}
-
-// Names of the log files Steam writes inside `<prefix>/drive_c/Program Files (x86)/Steam/logs/`.
-// These are the actual sources of truth when Steam's UI fails to render — the Wine WINEDEBUG
-// trace only captures the bootstrap process exiting.
-enum SteamLogFile: String, CaseIterable, Identifiable {
-    case bootstrap = "bootstrap_log.txt"
-    case cef = "cef_log.txt"
-    case steamui = "steamui_html.txt"
-    case console = "console_log.txt"
-
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .bootstrap: "Bootstrap (bootstrap_log.txt)"
-        case .cef: "CEF / WebHelper (cef_log.txt)"
-        case .steamui: "Steam UI (steamui_html.txt)"
-        case .console: "Console (console_log.txt)"
-        }
-    }
-}
-
-// Result of inspecting Steam's own logs after a launch. Used to surface the
-// "webhelper is crash-looping" case in the UI instead of reporting the parent
-// Wine process's clean exit as success.
-struct WebHelperHealth: Equatable {
-    var restartCount: Int
-    var lastCEFError: String?
-
-    var isCrashLooping: Bool { restartCount >= 3 }
 }
 
 // ---------------------------------------------------------------------------

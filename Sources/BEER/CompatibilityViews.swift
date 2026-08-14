@@ -3,19 +3,22 @@ import SwiftUI
 struct CompatibilityPane: View {
     @EnvironmentObject private var store: BottleStore
     @EnvironmentObject private var detector: ToolchainDetector
-    @State private var isShowingCreateSheet = false
     @State private var isShowingRuntimeManager = false
+
+    private var gameBottles: [Bottle] {
+        store.bottles.filter { $0.steamAppID != nil }
+    }
 
     var body: some View {
         NavigationSplitView {
             List(selection: $store.selectedBottleID) {
                 Section("Bottles") {
-                    if store.bottles.isEmpty {
+                    if gameBottles.isEmpty {
                         Text("No bottles yet. Bottles are created automatically when you install a game from your Library.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
-                    ForEach(store.bottles) { bottle in
+                    ForEach(gameBottles) { bottle in
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(bottle.name).lineLimit(1)
@@ -39,13 +42,6 @@ struct CompatibilityPane: View {
                             .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                    Button {
-                        isShowingCreateSheet = true
-                    } label: {
-                        Label("New Manual Bottle", systemImage: "plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
                 }
                 .padding()
             }
@@ -59,7 +55,7 @@ struct CompatibilityPane: View {
                 .disabled(detector.isRefreshing)
             }
         } detail: {
-            if let bottle = store.selectedBottle {
+            if let bottle = store.selectedBottle, bottle.steamAppID != nil {
                 BottleDetailView(bottle: bottle)
             } else {
                 VStack(spacing: 12) {
@@ -73,13 +69,8 @@ struct CompatibilityPane: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
-        .sheet(isPresented: $isShowingCreateSheet) {
-            CreateBottleView()
-        }
         .sheet(isPresented: $isShowingRuntimeManager) {
             RuntimeManagerView()
         }
     }
 }
-
-

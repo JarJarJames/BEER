@@ -1,12 +1,10 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct BottleDetailView: View {
     @EnvironmentObject private var store: BottleStore
     @EnvironmentObject private var detector: ToolchainDetector
     @State var bottle: Bottle
-    @State private var selectedInstallerURL: URL?
     @State private var selectedRuntimeID: RuntimeCandidate.ID?
     @State private var runtimeSelectionError: String?
 
@@ -110,11 +108,6 @@ struct BottleDetailView: View {
                         .frame(width: 220)
                 }
                 GridRow {
-                    Text("Steam args")
-                        .foregroundStyle(.secondary)
-                    TextField("Launch arguments", text: $bottle.launchArguments)
-                }
-                GridRow {
                     Text("Notes")
                         .foregroundStyle(.secondary)
                     TextField("Compatibility notes", text: $bottle.notes, axis: .vertical)
@@ -138,88 +131,9 @@ struct BottleDetailView: View {
                 .disabled(isBusy)
 
                 Button {
-                    chooseSteamInstaller()
-                } label: {
-                    Label("Choose SteamSetup.exe", systemImage: "square.and.arrow.down")
-                }
-                .disabled(isBusy)
-
-                Button {
-                    guard let selectedInstallerURL else { return }
-                    Task { await store.installSteam(in: bottle, installerURL: selectedInstallerURL) }
-                } label: {
-                    Label("Install Steam", systemImage: "play.circle")
-                }
-                .disabled(selectedInstallerURL == nil || isBusy)
-
-                Button {
-                    Task { await store.launchSteam(in: bottle) }
-                } label: {
-                    Label("Launch Steam", systemImage: "play.fill")
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(isBusy)
-
-                Button {
-                    Task { await store.launchSteamBigPicture(in: bottle) }
-                } label: {
-                    Label("Big Picture", systemImage: "tv")
-                }
-                .disabled(isBusy)
-
-                Button {
-                    Task { await store.launchSteamDiagnostic(in: bottle) }
-                } label: {
-                    Label("Debug Launch", systemImage: "stethoscope")
-                }
-                .disabled(isBusy)
-
-                Button {
                     Task { await store.stopBottleProcesses(bottle) }
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
-                }
-
-                Button {
-                    applyWebHelperFixAndRestart()
-                } label: {
-                    Label("Fix WebHelper", systemImage: "bandage")
-                }
-
-                Button {
-                    resetSteamArgs()
-                } label: {
-                    Label("Reset Args", systemImage: "arrow.uturn.backward")
-                }
-
-                Menu {
-                    Button {
-                        Task { await store.removeSteamUpdateLock(bottle) }
-                    } label: {
-                        Label("Allow Steam Updates", systemImage: "lock.open")
-                    }
-
-                    Button {
-                        Task { await store.refreshSteamClientPackage(bottle) }
-                    } label: {
-                        Label("Refresh Steam Client", systemImage: "arrow.triangle.2.circlepath")
-                    }
-
-                    Divider()
-
-                    Button {
-                        Task { await store.writeSteamUpdateLock(bottle) }
-                    } label: {
-                        Label("Lock Steam Updates", systemImage: "lock")
-                    }
-
-                    Button {
-                        Task { await store.downgradeSteamClient(bottle) }
-                    } label: {
-                        Label("Downgrade Steam Client", systemImage: "clock.arrow.circlepath")
-                    }
-                } label: {
-                    Label("Steam Repair", systemImage: "cross.case")
                 }
 
                 Button {
@@ -229,15 +143,7 @@ struct BottleDetailView: View {
                 }
             }
 
-            if let selectedInstallerURL {
-                Text(selectedInstallerURL.path)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-            }
-
-            Text("Each Steam launch starts a fresh log. If Steam webhelper still fails, use Debug Launch for Wine diagnostics or Steam Repair to try the known GPTK Steam client downgrade/update-lock workaround.")
+            Text("Repair reinitializes the Wine prefix without reinstalling the game. Stop ends processes running inside this bottle.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -248,10 +154,6 @@ struct BottleDetailView: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Log")
                 .font(.headline)
-
-            if let health = store.webHelperHealth[bottle.id], health.isCrashLooping {
-                webHelperWarning(health: health)
-            }
 
             HStack {
                 Button {
@@ -266,31 +168,8 @@ struct BottleDetailView: View {
                     Label("Reveal Wine Log", systemImage: "doc.text.magnifyingglass")
                 }
 
-                Menu {
-                    Button {
-                        store.revealSteamLogs(bottle)
-                    } label: {
-                        Label("Open Steam Logs Folder", systemImage: "folder")
-                    }
-                    Divider()
-                    ForEach(SteamLogFile.allCases) { file in
-                        Button {
-                            store.revealSteamLog(bottle, file: file)
-                        } label: {
-                            Text(file.label)
-                        }
-                    }
-                } label: {
-                    Label("Steam Logs", systemImage: "doc.text.below.ecg")
-                }
-
                 Spacer()
             }
-
-            Text("The Wine log above only captures the parent Steam bootstrap, which exits within ~1s when Steam is already running. If the UI never appears, the actual error is in Steam's CEF/webhelper logs.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
 
             ScrollViewReader { proxy in
                 ScrollView {
@@ -324,150 +203,4 @@ struct BottleDetailView: View {
         }
     }
 
-    // Runtimes other than the one currently bound to this bottle. Used by the
-    // "Try a different runtime" button in the webhelper-crash warning banner —
-    // a CrossOver/Whisky/system Wine often has a `ws2_32.WSALookupServiceBeginW`
-    // that doesn't trip the Chromium `NOTREACHED()`, where GPTK 3.0-3 does.
-    private var alternativeRuntimes: [RuntimeCandidate] {
-        let current = bottle.runtimeLocationPath
-        return detector.candidates.filter { $0.locationPath != current }
-    }
-
-    @ViewBuilder
-    private func webHelperWarning(health: WebHelperHealth) -> some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.title3)
-                .foregroundStyle(.orange)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Steam UI is crash-looping")
-                    .font(.callout.bold())
-                Text("steamwebhelper.exe has restarted \(health.restartCount) times. Chromium's NetworkChangeNotifier is calling `ws2_32.WSALookupServiceBeginW`, which this Wine runtime returns an error for, so Chromium hits NOTREACHED() and the helper exits. Big Picture / CEF flags don't help — modern Steam Big Picture uses CEF too, and no Steam launch flag reaches inside Chromium to disable that code path.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text("The reliable fix is a Wine runtime that ships `ws2_32` patches. Whisky is free, CrossOver has a 14-day trial. Once installed, click Refresh Runtimes in the sidebar and the option will appear here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                if let snippet = health.lastCEFError, !snippet.isEmpty {
-                    Text(snippet)
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(nsColor: .textBackgroundColor))
-                        .clipShape(RoundedRectangle(cornerRadius: 6))
-                        .textSelection(.enabled)
-                }
-                HStack(spacing: 8) {
-                    if alternativeRuntimes.isEmpty {
-                        Button {
-                            NSWorkspace.shared.open(URL(string: "https://github.com/Whisky-App/Whisky/releases/latest")!)
-                        } label: {
-                            Label("Get Whisky", systemImage: "arrow.down.circle")
-                        }
-                        .buttonStyle(.borderedProminent)
-
-                        Button {
-                            NSWorkspace.shared.open(URL(string: "https://www.codeweavers.com/crossover/download")!)
-                        } label: {
-                            Label("Get CrossOver", systemImage: "arrow.down.circle")
-                        }
-                    } else {
-                        Menu {
-                            ForEach(alternativeRuntimes) { runtime in
-                                Button {
-                                    swapRuntimeAndRelaunch(to: runtime)
-                                } label: {
-                                    Text(runtime.displayName)
-                                }
-                            }
-                        } label: {
-                            Label("Swap Runtime & Relaunch", systemImage: "wineglass")
-                        }
-                        .menuStyle(.borderedButton)
-                    }
-
-                    Menu {
-                        Button {
-                            store.revealSteamLog(bottle, file: .cef)
-                        } label: {
-                            Label("Open cef_log.txt", systemImage: "doc.text.magnifyingglass")
-                        }
-                        Button {
-                            Task {
-                                await store.stopBottleProcesses(bottle)
-                                try? await Task.sleep(for: .seconds(1))
-                                await store.launchSteamBigPicture(in: bottle)
-                            }
-                        } label: {
-                            Label("Retry as Big Picture (long shot)", systemImage: "tv")
-                        }
-                        Button {
-                            applyWebHelperFixAndRestart()
-                        } label: {
-                            Label("Apply WebHelper safe-args (long shot)", systemImage: "bandage")
-                        }
-                        Button {
-                            Task { await store.downgradeSteamClient(bottle) }
-                        } label: {
-                            Label("Downgrade Steam Client (long shot)", systemImage: "clock.arrow.circlepath")
-                        }
-                    } label: {
-                        Label("Other Attempts…", systemImage: "ellipsis.circle")
-                    }
-                }
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.12))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8)
-                .stroke(Color.orange.opacity(0.4), lineWidth: 1)
-        )
-    }
-
-    private func swapRuntimeAndRelaunch(to runtime: RuntimeCandidate) {
-        bottle.useRuntime(runtime)
-        Task {
-            await store.update(bottle)
-            await store.stopBottleProcesses(bottle)
-            try? await Task.sleep(for: .seconds(1))
-            await store.launchSteam(in: bottle)
-        }
-    }
-
-    private func chooseSteamInstaller() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.exe]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.message = "Select SteamSetup.exe downloaded from Valve."
-        if panel.runModal() == .OK {
-            selectedInstallerURL = panel.url
-        }
-    }
-
-    private func applyWebHelperFixAndRestart() {
-        bottle.launchArguments = SteamLaunchDefaults.mergedWithWebHelperSafeArguments(bottle.launchArguments)
-        Task {
-            await store.update(bottle)
-            await store.restartSteamWithWebHelperFix(bottle)
-        }
-    }
-
-    private func resetSteamArgs() {
-        bottle.launchArguments = SteamLaunchDefaults.basicArguments
-        Task {
-            await store.resetSteamArguments(bottle)
-        }
-    }
 }
-
-private extension UTType {
-    static let exe = UTType(filenameExtension: "exe")!
-}
-

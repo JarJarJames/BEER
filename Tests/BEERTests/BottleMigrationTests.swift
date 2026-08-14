@@ -15,6 +15,7 @@ final class BottleMigrationTests: XCTestCase {
     func testDropsSteamDefaultForLibraryGame() {
         var bottle = makeBottle()
         bottle.steamAppID = 794260
+        bottle.launchArguments = "-no-cef-sandbox"
 
         XCTAssertTrue(bottle.migrateLegacyLibraryLaunchArguments())
         XCTAssertNil(bottle.gameLaunchArguments)
@@ -23,9 +24,10 @@ final class BottleMigrationTests: XCTestCase {
 
     func testDoesNotChangeManualBottle() {
         var bottle = makeBottle()
+        bottle.launchArguments = "legacy-manual-value"
 
         XCTAssertFalse(bottle.migrateLegacyLibraryLaunchArguments())
-        XCTAssertEqual(bottle.launchArguments, SteamLaunchDefaults.basicArguments)
+        XCTAssertEqual(bottle.launchArguments, "legacy-manual-value")
     }
 
     private func makeBottle() -> Bottle {

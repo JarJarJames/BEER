@@ -48,21 +48,6 @@ enum AppPaths {
         prefixURL(for: bottle).appendingPathComponent("beer.log")
     }
 
-    static func steamDirectoryURL(for bottle: Bottle) -> URL {
-        prefixURL(for: bottle)
-            .appendingPathComponent("drive_c", isDirectory: true)
-            .appendingPathComponent("Program Files (x86)", isDirectory: true)
-            .appendingPathComponent("Steam", isDirectory: true)
-    }
-
-    static func steamLogsDirectoryURL(for bottle: Bottle) -> URL {
-        steamDirectoryURL(for: bottle).appendingPathComponent("logs", isDirectory: true)
-    }
-
-    static func steamLogURL(for bottle: Bottle, name: String) -> URL {
-        steamLogsDirectoryURL(for: bottle).appendingPathComponent(name, isDirectory: false)
-    }
-
     // App-level DepotDownloader install. Native macOS Apple Silicon binary,
     // no Wine, no .NET runtime. One install shared across all game bottles —
     // its account.config caches the refresh token so we only sign in once.

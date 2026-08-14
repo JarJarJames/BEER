@@ -42,8 +42,7 @@ Two halves:
 - `DownloadsView.swift` — active and completed download UI.
 - `CompatibilityViews.swift` — compatibility overview and navigation.
 - `RuntimeManagerView.swift` / `RuntimeMenuView.swift` — runtime installation and per-bottle selection.
-- `CreateBottleView.swift` — manual bottle creation for power users.
-- `BottleDetailView.swift` — advanced per-bottle runtime, display, launch, and file settings.
+- `BottleDetailView.swift` — advanced per-game-bottle runtime, graphics, and file settings.
 - `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
@@ -81,7 +80,7 @@ What we actually do:
 
 ## 7. Dead ends / history (don't redo)
 
-- **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. That's why we use DepotDownloader, not the Steam client. The legacy full-Steam bottle path still exists behind "New Bottle (Manual)" for anyone who installs CrossOver/Whisky.
+- **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. The old manual full-Steam-bottle workflow was removed; use DepotDownloader's per-game path.
 - **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
 - **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
 

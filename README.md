@@ -29,8 +29,8 @@ fit better than Docker-style containers.
   without a recoverable copy.
 
 This does **not** run the real Steam client and does not bypass DRM, anti-cheat, or
-platform restrictions. (A legacy "run the Steam client in Wine" path still exists
-behind Compatibility → New Manual Bottle, but it's parked — see `HANDOFF.md` §7.)
+platform restrictions. Games are downloaded individually and run in isolated
+per-game bottles.
 
 ## Run (development)
 
