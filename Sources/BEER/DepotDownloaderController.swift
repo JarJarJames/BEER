@@ -61,10 +61,14 @@ enum DepotDownloaderError: LocalizedError {
 
 @MainActor
 final class DepotDownloaderController: ObservableObject {
-    @Published private(set) var isBusy = false
     @Published var lastError: String?
+    @Published private(set) var activeDownloads = 0
+
+    var isBusy: Bool { activeDownloads > 0 }
 
     private let cloudClient = CloudSyncClient()
+    private var authSessionDepth = 0
+    private var authCacheURL: URL?
 
     private var stateURL: URL {
         AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
@@ -165,24 +169,56 @@ final class DepotDownloaderController: ObservableObject {
             throw DepotDownloaderError.binaryMissing
         }
 
-        let authCache: URL
-        do {
-            authCache = try await cloudClient.prepareDepotDownloaderAuth(
-                executable: AppPaths.depotDownloaderExecutableURL,
-                account: auth.accountName,
-                refreshToken: auth.refreshToken
-            )
-        } catch {
-            throw DepotDownloaderError.authenticationFailed(error.localizedDescription)
+        try await withAuthSession(auth: auth) {
+            try await self.runDownload(appID: appID, into: installDir, auth: auth, events: events)
         }
-        rememberAuthCache(authCache)
-        defer {
-            try? FileManager.default.removeItem(at: authCache)
-            rememberAuthCache(nil)
-        }
+    }
 
-        isBusy = true
-        defer { isBusy = false }
+    /// Hold a DepotDownloader credential cache for the duration of `body`.
+    ///
+    /// The cache lives at a fixed path derived from the DepotDownloader binary,
+    /// so every concurrent run shares one file: it is minted on the first entry
+    /// and removed only when the last one leaves. Nesting is what makes a batch
+    /// cheap — `installAll` wraps the whole loop, so a six-DLC run costs one
+    /// Steam logon to mint the cache instead of six.
+    func withAuthSession<T>(auth: SteamCloudAccount, _ body: () async throws -> T) async throws -> T {
+        if authSessionDepth == 0 {
+            do {
+                let cache = try await cloudClient.prepareDepotDownloaderAuth(
+                    executable: AppPaths.depotDownloaderExecutableURL,
+                    account: auth.accountName,
+                    refreshToken: auth.refreshToken
+                )
+                authCacheURL = cache
+                rememberAuthCache(cache)
+            } catch {
+                throw DepotDownloaderError.authenticationFailed(error.localizedDescription)
+            }
+        }
+        authSessionDepth += 1
+        defer {
+            authSessionDepth -= 1
+            if authSessionDepth == 0 {
+                if let cache = authCacheURL {
+                    try? FileManager.default.removeItem(at: cache)
+                }
+                authCacheURL = nil
+                rememberAuthCache(nil)
+            }
+        }
+        return try await body()
+    }
+
+    private func runDownload(
+        appID: Int,
+        into installDir: URL,
+        auth: SteamCloudAccount,
+        events: @escaping @MainActor (DepotDownloaderEvent) -> Void
+    ) async throws {
+        // Refcounted, not a Bool: a DLC install can overlap a base-game install,
+        // and whichever finished first used to clear the flag for both.
+        activeDownloads += 1
+        defer { activeDownloads -= 1 }
 
         let args: [String] = [
             "-app", String(appID),
@@ -200,7 +236,6 @@ final class DepotDownloaderController: ObservableObject {
         let lastEmittedProgress = Box<Double>(-1)
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
-        let installedSuccessfully = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
 
         let exit = try await runDepotDownloader(args: args) { line in
@@ -243,7 +278,6 @@ final class DepotDownloaderController: ObservableObject {
 
             // Completion sentinels
             if line.contains("Total downloaded:") || line.contains("Depot download complete") || line.contains("downloaded successfully") {
-                installedSuccessfully.value = true
                 Task { @MainActor in events(.downloadComplete) }
             }
         }

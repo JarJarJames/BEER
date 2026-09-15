@@ -28,6 +28,11 @@ struct GameDetailView: View {
     /// Bumped after every Apply/Restore so the patch-status row re-reads
     /// the install dir from disk.
     @State private var patchProbeTick: Int = 0
+    /// Cached result of the install-directory probe. `patchStatus(at:)` walks
+    /// the game's whole install tree, so it must never run from `body` — every
+    /// published change anywhere (a download progress tick, say) would re-walk
+    /// it. Refreshed only when the tick changes or the bottle does.
+    @State private var cachedPatchStatus: PatchStatus?
     /// Synchronous re-entry guard for the Install button. Prevents the
     /// 20-second wineboot phase from being kicked off multiple times if the
     /// user clicks Install rapidly.
@@ -58,6 +63,10 @@ struct GameDetailView: View {
             .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        // Structured, so navigating away actually cancels the Steam query
+        // instead of leaving a detached logon running to completion.
+        .task(id: game.appID) { await loadDLC(force: false) }
+        .task(id: patchStatusProbeID) { await refreshPatchStatus() }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: onBack) {
@@ -81,7 +90,7 @@ struct GameDetailView: View {
                     game: game,
                     bottle: bottle,
                     installDir: installDir,
-                    emulatorApplied: currentPatchStatus(for: bottle) == .applied,
+                    emulatorApplied: cachedPatchStatus == .applied,
                     onDone: {
                         isShowingDLCManager = false
                         // The manager may have written configs.app.ini, so the
@@ -297,7 +306,6 @@ struct GameDetailView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .task(id: game.appID) { loadDLC(force: false) }
         }
     }
 
@@ -309,11 +317,7 @@ struct GameDetailView: View {
         let logEntries = bottles.logs[bottleID] ?? []
 
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Windows version")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 130, alignment: .leading)
+            SettingsRow(title: "Windows version") {
                 TextField("win10", text: Binding(
                     get: {
                         bottles.bottles.first(where: { $0.id == bottleID })?.windowsVersion
@@ -328,11 +332,7 @@ struct GameDetailView: View {
                 Spacer()
             }
 
-            HStack(alignment: .top, spacing: 12) {
-                Text("Notes")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 130, alignment: .leading)
+            SettingsRow(title: "Notes", alignment: .top) {
                 TextField("Compatibility notes", text: Binding(
                     get: {
                         bottles.bottles.first(where: { $0.id == bottleID })?.notes
@@ -430,10 +430,7 @@ struct GameDetailView: View {
     @ViewBuilder
     private func runtimeRow(bottle: Bottle) -> some View {
         let bottleID = bottle.id
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Runtime")
-                .font(.callout).foregroundStyle(.secondary)
-                .frame(width: 130, alignment: .leading)
+        SettingsRow(title: "Runtime") {
 
             if detector.candidates.isEmpty {
                 Text(bottle.runtimeLabel).font(.callout)
@@ -458,10 +455,7 @@ struct GameDetailView: View {
     @ViewBuilder
     private func graphicsRow(bottle: Bottle) -> some View {
         let bottleID = bottle.id
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Graphics")
-                .font(.callout).foregroundStyle(.secondary)
-                .frame(width: 130, alignment: .leading)
+        SettingsRow(title: "Graphics") {
             Picker("Graphics", selection: Binding(
                 get: { bottles.bottles.first(where: { $0.id == bottleID })?.effectiveGraphicsBackend ?? bottle.effectiveGraphicsBackend },
                 set: { newValue in bottles.scheduleMutation(bottleID: bottleID) { $0.graphicsBackend = newValue } }
@@ -483,11 +477,7 @@ struct GameDetailView: View {
         let resolutionMode = liveBottle.effectiveDisplayResolutionMode
 
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Resolution")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 130, alignment: .leading)
+            SettingsRow(title: "Resolution") {
 
                 Picker("Resolution", selection: Binding(
                     get: {
@@ -515,7 +505,7 @@ struct GameDetailView: View {
                 : "Uses macOS point dimensions for better performance and compatibility. On Retina displays this limits games to half the high-resolution width and height.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 142)
+                .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -525,11 +515,7 @@ struct GameDetailView: View {
         let bottleID = bottle.id
 
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Launch arguments")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 130, alignment: .leading)
+            SettingsRow(title: "Launch arguments") {
 
                 TextField("Optional game arguments", text: Binding(
                     get: {
@@ -549,25 +535,22 @@ struct GameDetailView: View {
             Text("Passed directly to the game executable. For Unity games, for example: -screen-width 3024 -screen-height 1964 -screen-fullscreen 0")
                 .font(.caption)
                 .foregroundStyle(.secondary)
-                .padding(.leading, 142)
+                .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
 
     @ViewBuilder
     private func steamEmulatorRow(bottle: Bottle) -> some View {
-        // Use patchProbeTick to force re-evaluation after Apply/Restore.
-        let _ = patchProbeTick
-        let status = currentPatchStatus(for: bottle)
-
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text("Steam emulator")
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(width: 130, alignment: .leading)
+        SettingsRow(title: "Steam emulator") {
 
             HStack(spacing: 8) {
-                switch status {
+                switch cachedPatchStatus {
+                case nil:
+                    ProgressView().controlSize(.small)
+                    Text("Checking…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 case .applied:
                     Label("Applied", systemImage: "checkmark.seal.fill")
                         .foregroundStyle(.green)
@@ -593,7 +576,7 @@ struct GameDetailView: View {
 
             Spacer()
 
-            switch status {
+            switch cachedPatchStatus {
             case .notApplied:
                 Button {
                     applyGoldbergPatch(to: bottle)
@@ -621,7 +604,7 @@ struct GameDetailView: View {
                 .menuStyle(.borderlessButton)
                 .fixedSize()
                 .disabled(isPatching)
-            case .noDLLsFound, .installDirMissing:
+            case nil, .noDLLsFound, .installDirMissing:
                 EmptyView()
             }
         }
@@ -630,7 +613,7 @@ struct GameDetailView: View {
             Text(message)
                 .font(.caption)
                 .foregroundStyle(patchStatusIsError ? .red : .green)
-                .padding(.leading, 142)
+                .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
@@ -638,84 +621,88 @@ struct GameDetailView: View {
     // MARK: - DLC row
 
     /// Collapses away once we know the account owns no DLC for this game.
-    /// The lookup itself is kicked off by `installedDetails` — a row that can
-    /// render empty is not a reliable place to hang a `.task`, and it costs a
-    /// Steam logon, so it runs once per game per session (cached in DLCStore)
-    /// and only for games that are actually installed.
+    /// The lookup is kicked off from `body` — see `loadDLC`.
+    private enum DLCRowState {
+        case installed(owned: Int, installed: Int)
+        case loading
+        case failed
+        case unchecked
+    }
+
+    private func dlcRowState(bottle: Bottle) -> DLCRowState? {
+        if let owned = dlcStore.ownedCount(for: game.appID) {
+            guard owned > 0 else { return nil }   // owns none — hide the row
+            return .installed(owned: owned, installed: bottle.effectiveInstalledDLC.count)
+        }
+        switch dlcStore.state(for: game.appID) {
+        case .loading: return .loading
+        case .failed: return .failed
+        case .idle, .loaded:
+            // Not looked yet. Offer the check rather than rendering nothing —
+            // a silent empty row is how a broken lookup hid the first time.
+            return isSteamConnected ? .unchecked : nil
+        }
+    }
+
+    private var isSteamConnected: Bool {
+        cloudAuth.account != nil && !cloudAuth.sessionExpired
+    }
+
     @ViewBuilder
     private func dlcRow(bottle: Bottle) -> some View {
-        let ownedCount = dlcStore.cachedOwnedCount(for: game.appID)
-        let isCurrent = dlcStore.loadedAppID == game.appID
-        let installedCount = bottle.effectiveInstalledDLC.count
-
-        Group {
-            if let ownedCount, ownedCount > 0 {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("DLC")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 130, alignment: .leading)
-
-                    if installedCount >= ownedCount {
-                        Label("All \(ownedCount) installed", systemImage: "checkmark.seal.fill")
+        if let state = dlcRowState(bottle: bottle) {
+            SettingsRow(title: "DLC") {
+                switch state {
+                case .installed(let owned, let installed):
+                    if installed >= owned {
+                        Label("All \(owned) installed", systemImage: "checkmark.seal.fill")
                             .foregroundStyle(.green)
                             .font(.callout)
                     } else {
-                        Label("\(installedCount) of \(ownedCount) installed", systemImage: "shippingbox.fill")
-                            .foregroundStyle(installedCount == 0 ? .orange : .primary)
+                        Label("\(installed) of \(owned) installed", systemImage: "shippingbox.fill")
+                            .foregroundStyle(installed == 0 ? .orange : .primary)
                             .font(.callout)
                     }
-
                     Spacer()
-
                     Button("Manage…") { isShowingDLCManager = true }
                         .controlSize(.small)
-                }
-            } else if isCurrent, case .loading = dlcStore.state {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("DLC")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 130, alignment: .leading)
+
+                case .loading:
                     ProgressView().controlSize(.small)
                     Text("Checking your Steam licences…")
                         .font(.callout)
                         .foregroundStyle(.secondary)
-                }
-            } else if isCurrent, case .failed = dlcStore.state {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("DLC")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 130, alignment: .leading)
+
+                case .failed:
                     Label("Couldn't check for DLC", systemImage: "exclamationmark.triangle")
                         .foregroundStyle(.orange)
                         .font(.callout)
                     Spacer()
-                    Button("Retry") { loadDLC(force: true) }
+                    Button("Retry") { reloadDLC() }
                         .controlSize(.small)
-                }
-            } else if ownedCount == nil, cloudAuth.account != nil, !cloudAuth.sessionExpired {
-                HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    Text("DLC")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .frame(width: 130, alignment: .leading)
+
+                case .unchecked:
                     Text("Not checked yet")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                     Spacer()
-                    Button("Check for DLC") { loadDLC(force: true) }
+                    Button("Check for DLC") { reloadDLC() }
                         .controlSize(.small)
                 }
             }
         }
     }
 
-    private func loadDLC(force: Bool) {
-        guard let auth = cloudAuth.account, !cloudAuth.sessionExpired else { return }
-        guard force || dlcStore.cachedOwnedCount(for: game.appID) == nil else { return }
-        Task { await dlcStore.load(appID: game.appID, auth: auth, force: force) }
+    /// Discovery costs a Steam logon, so this runs once per game per session
+    /// (DLCStore caches and coalesces) and only for installed games.
+    private func loadDLC(force: Bool) async {
+        guard isSteamConnected, let auth = cloudAuth.account else { return }
+        guard installedBottle != nil else { return }
+        await dlcStore.load(appID: game.appID, auth: auth, force: force)
+    }
+
+    private func reloadDLC() {
+        Task { await loadDLC(force: true) }
     }
 
     // MARK: - Steam Cloud row
@@ -726,11 +713,7 @@ struct GameDetailView: View {
         let expired = cloudAuth.sessionExpired
 
         VStack(alignment: .leading, spacing: 6) {
-            HStack(alignment: .firstTextBaseline, spacing: 12) {
-                Text("Steam Cloud")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .frame(width: 130, alignment: .leading)
+            SettingsRow(title: "Steam Cloud") {
 
                 if connected && expired {
                     Label("Sign-in expired", systemImage: "exclamationmark.icloud")
@@ -820,30 +803,30 @@ struct GameDetailView: View {
                 Text(cloudSync.phase)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 142)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                     .fixedSize(horizontal: false, vertical: true)
             } else if let message = cloudSyncMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(cloudSyncIsError ? .red : .green)
-                    .padding(.leading, 142)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                     .fixedSize(horizontal: false, vertical: true)
             } else if connected && expired {
                 Text("Your Steam sign-in expired or was revoked. Click Reconnect to resume syncing — your local saves and backups are untouched.")
                     .font(.caption)
                     .foregroundStyle(.orange)
-                    .padding(.leading, 142)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                     .fixedSize(horizontal: false, vertical: true)
             } else if connected, let last = cloudSync.lastSyncAt {
                 Text("Last synced \(last.formatted(.relative(presentation: .named))).")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 142)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
             } else if connected {
                 Text("Saves sync both ways with Steam Cloud, so you can move between your PC and this Mac. Every sync backs up your local saves first — nothing is overwritten without a recoverable copy.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .padding(.leading, 142)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -910,7 +893,7 @@ struct GameDetailView: View {
 
     // MARK: - Install directory + patch status
 
-    private enum PatchStatus: Equatable {
+    fileprivate enum PatchStatus: Equatable {
         case applied            // .original files present alongside stubs
         case notApplied         // steam_api*.dll present but no .original
         case noDLLsFound        // game doesn't use Steamworks
@@ -942,26 +925,44 @@ struct GameDetailView: View {
         return nil
     }
 
-    private func currentPatchStatus(for bottle: Bottle) -> PatchStatus {
-        guard let installDir = resolvedInstallDirectory(for: bottle) else {
+    /// Changes whenever the cached probe needs redoing: a different bottle, or
+    /// an Apply/Restore/DLC write bumping the tick.
+    private var patchStatusProbeID: String {
+        "\(installedBottle?.id.uuidString ?? "none")-\(patchProbeTick)"
+    }
+
+    private func refreshPatchStatus() async {
+        guard let bottle = installedBottle else {
+            cachedPatchStatus = nil
+            return
+        }
+        // Off the main actor: this walks the game's entire install tree.
+        let probed = await Task.detached { [dir = resolvedInstallDirectory(for: bottle)] in
+            GameDetailView.patchStatus(at: dir)
+        }.value
+        cachedPatchStatus = probed
+    }
+
+    nonisolated fileprivate static func patchStatus(at installDir: URL?) -> PatchStatus {
+        guard let installDir,
+              let enumerator = FileManager.default.enumerator(
+                  at: installDir, includingPropertiesForKeys: nil,
+                  options: [.skipsHiddenFiles, .skipsPackageDescendants])
+        else {
             return .installDirMissing
         }
-        guard let enumerator = FileManager.default.enumerator(at: installDir, includingPropertiesForKeys: [.isRegularFileKey]) else {
-            return .installDirMissing
-        }
-        var anyOriginal = false
         var anyDLL = false
         for case let url as URL in enumerator {
-            let name = url.lastPathComponent.lowercased()
-            if name == "steam_api.dll.original" || name == "steam_api64.dll.original" {
-                anyOriginal = true
-            } else if name == "steam_api.dll" || name == "steam_api64.dll" {
+            switch url.lastPathComponent.lowercased() {
+            case "steam_api.dll.original", "steam_api64.dll.original":
+                return .applied          // terminal — no need to walk the rest
+            case "steam_api.dll", "steam_api64.dll":
                 anyDLL = true
+            default:
+                break
             }
         }
-        if anyOriginal { return .applied }
-        if anyDLL { return .notApplied }
-        return .noDLLsFound
+        return anyDLL ? .notApplied : .noDLLsFound
     }
 
     private func applyGoldbergPatch(to bottle: Bottle) {
@@ -991,7 +992,7 @@ struct GameDetailView: View {
                     // Re-declare the enabled DLC; a bare reapply would
                     // otherwise drop the [app::dlcs] block and the game would
                     // stop seeing DLC it already has on disk.
-                    dlc: bottle.effectiveInstalledDLC,
+                    dlc: bottles.live(bottle).effectiveInstalledDLC,
                     using: goldberg
                 )
                 // Make sure the bottle has the install dir recorded for future ops.
@@ -1092,19 +1093,7 @@ struct GameDetailView: View {
                     gameName: game.name,
                     bottle: bottle,
                     auth: steamAccount,
-                    events: { event in
-                        switch event {
-                        case .log(let line):
-                            downloads.append(appID: game.appID, log: line)
-                        case .status(let phase):
-                            downloads.setStatus(appID: game.appID, phase: phase)
-                        case .progress(let fraction):
-                            downloads.setProgress(appID: game.appID, fraction: fraction,
-                                                   downloaded: nil, total: nil)
-                        case .downloadComplete:
-                            downloads.setStatus(appID: game.appID, phase: "Finalizing…")
-                        }
-                    }
+                    events: downloads.consume(appID: game.appID)
                 )
 
                 // Apply the Steam emulator (GBE_Fork) so the game launches
@@ -1122,7 +1111,7 @@ struct GameDetailView: View {
                             appID: game.appID,
                             account: cloudAuth.account?.accountName,
                             steamID64: cloudAuth.account?.steamID64,
-                            dlc: bottles.bottles.first { $0.id == bottle.id }?.effectiveInstalledDLC ?? [],
+                            dlc: bottles.live(bottle).effectiveInstalledDLC,
                             using: goldberg
                         )
                         downloads.append(
@@ -1322,16 +1311,37 @@ private struct SteamLibraryLogo: View {
     }
 }
 
+/// A Game Settings row: fixed-width secondary label, then whatever control the
+/// row needs. The label column's width lives here only — `SettingsRow.labelWidth`
+/// is what the caption indent below a row is derived from, instead of the magic
+/// 142 that used to be hardcoded at each site.
+struct SettingsRow<Content: View>: View {
+    static var labelWidth: CGFloat { 130 }
+    static var spacing: CGFloat { 12 }
+    /// Left inset that lines a caption up under the row's content.
+    static var captionIndent: CGFloat { labelWidth + spacing }
+
+    let title: String
+    var alignment: VerticalAlignment = .firstTextBaseline
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(alignment: alignment, spacing: Self.spacing) {
+            Text(title)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .frame(width: Self.labelWidth, alignment: .leading)
+            content
+        }
+    }
+}
+
 private struct LabeledValue: View {
     let key: String
     let value: String
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(key)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(width: 130, alignment: .leading)
+        SettingsRow(title: key) {
             Text(value)
                 .font(.callout)
                 .textSelection(.enabled)

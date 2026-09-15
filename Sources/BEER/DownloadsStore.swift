@@ -14,9 +14,11 @@ final class DownloadsStore: ObservableObject {
     }
 
     struct Entry: Identifiable, Equatable {
-        let id: Int        // appID
+        let id: Int        // appID — a DLC has its own, distinct from its game's
         var name: String
         var bottleID: UUID
+        /// The game this belongs to, when the entry is a DLC. nil for a game.
+        var parentAppID: Int?
         var status: Status
         var fraction: Double          // 0...1
         var downloadedBytes: Int64?
@@ -50,7 +52,7 @@ final class DownloadsStore: ObservableObject {
         entries.first { $0.id == appID }
     }
 
-    func start(appID: Int, name: String, bottleID: UUID) {
+    func start(appID: Int, name: String, bottleID: UUID, parentAppID: Int? = nil) {
         if let idx = entries.firstIndex(where: { $0.id == appID }) {
             entries[idx].status = .running("Connecting…")
             entries[idx].fraction = 0
@@ -59,11 +61,32 @@ final class DownloadsStore: ObservableObject {
         } else {
             entries.insert(
                 Entry(id: appID, name: name, bottleID: bottleID,
+                      parentAppID: parentAppID,
                       status: .running("Connecting…"),
                       fraction: 0, downloadedBytes: nil, totalBytes: nil,
                       logTail: [], startedAt: Date()),
                 at: 0
             )
+        }
+    }
+
+    /// The DepotDownloader event handler for `appID`. Both install paths — a
+    /// game and a DLC — funnel their output through this one adapter, so
+    /// neither can quietly drop a case (the DLC path used to discard every log
+    /// line, leaving failures with nothing to show).
+    func consume(appID: Int, completionPhase: String = "Finalizing…") -> @MainActor (DepotDownloaderEvent) -> Void {
+        { [weak self] event in
+            guard let self else { return }
+            switch event {
+            case .log(let line):
+                self.append(appID: appID, log: line)
+            case .status(let phase):
+                self.setStatus(appID: appID, phase: phase)
+            case .progress(let fraction):
+                self.setProgress(appID: appID, fraction: fraction, downloaded: nil, total: nil)
+            case .downloadComplete:
+                self.setStatus(appID: appID, phase: completionPhase)
+            }
         }
     }
 

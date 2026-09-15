@@ -3,6 +3,10 @@ import SwiftUI
 // The DLC manager sheet. Lists the DLC this account owns for a game and
 // installs them into the existing install directory — the base game is never
 // re-downloaded.
+//
+// Progress comes from DownloadsStore, the same place base-game installs report
+// to, so a DLC download stays visible in the Downloads pane even if this sheet
+// is dismissed mid-install.
 struct DLCManagerView: View {
     let game: SteamLibraryGame
     let bottle: Bottle
@@ -16,36 +20,31 @@ struct DLCManagerView: View {
     @EnvironmentObject private var dlcStore: DLCStore
     @EnvironmentObject private var bottles: BottleStore
     @EnvironmentObject private var depotCtl: DepotDownloaderController
+    @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var cloudAuth: SteamAuthStore
 
     @State private var isInstallingAll = false
 
-    private var liveBottle: Bottle {
-        bottles.bottles.first { $0.id == bottle.id } ?? bottle
-    }
-
-    private var installedIDs: Set<Int> {
-        Set(liveBottle.effectiveInstalledDLC.map(\.appID))
-    }
-
-    private var owned: [CloudSyncClient.DLCInfo] { dlcStore.owned }
+    private var liveBottle: Bottle { bottles.live(bottle) }
+    private var owned: [CloudSyncClient.DLCInfo] { dlcStore.state(for: game.appID).owned }
 
     /// `isInstalling` drops to false between items of a batch; gate on the batch
     /// flag too so buttons don't flicker back to enabled mid-run.
-    private var isBusy: Bool { dlcStore.isInstalling || isInstallingAll }
-
-    private var pending: [CloudSyncClient.DLCInfo] {
-        owned.filter { !installedIDs.contains($0.appID) }
-    }
+    private var isBusy: Bool { depotCtl.isBusy || isInstallingAll }
 
     var body: some View {
+        // Hoisted: effectiveInstalledDLC sorts on every access, and these were
+        // being recomputed once per row per body pass.
+        let installedIDs = Set(liveBottle.effectiveInstalledDLC.map(\.appID))
+        let pending = owned.filter { !installedIDs.contains($0.appID) }
+
         VStack(alignment: .leading, spacing: 0) {
             header
             Divider()
-            content
+            content(installedIDs: installedIDs)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             Divider()
-            footer
+            footer(pending: pending)
         }
         .frame(width: 560, height: 520)
         .task {
@@ -70,8 +69,8 @@ struct DLCManagerView: View {
     // MARK: - Content
 
     @ViewBuilder
-    private var content: some View {
-        switch dlcStore.state {
+    private func content(installedIDs: Set<Int>) -> some View {
+        switch dlcStore.state(for: game.appID) {
         case .idle, .loading:
             centered {
                 ProgressView()
@@ -80,30 +79,15 @@ struct DLCManagerView: View {
                     .foregroundStyle(.secondary)
             }
         case .failed(let reason):
-            centered {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.largeTitle)
-                    .foregroundStyle(.orange)
-                Text(reason)
-                    .font(.callout)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
-                Button("Try again") { reload(force: true) }
-            }
-        case .loaded where owned.isEmpty:
-            centered {
-                Image(systemName: "shippingbox")
-                    .font(.largeTitle)
-                    .foregroundStyle(.secondary)
-                Text(dlcStore.entries.isEmpty
-                     ? "Steam doesn't list any DLC for this game."
-                     : "Steam lists \(dlcStore.entries.count) DLC for this game, but none are on your account.")
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: 380)
-                Button("Check again") { reload(force: true) }
-            }
+            placeholder(icon: "exclamationmark.triangle.fill", tint: .orange, text: reason)
+        case .loaded(let entries) where entries.filter(\.owned).isEmpty:
+            placeholder(
+                icon: "shippingbox",
+                tint: .secondary,
+                text: entries.isEmpty
+                    ? "Steam doesn't list any DLC for this game."
+                    : "Steam lists \(entries.count) DLC for this game, but none are on your account."
+            )
         case .loaded:
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
@@ -111,11 +95,23 @@ struct DLCManagerView: View {
                         emulatorWarning
                     }
                     ForEach(owned) { dlc in
-                        row(dlc)
+                        row(dlc, installed: installedIDs.contains(dlc.appID))
                         Divider()
                     }
                 }
             }
+        }
+    }
+
+    private func placeholder(icon: String, tint: Color, text: String) -> some View {
+        centered {
+            Image(systemName: icon).font(.largeTitle).foregroundStyle(tint)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 380)
+            Button("Check again") { reload() }
         }
     }
 
@@ -133,9 +129,8 @@ struct DLCManagerView: View {
     }
 
     @ViewBuilder
-    private func row(_ dlc: CloudSyncClient.DLCInfo) -> some View {
-        let installed = installedIDs.contains(dlc.appID)
-        let progress = dlcStore.progress[dlc.appID]
+    private func row(_ dlc: CloudSyncClient.DLCInfo, installed: Bool) -> some View {
+        let active = downloads.entry(for: dlc.appID).flatMap { $0.isActive ? $0 : nil }
 
         HStack(alignment: .center, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
@@ -149,11 +144,11 @@ struct DLCManagerView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
-                if let progress {
-                    ProgressView(value: progress.fraction)
+                if let active {
+                    ProgressView(value: active.fraction)
                         .progressViewStyle(.linear)
                         .frame(maxWidth: 260)
-                    Text(progress.phase)
+                    Text(active.phaseText)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
@@ -161,7 +156,7 @@ struct DLCManagerView: View {
 
             Spacer()
 
-            if progress != nil {
+            if active != nil {
                 ProgressView().controlSize(.small)
             } else if installed {
                 Label("Installed", systemImage: "checkmark.circle.fill")
@@ -188,25 +183,24 @@ struct DLCManagerView: View {
 
     // MARK: - Footer
 
-    private var footer: some View {
+    private func footer(pending: [CloudSyncClient.DLCInfo]) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let message = dlcStore.message {
-                Text(message)
+                Text(message.text)
                     .font(.caption)
-                    .foregroundStyle(dlcStore.messageIsError ? .red : .green)
+                    .foregroundStyle(message.isError ? .red : .green)
                     .fixedSize(horizontal: false, vertical: true)
             }
             HStack {
                 if !pending.isEmpty {
                     Button(isInstallingAll ? "Installing…" : "Install all (\(pending.count))") {
-                        installAll()
+                        installAll(pending)
                     }
                     .disabled(isBusy)
                 }
                 Spacer()
                 Button("Done", action: onDone)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(isBusy)
             }
         }
         .padding(20)
@@ -220,37 +214,39 @@ struct DLCManagerView: View {
 
     // MARK: - Actions
 
-    private func reload(force: Bool) {
+    private func reload() {
         guard let auth = cloudAuth.account else { return }
-        Task { await dlcStore.load(appID: game.appID, auth: auth, force: force) }
+        Task { await dlcStore.load(appID: game.appID, auth: auth, force: true) }
     }
 
     private func install(_ dlc: CloudSyncClient.DLCInfo) {
         guard let auth = cloudAuth.account else { return }
-        Task {
-            await dlcStore.install(
-                dlc, bottle: liveBottle, installDir: installDir,
-                auth: auth, controller: depotCtl, bottles: bottles
-            )
-        }
+        Task { await installOne(dlc, auth: auth) }
     }
 
-    private func installAll() {
+    private func installAll(_ queue: [CloudSyncClient.DLCInfo]) {
         guard let auth = cloudAuth.account else { return }
-        let queue = pending
         isInstallingAll = true
         Task {
             defer { isInstallingAll = false }
-            // Serially: each DLC is its own DepotDownloader run and its own
-            // Steam logon, and parallel runs would fight over the install dir.
-            for dlc in queue {
-                await dlcStore.install(
-                    dlc, bottle: liveBottle, installDir: installDir,
-                    auth: auth, controller: depotCtl, bottles: bottles
-                )
-                if dlcStore.messageIsError { break }
+            // One auth session for the batch: each DLC still gets its own
+            // DepotDownloader run, but they no longer re-mint the credential
+            // cache — and re-authenticating per item is what Steam throttles.
+            try? await depotCtl.withAuthSession(auth: auth) {
+                // Serially: parallel runs would fight over the install dir.
+                for dlc in queue {
+                    await installOne(dlc, auth: auth)
+                    if dlcStore.message?.isError == true { break }
+                }
             }
         }
+    }
+
+    private func installOne(_ dlc: CloudSyncClient.DLCInfo, auth: SteamCloudAccount) async {
+        await dlcStore.install(
+            dlc, bottle: liveBottle, installDir: installDir, auth: auth,
+            controller: depotCtl, downloads: downloads, bottles: bottles
+        )
     }
 
     private func disable(_ dlc: CloudSyncClient.DLCInfo) {

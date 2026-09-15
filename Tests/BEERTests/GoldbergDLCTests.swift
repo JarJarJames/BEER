@@ -25,7 +25,7 @@ final class GoldbergDLCTests: XCTestCase {
     }
 
     private func dlc(_ appID: Int, _ name: String) -> InstalledDLC {
-        InstalledDLC(appID: appID, name: name, hasContent: true, installedAt: Date())
+        InstalledDLC(appID: appID, name: name, installedAt: Date())
     }
 
     private func readConfig() throws -> String {

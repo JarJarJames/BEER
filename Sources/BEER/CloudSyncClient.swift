@@ -139,13 +139,10 @@ struct CloudSyncClient {
     /// session (IPlayerService.GetOwnedGames over the Steam network) — no Web
     /// API key required.
     func ownedGames(steamID64: String, account: String, refreshToken: String) async throws -> [OwnedGameInfo] {
-        let obj = try await runOnce(
-            args: ["ownedgames", "--steamid", steamID64],
+        let raw = try await runOnceArray(
+            "games", args: ["ownedgames", "--steamid", steamID64],
             account: account, refreshToken: refreshToken
         )
-        guard let raw = obj["games"] as? [[String: Any]] else {
-            throw CloudSyncClientError.badOutput("no games array")
-        }
         return raw.compactMap { g in
             guard let appid = (g["appid"] as? NSNumber)?.intValue else { return nil }
             let name = (g["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "App \(appid)"
@@ -166,8 +163,6 @@ struct CloudSyncClient {
         var id: Int { appID }
         let appID: Int
         let name: String
-        /// Steam's own app type, lowercased ("dlc", "music", "application"…).
-        let type: String
         let owned: Bool
         /// False for licence-only DLC (season passes, artbooks) that carry no
         /// downloadable depot — there is nothing to install for those, only an
@@ -179,19 +174,15 @@ struct CloudSyncClient {
     /// account owns it. Steam has no owned-DLC endpoint, so the helper derives
     /// ownership from the account's package licences (see `Dlc` in Program.cs).
     func dlc(appID: Int, account: String, refreshToken: String) async throws -> [DLCInfo] {
-        let obj = try await runOnce(
-            args: ["dlc", "--appid", String(appID)],
+        let raw = try await runOnceArray(
+            "dlc", args: ["dlc", "--appid", String(appID)],
             account: account, refreshToken: refreshToken
         )
-        guard let raw = obj["dlc"] as? [[String: Any]] else {
-            throw CloudSyncClientError.badOutput("no dlc array")
-        }
         return raw.compactMap { d in
             guard let appid = (d["appid"] as? NSNumber)?.intValue else { return nil }
             return DLCInfo(
                 appID: appid,
                 name: (d["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "DLC \(appid)",
-                type: d["type"] as? String ?? "",
                 owned: d["owned"] as? Bool ?? false,
                 hasDepots: d["has_depots"] as? Bool ?? false
             )
@@ -201,13 +192,10 @@ struct CloudSyncClient {
     // MARK: - Cloud operations
 
     func enumerate(appID: Int, account: String, refreshToken: String) async throws -> [CloudRemoteFile] {
-        let obj = try await runOnce(
-            args: ["enumerate", "--appid", String(appID)],
+        let raw = try await runOnceArray(
+            "files", args: ["enumerate", "--appid", String(appID)],
             account: account, refreshToken: refreshToken
         )
-        guard let raw = obj["files"] as? [[String: Any]] else {
-            throw CloudSyncClientError.badOutput("no files array")
-        }
         return raw.compactMap { f in
             guard let filename = f["filename"] as? String else { return nil }
             let size = (f["size"] as? NSNumber)?.intValue ?? 0
@@ -287,6 +275,19 @@ struct CloudSyncClient {
     /// Run a one-shot command, returning the last JSON object the helper
     /// printed. Writes the refresh token to a temp file so it never appears in
     /// argv / `ps` output.
+    /// Run a command whose payload is a JSON array under `key`, and hand back
+    /// its rows. Owns the cast and the "no <key> array" error so each command
+    /// keeps only its own row mapping.
+    private func runOnceArray(
+        _ key: String, args: [String], account: String, refreshToken: String
+    ) async throws -> [[String: Any]] {
+        let obj = try await runOnce(args: args, account: account, refreshToken: refreshToken)
+        guard let raw = obj[key] as? [[String: Any]] else {
+            throw CloudSyncClientError.badOutput("no \(key) array")
+        }
+        return raw
+    }
+
     private func runOnce(args: [String], account: String, refreshToken: String) async throws -> [String: Any] {
         let binary = try binaryOrThrow()
         let tokenFile = FileManager.default.temporaryDirectory

@@ -275,14 +275,19 @@ static class Program
         if (appid == 0) throw new Exception("dlc requires --appid");
         var apps = s.Client.GetHandler<SteamApps>()!;
 
+        // Independent of everything below, and gated on a push Steam sends just
+        // after logon — kick it off first and collect it once the DLC ids are known.
+        var ownedTask = OwnedAppIds(s, apps);
+
         var baseInfo = await RequestAppInfo(apps, new[] { appid });
         if (!baseInfo.TryGetValue(appid, out var baseApp) || baseApp is null)
             throw new Exception($"Steam returned no app info for {appid}");
 
         var dlcIds = new List<uint>();
+        var seen = new HashSet<uint>();
         void AddDlc(uint id)
         {
-            if (id != 0 && id != appid && !dlcIds.Contains(id)) dlcIds.Add(id);
+            if (id != 0 && id != appid && seen.Add(id)) dlcIds.Add(id);
         }
 
         // The canonical list: appinfo → extended → listofdlc, comma separated.
@@ -301,8 +306,8 @@ static class Program
             if (tag != KeyValue.Invalid && uint.TryParse(tag.Value, out var id)) AddDlc(id);
         }
 
-        var owned = await OwnedAppIds(s, apps);
         var dlcInfo = await RequestAppInfo(apps, dlcIds);
+        var owned = await ownedTask;
 
         var result = new List<object>();
         foreach (var id in dlcIds)
@@ -314,7 +319,6 @@ static class Program
             {
                 ["appid"] = id,
                 ["name"] = string.IsNullOrWhiteSpace(name) ? $"DLC {id}" : name,
-                ["type"] = (common?["type"].AsString() ?? "").ToLowerInvariant(),
                 ["owned"] = owned.Contains(id),
                 // Whether there is anything to download. Licence-only DLC
                 // (season passes, artbooks) carry no installable depot, so the

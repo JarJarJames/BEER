@@ -311,14 +311,13 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     }
 }
 
-/// One DLC the user has turned on for a game. `hasContent` records whether the
-/// DLC had a depot to download: licence-only DLC (season passes, artbooks) are
-/// declared to the emulator but have no files on disk.
+/// One DLC the user has turned on for a game. Some DLC (season passes,
+/// artbooks) carry no depot at all — those are declared to the emulator but
+/// have no files on disk.
 struct InstalledDLC: Codable, Hashable, Identifiable {
     var id: Int { appID }
     var appID: Int
     var name: String
-    var hasContent: Bool
     var installedAt: Date
 
     /// The emulator's ini parser reads to end-of-line, so a name carrying a
@@ -337,6 +336,25 @@ enum SteamGameInstallStatus: String, Codable {
     case installed
     case updateAvailable
     case failed
+}
+
+/// A short outcome banner — the text plus whether it reads as a failure. Keeps
+/// a message and its red/green flag in one value instead of two properties that
+/// have to be assigned in step at every site.
+enum StatusMessage: Equatable {
+    case success(String)
+    case failure(String)
+
+    var text: String {
+        switch self {
+        case .success(let t), .failure(let t): return t
+        }
+    }
+
+    var isError: Bool {
+        if case .failure = self { return true }
+        return false
+    }
 }
 
 struct BottleLogEntry: Identifiable, Hashable {

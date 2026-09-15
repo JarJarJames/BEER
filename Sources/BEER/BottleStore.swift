@@ -238,6 +238,13 @@ final class BottleStore: ObservableObject {
         }
     }
 
+    /// The store's current copy of `bottle`, or `bottle` itself if it has been
+    /// removed. Views and long-running tasks hold a snapshot that goes stale
+    /// while they work; this names that fact instead of re-deriving it.
+    func live(_ bottle: Bottle) -> Bottle {
+        bottles.first { $0.id == bottle.id } ?? bottle
+    }
+
     func update(_ bottle: Bottle) async {
         guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
         var updated = bottle
