@@ -105,6 +105,7 @@ final class BottleStore: ObservableObject {
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
         await configureControllers(bottle)
+        let controllerHelper = await prepareControllerFix(bottle, executable: executable)
         await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
@@ -116,6 +117,58 @@ final class BottleStore: ObservableObject {
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
             mode: .wine(arguments: args)
         )
+
+        // The helper only exists to feed the running game; it has no reason to
+        // outlive it, and leaving it behind would hold the pad open.
+        controllerHelper?.terminate()
+    }
+
+    /// Set up the opt-in controller fix, returning the macOS-side helper so the
+    /// caller can stop it when the game exits. A failure here is logged and the
+    /// game still launches — a broken D-pad beats refusing to start.
+    private func prepareControllerFix(_ bottle: Bottle, executable: String) async -> Process? {
+        guard bottle.effectiveControllerFix else { return nil }
+
+        guard let device = ControllerSupport.connectedDeviceIdentifiers().first else {
+            appendLog("Controller fix enabled but no gamepad is connected.", bottleID: bottle.id)
+            return nil
+        }
+
+        do {
+            try ControllerSupport.installShim(
+                forExecutable: executable,
+                runtimeHid: runtimeHidURL(for: bottle)
+            )
+        } catch {
+            appendLog(
+                "Controller fix unavailable: \(error.localizedDescription)",
+                bottleID: bottle.id,
+                isError: true
+            )
+            return nil
+        }
+
+        let prefix = AppPaths.prefixURL(for: bottle)
+        guard let helper = ControllerSupport.startHelper(prefix: prefix, device: device) else {
+            appendLog("Controller fix helper failed to start.", bottleID: bottle.id, isError: true)
+            return nil
+        }
+
+        appendLog("Controller fix active for \(device).", bottleID: bottle.id)
+        return helper
+    }
+
+    /// Wine's own hid.dll, which the shim forwards all but two exports to.
+    private func runtimeHidURL(for bottle: Bottle) -> URL? {
+        let wineRoot = URL(fileURLWithPath: runtimeWinePath(for: bottle))
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let candidates = [
+            wineRoot.appendingPathComponent("lib/wine/x86_64-windows/hid.dll"),
+            wineRoot.appendingPathComponent("lib64/wine/x86_64-windows/hid.dll")
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
     }
 
     /// Register the Mac's connected gamepads with Wine's HID bus driver, which
@@ -493,6 +546,7 @@ final class BottleStore: ObservableObject {
         env["USERNAME"] = "crossover"
         env["WINEDLLOVERRIDES"] = dllOverrides(
             for: bottle.effectiveGraphicsBackend,
+            controllerFix: bottle.effectiveControllerFix,
             userOverrides: bottle.environmentOverrides["WINEDLLOVERRIDES"]
         )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
@@ -569,7 +623,7 @@ final class BottleStore: ObservableObject {
     /// for — the user's entry goes last so it wins any conflict. (Previously
     /// this value overwrote `environmentOverrides["WINEDLLOVERRIDES"]`, so a
     /// user override was silently discarded.)
-    private func dllOverrides(for backend: GraphicsBackend, userOverrides: String?) -> String {
+    private func dllOverrides(for backend: GraphicsBackend, controllerFix: Bool, userOverrides: String?) -> String {
         var entries: [String] = []
 
         switch backend {
@@ -588,14 +642,11 @@ final class BottleStore: ObservableObject {
         // E_NOTIMPL, so GDK-era titles that detect controllers through GameInput
         // (Kingdom Come: Deliverance II, Stalker 2) report zero pads.
         //
-        // hid: winexinput.sys builds the pad it exposes by reading a hat switch
-        // (usage 0x39) from the source device and skipping every button usage
-        // above 10 — so a pad reporting its D-pad as buttons 12-15 with no hat
-        // loses the D-pad inside the driver. The exposed device still declares a
-        // hat; the shim fills it from ControllerSupport's helper.
-        for module in ["gameinput", "hid"] {
-            entries.append("\(module)=n,b")
-        }
+        entries.append("gameinput=n,b")
+
+        // hid: only when the per-game controller fix is on, so a bottle that
+        // does not need it never loads the shim — see ControllerSupport.
+        if controllerFix { entries.append("hid=n,b") }
 
         if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }
         return entries.joined(separator: ";")
