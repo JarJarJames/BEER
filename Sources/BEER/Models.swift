@@ -113,6 +113,10 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
     /// when reapplying or restoring on an already-installed game.
     var gameInstallDirectory: String? = nil
+    /// DLC the user has enabled for this game. Drives the `[app::dlcs]` block
+    /// the Steam emulator reads, so the game is told it owns them. Optional so
+    /// bottles written before the DLC manager still decode.
+    var installedDLC: [InstalledDLC]? = nil
 
     // --- Display resolution ---
     // Retina mode makes Wine expose twice the macOS point dimensions to Windows
@@ -125,6 +129,10 @@ struct Bottle: Identifiable, Codable, Hashable {
 
     var effectiveGameLaunchArguments: String {
         gameLaunchArguments ?? ""
+    }
+
+    var effectiveInstalledDLC: [InstalledDLC] {
+        (installedDLC ?? []).sorted { $0.appID < $1.appID }
     }
 
     /// Move arguments entered through the old Steam-only field into the game
@@ -300,6 +308,25 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     /// Transparent title treatment Steam layers over its Library hero art.
     var libraryLogoImage: URL? {
         URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/logo.png")
+    }
+}
+
+/// One DLC the user has turned on for a game. `hasContent` records whether the
+/// DLC had a depot to download: licence-only DLC (season passes, artbooks) are
+/// declared to the emulator but have no files on disk.
+struct InstalledDLC: Codable, Hashable, Identifiable {
+    var id: Int { appID }
+    var appID: Int
+    var name: String
+    var hasContent: Bool
+    var installedAt: Date
+
+    /// The emulator's ini parser reads to end-of-line, so a name carrying a
+    /// newline would corrupt the following entries.
+    var iniSafeName: String {
+        name.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespaces)
     }
 }
 

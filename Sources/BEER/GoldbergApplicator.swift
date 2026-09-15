@@ -9,6 +9,11 @@ import Foundation
 //   2. Drop a `steam_settings/` folder beside the stub that contains at
 //      minimum a `steam_appid.txt` with the numeric Steam appID.
 //
+// DLC needs a third ingredient. The emulator answers GetDLCCount() /
+// BGetDLCDataByIndex() from the `[app::dlcs]` block of `configs.app.ini`, so
+// with no such file a game that *enumerates* its DLC finds none no matter what
+// is on disk. We write that block from the bottle's enabled-DLC list.
+//
 // We do this recursively across the whole install dir because some games
 // ship multiple copies (e.g. /redist, /tools, the main exe dir). For each
 // patched DLL we keep the original at `<name>.original` so a Restore action
@@ -45,7 +50,7 @@ enum GoldbergApplicator {
     /// GBE_Fork stub. Idempotent: re-running is safe and only patches DLLs we
     /// haven't already patched.
     @MainActor
-    static func apply(installDir: URL, appID: Int, account: String? = nil, steamID64: String? = nil, using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
+    static func apply(installDir: URL, appID: Int, account: String? = nil, steamID64: String? = nil, dlc: [InstalledDLC] = [], using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
         guard let stub64 = installer.steamApi64URL, let stub32 = installer.steamApi32URL else {
             throw GoldbergPatchError.stubsMissing
         }
@@ -74,7 +79,7 @@ enum GoldbergApplicator {
             if let existing = try? Data(contentsOf: dll), existing == stubData {
                 report.alreadyPatched += 1
                 // Still write the steam_settings folder in case it's missing.
-                let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, fileManager: fm)
+                let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, fileManager: fm)
                 report.settingsDirs.append(settings)
                 continue
             }
@@ -94,7 +99,7 @@ enum GoldbergApplicator {
             report.patched.append(dll)
 
             // Write steam_settings/steam_appid.txt beside it.
-            let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, fileManager: fm)
+            let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, fileManager: fm)
             report.settingsDirs.append(settings)
         }
 
@@ -125,12 +130,82 @@ enum GoldbergApplicator {
             // (we'll only touch a folder that contains just steam_appid.txt;
             // leave anything richer alone in case the user customized it).
             let settingsDir = liveDLL.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
+            let ours: Set<String> = ["steam_appid.txt", "configs.user.ini", "configs.app.ini"]
             if let entries = try? fm.contentsOfDirectory(atPath: settingsDir.path),
-               entries.allSatisfy({ $0 == "steam_appid.txt" || $0.hasPrefix(".") }) {
+               entries.allSatisfy({ ours.contains($0) || $0.hasPrefix(".") }) {
                 try? fm.removeItem(at: settingsDir)
             }
         }
         return restored
+    }
+
+    // MARK: - DLC
+
+    /// Rewrite the `[app::dlcs]` block in every steam_settings folder already
+    /// present under `installDir`, without touching the patched DLLs. Lets the
+    /// DLC manager change what the game is told it owns without a re-patch.
+    /// Returns the number of folders updated.
+    @discardableResult
+    static func updateDLC(installDir: URL, dlc: [InstalledDLC]) throws -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            throw GoldbergPatchError.unreadableInstallDir(installDir.path)
+        }
+        var updated = 0
+        for case let url as URL in enumerator where url.lastPathComponent == "steam_settings" {
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            try writeDLCSection(in: url, dlc: dlc, fileManager: fm)
+            updated += 1
+        }
+        return updated
+    }
+
+    /// Splice our `[app::dlcs]` block into `configs.app.ini`, leaving any other
+    /// section the user may have added alone. With no DLC the block is removed,
+    /// and the file deleted if that leaves it empty — so turning every DLC off
+    /// restores the emulator's stock behaviour rather than pinning an empty list.
+    private static func writeDLCSection(in settingsDir: URL, dlc: [InstalledDLC], fileManager fm: FileManager) throws {
+        let configURL = settingsDir.appendingPathComponent("configs.app.ini", isDirectory: false)
+        let existing = (try? String(contentsOf: configURL, encoding: .utf8)) ?? ""
+        var kept = stripDLCSection(from: existing)
+
+        if !dlc.isEmpty {
+            var section = "[app::dlcs]\n"
+            // unlock_all=0 with an explicit list, not 1: gbe_fork's own docs note
+            // that some games probe for a made-up DLC id to detect an emulator,
+            // and blanket-unlocking answers yes to those too.
+            section += "unlock_all=0\n"
+            for item in dlc.sorted(by: { $0.appID < $1.appID }) {
+                section += "\(item.appID)=\(item.iniSafeName)\n"
+            }
+            if !kept.isEmpty && !kept.hasSuffix("\n\n") {
+                kept += kept.hasSuffix("\n") ? "\n" : "\n\n"
+            }
+            kept += section
+        }
+
+        if kept.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            if fm.fileExists(atPath: configURL.path) {
+                try fm.removeItem(at: configURL)
+            }
+            return
+        }
+        try kept.write(to: configURL, atomically: true, encoding: .utf8)
+    }
+
+    /// Drop the `[app::dlcs]` section from an ini, keeping every other section.
+    private static func stripDLCSection(from contents: String) -> String {
+        guard !contents.isEmpty else { return "" }
+        var out: [Substring] = []
+        var inDLCSection = false
+        for line in contents.split(separator: "\n", omittingEmptySubsequences: false) {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("[") {
+                inDLCSection = trimmed.lowercased() == "[app::dlcs]"
+            }
+            if !inDLCSection { out.append(line) }
+        }
+        return out.joined(separator: "\n").trimmingCharacters(in: .newlines)
     }
 
     // MARK: - Internals
@@ -150,7 +225,7 @@ enum GoldbergApplicator {
         return found
     }
 
-    private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, fileManager fm: FileManager) throws -> URL {
+    private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, dlc: [InstalledDLC], fileManager fm: FileManager) throws -> URL {
         let settingsDir = dll.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
         try fm.createDirectory(at: settingsDir, withIntermediateDirectories: true)
         let appidFile = settingsDir.appendingPathComponent("steam_appid.txt", isDirectory: false)
@@ -166,6 +241,8 @@ enum GoldbergApplicator {
             let userConfig = settingsDir.appendingPathComponent("configs.user.ini", isDirectory: false)
             try ini.write(to: userConfig, atomically: true, encoding: .utf8)
         }
+
+        try writeDLCSection(in: settingsDir, dlc: dlc, fileManager: fm)
         return settingsDir
     }
 }

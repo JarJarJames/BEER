@@ -14,7 +14,9 @@ struct GameDetailView: View {
     @EnvironmentObject private var cloudAuth: SteamAuthStore
     @EnvironmentObject private var cloudSync: CloudSyncEngine
     @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
+    @EnvironmentObject private var dlcStore: DLCStore
     @State private var isShowingCloudConnect: Bool = false
+    @State private var isShowingDLCManager: Bool = false
     @State private var shouldResumeInstallAfterCloudConnect: Bool = false
     @State private var cloudSyncMessage: String?
     @State private var cloudSyncIsError: Bool = false
@@ -72,6 +74,22 @@ struct GameDetailView: View {
                     startInstall()
                 }
             })
+        }
+        .sheet(isPresented: $isShowingDLCManager) {
+            if let bottle = installedBottle, let installDir = resolvedInstallDirectory(for: bottle) {
+                DLCManagerView(
+                    game: game,
+                    bottle: bottle,
+                    installDir: installDir,
+                    emulatorApplied: currentPatchStatus(for: bottle) == .applied,
+                    onDone: {
+                        isShowingDLCManager = false
+                        // The manager may have written configs.app.ini, so the
+                        // emulator row's on-disk probe is now stale.
+                        patchProbeTick &+= 1
+                    }
+                )
+            }
         }
         .confirmationDialog(
             "Back up and clear local saves?",
@@ -262,6 +280,7 @@ struct GameDetailView: View {
                 displayModeRow(bottle: bottle)
                 gameLaunchArgumentsRow(bottle: bottle)
                 steamEmulatorRow(bottle: bottle)
+                dlcRow(bottle: bottle)
                 steamCloudRow(bottle: bottle)
 
                 DisclosureGroup(isExpanded: $isAdvancedExpanded) {
@@ -278,6 +297,7 @@ struct GameDetailView: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            .task(id: game.appID) { loadDLC(force: false) }
         }
     }
 
@@ -615,6 +635,89 @@ struct GameDetailView: View {
         }
     }
 
+    // MARK: - DLC row
+
+    /// Collapses away once we know the account owns no DLC for this game.
+    /// The lookup itself is kicked off by `installedDetails` — a row that can
+    /// render empty is not a reliable place to hang a `.task`, and it costs a
+    /// Steam logon, so it runs once per game per session (cached in DLCStore)
+    /// and only for games that are actually installed.
+    @ViewBuilder
+    private func dlcRow(bottle: Bottle) -> some View {
+        let ownedCount = dlcStore.cachedOwnedCount(for: game.appID)
+        let isCurrent = dlcStore.loadedAppID == game.appID
+        let installedCount = bottle.effectiveInstalledDLC.count
+
+        Group {
+            if let ownedCount, ownedCount > 0 {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("DLC")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .leading)
+
+                    if installedCount >= ownedCount {
+                        Label("All \(ownedCount) installed", systemImage: "checkmark.seal.fill")
+                            .foregroundStyle(.green)
+                            .font(.callout)
+                    } else {
+                        Label("\(installedCount) of \(ownedCount) installed", systemImage: "shippingbox.fill")
+                            .foregroundStyle(installedCount == 0 ? .orange : .primary)
+                            .font(.callout)
+                    }
+
+                    Spacer()
+
+                    Button("Manage…") { isShowingDLCManager = true }
+                        .controlSize(.small)
+                }
+            } else if isCurrent, case .loading = dlcStore.state {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("DLC")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .leading)
+                    ProgressView().controlSize(.small)
+                    Text("Checking your Steam licences…")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+            } else if isCurrent, case .failed = dlcStore.state {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("DLC")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .leading)
+                    Label("Couldn't check for DLC", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                        .font(.callout)
+                    Spacer()
+                    Button("Retry") { loadDLC(force: true) }
+                        .controlSize(.small)
+                }
+            } else if ownedCount == nil, cloudAuth.account != nil, !cloudAuth.sessionExpired {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("DLC")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .frame(width: 130, alignment: .leading)
+                    Text("Not checked yet")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Check for DLC") { loadDLC(force: true) }
+                        .controlSize(.small)
+                }
+            }
+        }
+    }
+
+    private func loadDLC(force: Bool) {
+        guard let auth = cloudAuth.account, !cloudAuth.sessionExpired else { return }
+        guard force || dlcStore.cachedOwnedCount(for: game.appID) == nil else { return }
+        Task { await dlcStore.load(appID: game.appID, auth: auth, force: force) }
+    }
+
     // MARK: - Steam Cloud row
 
     @ViewBuilder
@@ -807,7 +910,7 @@ struct GameDetailView: View {
 
     // MARK: - Install directory + patch status
 
-    private enum PatchStatus {
+    private enum PatchStatus: Equatable {
         case applied            // .original files present alongside stubs
         case notApplied         // steam_api*.dll present but no .original
         case noDLLsFound        // game doesn't use Steamworks
@@ -885,6 +988,10 @@ struct GameDetailView: View {
                     appID: game.appID,
                     account: cloudAuth.account?.accountName,
                     steamID64: cloudAuth.account?.steamID64,
+                    // Re-declare the enabled DLC; a bare reapply would
+                    // otherwise drop the [app::dlcs] block and the game would
+                    // stop seeing DLC it already has on disk.
+                    dlc: bottle.effectiveInstalledDLC,
                     using: goldberg
                 )
                 // Make sure the bottle has the install dir recorded for future ops.
@@ -1015,6 +1122,7 @@ struct GameDetailView: View {
                             appID: game.appID,
                             account: cloudAuth.account?.accountName,
                             steamID64: cloudAuth.account?.steamID64,
+                            dlc: bottles.bottles.first { $0.id == bottle.id }?.effectiveInstalledDLC ?? [],
                             using: goldberg
                         )
                         downloads.append(

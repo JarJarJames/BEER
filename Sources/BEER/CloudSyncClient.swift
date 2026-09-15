@@ -160,6 +160,44 @@ struct CloudSyncClient {
         }
     }
 
+    // MARK: - DLC
+
+    struct DLCInfo: Identifiable, Equatable {
+        var id: Int { appID }
+        let appID: Int
+        let name: String
+        /// Steam's own app type, lowercased ("dlc", "music", "application"…).
+        let type: String
+        let owned: Bool
+        /// False for licence-only DLC (season passes, artbooks) that carry no
+        /// downloadable depot — there is nothing to install for those, only an
+        /// entitlement to declare to the Steam emulator.
+        let hasDepots: Bool
+    }
+
+    /// Every DLC Steam lists for `appID`, each flagged with whether this
+    /// account owns it. Steam has no owned-DLC endpoint, so the helper derives
+    /// ownership from the account's package licences (see `Dlc` in Program.cs).
+    func dlc(appID: Int, account: String, refreshToken: String) async throws -> [DLCInfo] {
+        let obj = try await runOnce(
+            args: ["dlc", "--appid", String(appID)],
+            account: account, refreshToken: refreshToken
+        )
+        guard let raw = obj["dlc"] as? [[String: Any]] else {
+            throw CloudSyncClientError.badOutput("no dlc array")
+        }
+        return raw.compactMap { d in
+            guard let appid = (d["appid"] as? NSNumber)?.intValue else { return nil }
+            return DLCInfo(
+                appID: appid,
+                name: (d["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "DLC \(appid)",
+                type: d["type"] as? String ?? "",
+                owned: d["owned"] as? Bool ?? false,
+                hasDepots: d["has_depots"] as? Bool ?? false
+            )
+        }
+    }
+
     // MARK: - Cloud operations
 
     func enumerate(appID: Int, account: String, refreshToken: String) async throws -> [CloudRemoteFile] {

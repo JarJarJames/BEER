@@ -97,6 +97,7 @@ struct MainShellView: View {
     @StateObject private var goldberg = GoldbergInstaller()
     @StateObject private var cloudSync = CloudSyncEngine()
     @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
+    @StateObject private var dlcStore = DLCStore()
     @State private var sidebar: AppSidebarItem = .library
     @State private var selectedGameAppID: Int?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
@@ -164,6 +165,7 @@ struct MainShellView: View {
                     .environmentObject(goldberg)
                     .environmentObject(cloudSync)
                     .environmentObject(graphicsTranslator)
+                    .environmentObject(dlcStore)
             case .installed:
                 LibraryPane(selectedGameAppID: $selectedGameAppID, installedOnly: true)
                     .environmentObject(depotController)
@@ -171,6 +173,7 @@ struct MainShellView: View {
                     .environmentObject(goldberg)
                     .environmentObject(cloudSync)
                     .environmentObject(graphicsTranslator)
+                    .environmentObject(dlcStore)
             case .downloads:
                 DownloadsPane()
                     .environmentObject(depotController)
