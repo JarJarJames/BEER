@@ -13,6 +13,7 @@ struct GameDetailView: View {
     @EnvironmentObject private var goldberg: GoldbergInstaller
     @EnvironmentObject private var cloudAuth: SteamAuthStore
     @EnvironmentObject private var cloudSync: CloudSyncEngine
+    @EnvironmentObject private var presence: SteamPresenceStore
     @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
     @EnvironmentObject private var dlcStore: DLCStore
     @State private var isShowingCloudConnect: Bool = false
@@ -1250,31 +1251,11 @@ struct GameDetailView: View {
                 }
             }
 
-            // Tell Steam we're playing so these hours land on the same counter
-            // as time played on a PC or a handheld — Steam credits whichever
-            // logged-on session claims to be in-game, and the real Steam client
-            // holds no special privilege there. Deliberately sequenced between
-            // the pull and the push: the helper holds a logon for the whole
-            // session, and concurrent logons on one account fight over which
-            // one owns the in-game presence.
-            //
-            // Re-check expiry rather than reusing `cloudUsable` — the pull
-            // above may have just invalidated the token.
-            var playSession: SteamPlaySession?
-            if cloudAuth.account != nil && !cloudAuth.sessionExpired {
-                do {
-                    playSession = try await cloudSync.beginPlaySession(
-                        appID: game.appID, auth: cloudAuth
-                    )
-                } catch CloudSyncClientError.authExpired {
-                    cloudAuth.sessionExpired = true
-                } catch {
-                    // Losing play-time tracking must never cost the user their
-                    // game session — note it and launch regardless.
-                    cloudSyncIsError = true
-                    cloudSyncMessage = "Couldn't start Steam play-time tracking: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription). Launching anyway."
-                }
-            }
+            // Announce the game on the app's live Steam session. One session
+            // is shared for everything — status, presence, play time — because
+            // Steam resolves games-played last-writer-wins across an account's
+            // logons, so a second session opened just for this would fight it.
+            presence.beginPlaying(appID: game.appID)
 
             await bottles.launchGameExecutable(
                 bottle,
@@ -1283,19 +1264,10 @@ struct GameDetailView: View {
             )
 
             // `launchGameExecutable` returns once the whole Wine session is
-            // idle, so by here play is genuinely over. Retract the announcement
-            // before the push logs on again, and hold onto any failure: the
-            // push's message is the more important one, so this gets appended
-            // after it rather than overwriting it.
-            var playTimeFailure: String?
-            if let playSession {
-                await playSession.end()
-                playTimeFailure = playSession.failureMessage
-                // The helper re-read the new total on the logon it already
-                // held, so the counter updates without a further round-trip.
-                if let minutes = playSession.finalPlaytimeMinutes {
-                    library.recordPlaytime(appID: game.appID, minutes: minutes)
-                }
+            // idle, so by here play is genuinely over. Stopping hands back the
+            // new total, re-read on the session we already hold.
+            if let minutes = await presence.stopPlaying(appID: game.appID) {
+                library.recordPlaytime(appID: game.appID, minutes: minutes)
             }
 
             // Re-check: the token may have expired during the pull above.
@@ -1312,13 +1284,6 @@ struct GameDetailView: View {
                     cloudSyncIsError = true
                     cloudSyncMessage = "Post-play cloud push failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription). Your saves are safe locally and backed up."
                 }
-            }
-
-            if let playTimeFailure {
-                cloudSyncIsError = true
-                cloudSyncMessage = [cloudSyncMessage, playTimeFailure]
-                    .compactMap { $0 }
-                    .joined(separator: " ")
             }
         }
     }

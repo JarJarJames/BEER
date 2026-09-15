@@ -43,6 +43,17 @@ final class SpawnedProcess: @unchecked Sendable {
     var processIdentifier: Int32 { process.processIdentifier }
     var isRunning: Bool { process.isRunning }
 
+    /// Send one newline-terminated command to the child's stdin.
+    /// Silently ignored once the child is gone — a command racing teardown is
+    /// expected, not an error worth propagating to a caller.
+    func send(_ line: String) {
+        lock.withLock {
+            guard !hasEnded, process.isRunning,
+                  let data = (line + "\n").data(using: .utf8) else { return }
+            try? stdin.fileHandleForWriting.write(contentsOf: data)
+        }
+    }
+
     /// Close stdin and give the child `timeout` to wind down on its own —
     /// a graceful exit matters here, since the child may need the time to tell
     /// a remote server it is finished. Escalates to SIGTERM only if it overstays.

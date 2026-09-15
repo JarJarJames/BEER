@@ -72,6 +72,11 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("play-session.json")
     }
 
+    /// The Steam online status the user picked, applied on every connect.
+    static var presenceStateURL: URL {
+        applicationSupport.appendingPathComponent("presence-state.json")
+    }
+
     /// Everything the current/last play-session helper printed. First stop
     /// when Steam play time or in-game presence doesn't show up.
     static var playSessionLogURL: URL {
