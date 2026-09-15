@@ -104,6 +104,8 @@ final class BottleStore: ObservableObject {
     /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
+        await configureControllers(bottle)
+        let controllerHelper = await prepareControllerFix(bottle, executable: executable)
         await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
@@ -114,6 +116,80 @@ final class BottleStore: ObservableObject {
             bottle,
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
             mode: .wine(arguments: args)
+        )
+
+        // The helper only exists to feed the running game; it has no reason to
+        // outlive it, and leaving it behind would hold the pad open.
+        controllerHelper?.terminate()
+    }
+
+    /// Set up the opt-in controller fix, returning the macOS-side helper so the
+    /// caller can stop it when the game exits. A failure here is logged and the
+    /// game still launches — a broken D-pad beats refusing to start.
+    private func prepareControllerFix(_ bottle: Bottle, executable: String) async -> Process? {
+        guard bottle.effectiveControllerFix else { return nil }
+
+        guard let device = ControllerSupport.connectedDeviceIdentifiers().first else {
+            appendLog("Controller fix enabled but no gamepad is connected.", bottleID: bottle.id)
+            return nil
+        }
+
+        do {
+            try ControllerSupport.installShim(
+                forExecutable: executable,
+                runtimeHid: runtimeHidURL(for: bottle)
+            )
+        } catch {
+            appendLog(
+                "Controller fix unavailable: \(error.localizedDescription)",
+                bottleID: bottle.id,
+                isError: true
+            )
+            return nil
+        }
+
+        let prefix = AppPaths.prefixURL(for: bottle)
+        guard let helper = ControllerSupport.startHelper(prefix: prefix, device: device) else {
+            appendLog("Controller fix helper failed to start.", bottleID: bottle.id, isError: true)
+            return nil
+        }
+
+        appendLog("Controller fix active for \(device).", bottleID: bottle.id)
+        return helper
+    }
+
+    /// Wine's own hid.dll, which the shim forwards all but two exports to.
+    private func runtimeHidURL(for bottle: Bottle) -> URL? {
+        let wineRoot = URL(fileURLWithPath: runtimeWinePath(for: bottle))
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+
+        let candidates = [
+            wineRoot.appendingPathComponent("lib/wine/x86_64-windows/hid.dll"),
+            wineRoot.appendingPathComponent("lib64/wine/x86_64-windows/hid.dll")
+        ]
+        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
+
+    /// Register the Mac's connected gamepads with Wine's HID bus driver, which
+    /// otherwise drops them and leaves every game reporting no controller. See
+    /// `ControllerSupport` for why this is needed at all.
+    ///
+    /// The list is rewritten on every launch so it tracks whatever is plugged in
+    /// now, and runs *before* `configureDisplayMode` so the `wineboot -k` at the
+    /// end of that call restarts the bus driver onto the new value.
+    private func configureControllers(_ bottle: Bottle) async {
+        let identifiers = ControllerSupport.connectedDeviceIdentifiers()
+        guard !identifiers.isEmpty else { return }
+
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring controllers",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKLM\System\CurrentControlSet\Services\winebus"#,
+                "/v", "EnableHidraw", "/t", "REG_SZ",
+                "/d", identifiers.joined(separator: ","), "/f"
+            ])
         )
     }
 
@@ -165,6 +241,27 @@ final class BottleStore: ObservableObject {
             bottle,
             operation: "Restarting Wine display services",
             mode: .winebootKill
+        )
+        await waitForWineSessionExit(bottle)
+    }
+
+    /// Block until the prefix's previous Wine session is really gone.
+    ///
+    /// `wineboot -k` only *requests* shutdown — it returns while wineserver and
+    /// winedevice are still tearing down. Launching a game into that window
+    /// leaves the new session's `winebus` unable to claim the Mac's HID devices
+    /// from the dying one, and it gives up: the game then runs with no
+    /// controllers at all, for its whole lifetime, even though XInput is
+    /// otherwise healthy. `wineserver -w` waits for the old session to exit.
+    ///
+    /// Without a preceding kill this returns immediately, so it is cheap.
+    private func waitForWineSessionExit(_ bottle: Bottle) async {
+        guard let wineserver = runtimeWineserverPath(for: bottle) else { return }
+
+        await runBottleCommand(
+            bottle,
+            operation: "Waiting for previous Wine session to exit",
+            mode: .executable(path: wineserver, arguments: ["-w"])
         )
     }
 
@@ -348,6 +445,8 @@ final class BottleStore: ObservableObject {
                 return BottleCommand(executable: runtimeWinePath(for: bottle), arguments: ["wineboot", "-k"])
             case .wine(let arguments):
                 return BottleCommand(executable: runtimeWinePath(for: bottle), arguments: arguments)
+            case .executable:
+                break
             }
         }
 
@@ -359,6 +458,8 @@ final class BottleStore: ObservableObject {
                 return BottleCommand(executable: bottle.runtimePath, arguments: [prefix.path, "wineboot", "-k"])
             case .wine(let arguments):
                 return BottleCommand(executable: bottle.runtimePath, arguments: [prefix.path] + arguments)
+            case .executable:
+                break
             }
         }
 
@@ -383,6 +484,8 @@ final class BottleStore: ObservableObject {
             return BottleCommand(executable: bottle.runtimePath, arguments: ["wineboot", "-k"])
         case .wine(let arguments):
             return BottleCommand(executable: bottle.runtimePath, arguments: arguments)
+        case .executable(let path, let arguments):
+            return BottleCommand(executable: path, arguments: arguments)
         }
     }
 
@@ -441,7 +544,11 @@ final class BottleStore: ObservableObject {
         // dependency or endorsement — purely a compatibility constant.
         env["USER"] = "crossover"
         env["USERNAME"] = "crossover"
-        env["WINEDLLOVERRIDES"] = dllOverrides(for: bottle.effectiveGraphicsBackend)
+        env["WINEDLLOVERRIDES"] = dllOverrides(
+            for: bottle.effectiveGraphicsBackend,
+            controllerFix: bottle.effectiveControllerFix,
+            userOverrides: bottle.environmentOverrides["WINEDLLOVERRIDES"]
+        )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"
         env["PATH"] = "\(runtimeDirectory):\(inheritedPath)"
@@ -511,14 +618,38 @@ final class BottleStore: ObservableObject {
             .filter { seen.insert($0).inserted }
     }
 
-    private func dllOverrides(for backend: GraphicsBackend) -> String {
+    /// DLL overrides for a launch: the graphics backend's translator DLLs, the
+    /// GameInput preference, then whatever the bottle's own environment asks
+    /// for — the user's entry goes last so it wins any conflict. (Previously
+    /// this value overwrote `environmentOverrides["WINEDLLOVERRIDES"]`, so a
+    /// user override was silently discarded.)
+    private func dllOverrides(for backend: GraphicsBackend, controllerFix: Bool, userOverrides: String?) -> String {
+        var entries: [String] = []
+
         switch backend {
-        case .automatic: ""
-        case .d3dMetal: "d3d12,d3d11,dxgi=n,b"
-        case .dxmt: "d3d11,d3d10core,dxgi,winemetal=n,b"
-        case .dxvk: "dxgi,d3d11,d3d10core,d3d9=n,b"
-        case .wineD3D: "d3d11,dxgi,d3d12=b"
+        case .automatic: break
+        case .d3dMetal: entries.append("d3d12,d3d11,dxgi=n,b")
+        case .dxmt: entries.append("d3d11,d3d10core,dxgi,winemetal=n,b")
+        case .dxvk: entries.append("dxgi,d3d11,d3d10core,d3d9=n,b")
+        case .wineD3D: entries.append("d3d11,dxgi,d3d12=b")
         }
+
+        // Prefer native input DLLs when a bottle has them beside the executable.
+        // Both are "n,b", so a bottle without them falls back to Wine's builtins
+        // and nothing changes.
+        //
+        // gameinput: Wine's builtin is a stub whose GameInputCreate returns
+        // E_NOTIMPL, so GDK-era titles that detect controllers through GameInput
+        // (Kingdom Come: Deliverance II, Stalker 2) report zero pads.
+        //
+        entries.append("gameinput=n,b")
+
+        // hid: only when the per-game controller fix is on, so a bottle that
+        // does not need it never loads the shim — see ControllerSupport.
+        if controllerFix { entries.append("hid=n,b") }
+
+        if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }
+        return entries.joined(separator: ";")
     }
 
     /// DXMT ships a host-side `winemetal.so`; point Wine at it via WINEDLLPATH
@@ -603,6 +734,8 @@ private enum BottleCommandMode {
     case wineboot
     case winebootKill
     case wine(arguments: [String])
+    /// A runtime helper binary invoked directly (e.g. `wineserver -w`).
+    case executable(path: String, arguments: [String])
 }
 
 private struct BottleCommand {

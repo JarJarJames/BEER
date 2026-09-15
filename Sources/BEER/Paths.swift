@@ -99,6 +99,21 @@ enum AppPaths {
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.
+    /// Artifacts for the opt-in controller fix, installed by
+    /// `Tools/ControllerFix/build.sh` (the `dpad_helper` binary and the
+    /// `hid.dll` shim). Mirrors how the CloudSync helper is installed.
+    static var controllerFixDirectory: URL {
+        applicationSupport.appendingPathComponent("ControllerFix", isDirectory: true)
+    }
+
+    static var controllerFixHelperURL: URL {
+        controllerFixDirectory.appendingPathComponent("dpad_helper")
+    }
+
+    static var controllerFixShimURL: URL {
+        controllerFixDirectory.appendingPathComponent("hid.dll")
+    }
+
     static var goldbergDirectory: URL {
         applicationSupport.appendingPathComponent("Goldberg", isDirectory: true)
     }
