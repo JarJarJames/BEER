@@ -189,6 +189,27 @@ final class BottleStore: ObservableObject {
             operation: "Restarting Wine display services",
             mode: .winebootKill
         )
+        await waitForWineSessionExit(bottle)
+    }
+
+    /// Block until the prefix's previous Wine session is really gone.
+    ///
+    /// `wineboot -k` only *requests* shutdown — it returns while wineserver and
+    /// winedevice are still tearing down. Launching a game into that window
+    /// leaves the new session's `winebus` unable to claim the Mac's HID devices
+    /// from the dying one, and it gives up: the game then runs with no
+    /// controllers at all, for its whole lifetime, even though XInput is
+    /// otherwise healthy. `wineserver -w` waits for the old session to exit.
+    ///
+    /// Without a preceding kill this returns immediately, so it is cheap.
+    private func waitForWineSessionExit(_ bottle: Bottle) async {
+        guard let wineserver = runtimeWineserverPath(for: bottle) else { return }
+
+        await runBottleCommand(
+            bottle,
+            operation: "Waiting for previous Wine session to exit",
+            mode: .executable(path: wineserver, arguments: ["-w"])
+        )
     }
 
     /// Record install metadata on a bottle (called by the Library install flow).
@@ -371,6 +392,8 @@ final class BottleStore: ObservableObject {
                 return BottleCommand(executable: runtimeWinePath(for: bottle), arguments: ["wineboot", "-k"])
             case .wine(let arguments):
                 return BottleCommand(executable: runtimeWinePath(for: bottle), arguments: arguments)
+            case .executable:
+                break
             }
         }
 
@@ -382,6 +405,8 @@ final class BottleStore: ObservableObject {
                 return BottleCommand(executable: bottle.runtimePath, arguments: [prefix.path, "wineboot", "-k"])
             case .wine(let arguments):
                 return BottleCommand(executable: bottle.runtimePath, arguments: [prefix.path] + arguments)
+            case .executable:
+                break
             }
         }
 
@@ -406,6 +431,8 @@ final class BottleStore: ObservableObject {
             return BottleCommand(executable: bottle.runtimePath, arguments: ["wineboot", "-k"])
         case .wine(let arguments):
             return BottleCommand(executable: bottle.runtimePath, arguments: arguments)
+        case .executable(let path, let arguments):
+            return BottleCommand(executable: path, arguments: arguments)
         }
     }
 
@@ -464,7 +491,10 @@ final class BottleStore: ObservableObject {
         // dependency or endorsement — purely a compatibility constant.
         env["USER"] = "crossover"
         env["USERNAME"] = "crossover"
-        env["WINEDLLOVERRIDES"] = dllOverrides(for: bottle.effectiveGraphicsBackend)
+        env["WINEDLLOVERRIDES"] = dllOverrides(
+            for: bottle.effectiveGraphicsBackend,
+            userOverrides: bottle.environmentOverrides["WINEDLLOVERRIDES"]
+        )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"
         env["PATH"] = "\(runtimeDirectory):\(inheritedPath)"
@@ -534,14 +564,32 @@ final class BottleStore: ObservableObject {
             .filter { seen.insert($0).inserted }
     }
 
-    private func dllOverrides(for backend: GraphicsBackend) -> String {
+    /// DLL overrides for a launch: the graphics backend's translator DLLs, the
+    /// GameInput preference, then whatever the bottle's own environment asks
+    /// for — the user's entry goes last so it wins any conflict. (Previously
+    /// this value overwrote `environmentOverrides["WINEDLLOVERRIDES"]`, so a
+    /// user override was silently discarded.)
+    private func dllOverrides(for backend: GraphicsBackend, userOverrides: String?) -> String {
+        var entries: [String] = []
+
         switch backend {
-        case .automatic: ""
-        case .d3dMetal: "d3d12,d3d11,dxgi=n,b"
-        case .dxmt: "d3d11,d3d10core,dxgi,winemetal=n,b"
-        case .dxvk: "dxgi,d3d11,d3d10core,d3d9=n,b"
-        case .wineD3D: "d3d11,dxgi,d3d12=b"
+        case .automatic: break
+        case .d3dMetal: entries.append("d3d12,d3d11,dxgi=n,b")
+        case .dxmt: entries.append("d3d11,d3d10core,dxgi,winemetal=n,b")
+        case .dxvk: entries.append("dxgi,d3d11,d3d10core,d3d9=n,b")
+        case .wineD3D: entries.append("d3d11,dxgi,d3d12=b")
         }
+
+        // Prefer a native gameinput.dll when a game ships one beside its
+        // executable. Wine's builtin is a stub whose GameInputCreate returns
+        // E_NOTIMPL, so GDK-era titles that source controllers through
+        // GameInput (Kingdom Come: Deliverance II, Stalker 2) report zero pads
+        // even when XInput is working perfectly. Harmless without a native DLL:
+        // "n,b" falls back to the builtin.
+        entries.append("gameinput=n,b")
+
+        if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }
+        return entries.joined(separator: ";")
     }
 
     /// DXMT ships a host-side `winemetal.so`; point Wine at it via WINEDLLPATH
@@ -626,6 +674,8 @@ private enum BottleCommandMode {
     case wineboot
     case winebootKill
     case wine(arguments: [String])
+    /// A runtime helper binary invoked directly (e.g. `wineserver -w`).
+    case executable(path: String, arguments: [String])
 }
 
 private struct BottleCommand {
