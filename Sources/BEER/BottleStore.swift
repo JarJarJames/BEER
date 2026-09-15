@@ -580,13 +580,22 @@ final class BottleStore: ObservableObject {
         case .wineD3D: entries.append("d3d11,dxgi,d3d12=b")
         }
 
-        // Prefer a native gameinput.dll when a game ships one beside its
-        // executable. Wine's builtin is a stub whose GameInputCreate returns
-        // E_NOTIMPL, so GDK-era titles that source controllers through
-        // GameInput (Kingdom Come: Deliverance II, Stalker 2) report zero pads
-        // even when XInput is working perfectly. Harmless without a native DLL:
-        // "n,b" falls back to the builtin.
-        entries.append("gameinput=n,b")
+        // Prefer native input DLLs when a bottle has them beside the executable.
+        // Both are "n,b", so a bottle without them falls back to Wine's builtins
+        // and nothing changes.
+        //
+        // gameinput: Wine's builtin is a stub whose GameInputCreate returns
+        // E_NOTIMPL, so GDK-era titles that detect controllers through GameInput
+        // (Kingdom Come: Deliverance II, Stalker 2) report zero pads.
+        //
+        // hid: winexinput.sys builds the pad it exposes by reading a hat switch
+        // (usage 0x39) from the source device and skipping every button usage
+        // above 10 — so a pad reporting its D-pad as buttons 12-15 with no hat
+        // loses the D-pad inside the driver. The exposed device still declares a
+        // hat; the shim fills it from ControllerSupport's helper.
+        for module in ["gameinput", "hid"] {
+            entries.append("\(module)=n,b")
+        }
 
         if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }
         return entries.joined(separator: ";")
