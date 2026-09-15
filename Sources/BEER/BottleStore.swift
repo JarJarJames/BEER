@@ -118,6 +118,18 @@ final class BottleStore: ObservableObject {
             mode: .wine(arguments: args)
         )
 
+        // The launched .exe returning is not the end of play. Plenty of games
+        // hand off to a child process and exit immediately, and the bottle is
+        // BEER's real unit of work — so play is over when the prefix goes idle,
+        // not when the one process we happened to spawn returns.
+        //
+        // Three things hang off getting this boundary right: the play time we
+        // record, the post-play cloud push (which could otherwise start
+        // uploading saves the game was still writing), and the controller
+        // helper below, which would otherwise be killed out from under a game
+        // that is still running.
+        await waitForWineSessionExit(bottle)
+
         // The helper only exists to feed the running game; it has no reason to
         // outlive it, and leaving it behind would hold the pad open.
         controllerHelper?.terminate()

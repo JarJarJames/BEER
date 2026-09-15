@@ -32,6 +32,7 @@ using SteamKit2.Internal;
 // Commands:
 //   enumerate --appid N
 //   dlc       --appid N
+//   playing   --appid N --steamid S   (holds the session until stdin closes)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
 //   prepare-depot-auth --depot-executable <path>
@@ -88,6 +89,9 @@ static class Program
                 {
                     case "ownedgames": await OwnedGames(session, ulong.Parse(Require(args, "steamid"))); break;
                     case "dlc": await Dlc(session, appid); break;
+                    case "playing":
+                        await Playing(session, appid, ulong.Parse(Require(args, "steamid")));
+                        break;
                     case "enumerate": await Enumerate(session, appid); break;
                     case "batch": await Batch(session, appid, Require(args, "jobs")); break;
                     case "download":
@@ -260,6 +264,139 @@ static class Program
             ["rtime_last_played"] = g.rtime_last_played,
         }).ToList();
         EmitJson(new Dictionary<string, object?> { ["games"] = games });
+    }
+
+    // Tell Steam this session is playing `appid` — or, with 0, nothing at all.
+    //
+    // Steam credits play time to whichever logged-on client session claims to
+    // be playing; the real Steam client has no special privilege here. That is
+    // what lets BEER record hours for a game it launches through Wine, and it
+    // is the same mechanism GameNative uses on Android.
+    static void Announce(SteamSession s, uint appid)
+    {
+        var msg = new ClientMsgProtobuf<CMsgClientGamesPlayed>(EMsg.ClientGamesPlayedWithDataBlob);
+        if (appid != 0)
+            msg.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed { game_id = appid });
+        s.Client.Send(msg);
+    }
+
+    // Hold a logged-on session for the length of a play session so Steam
+    // records the hours, then retract.
+    //
+    // The session ends at stdin EOF. BEER holds the write end of that pipe, so
+    // EOF arrives when the game exits *and* if BEER itself dies by any means,
+    // including SIGKILL — macOS has no parent-death signal, and this is the
+    // only teardown that survives a force quit. Without it a crashed BEER would
+    // leave the account showing as in-game indefinitely.
+    static async Task Playing(SteamSession s, uint appid, ulong steamid)
+    {
+        if (appid == 0) throw new Exception("playing requires --appid");
+
+        var friends = s.Client.GetHandler<SteamFriends>()!;
+
+        // Report what Steam actually believes this persona is doing, and every
+        // later change to it. If the game shows up and is then reset to 0,
+        // another session on the account is overwriting us: games-played is
+        // last-writer-wins, and the real Steam client broadcasts its own empty
+        // list. `session_instances` says how many sessions are logged on.
+        uint lastReported = uint.MaxValue;
+        s.Subscribe<SteamFriends.PersonaStateCallback>(cb =>
+        {
+            if (s.Client.SteamID is null || cb.FriendID != s.Client.SteamID) return;
+            if (cb.GameAppID == lastReported) return;
+            lastReported = cb.GameAppID;
+            EmitJson(new Dictionary<string, object?>
+            {
+                ["presence_appid"] = cb.GameAppID,
+                ["presence_name"] = cb.GameName,
+                ["persona_state"] = cb.State.ToString(),
+                ["session_instances"] = cb.OnlineSessionInstances,
+            });
+        });
+
+        // A fresh SteamKit logon's persona starts Offline, and Steam does not
+        // broadcast a game for an offline persona — so this has to happen
+        // before the announcement or nobody ever sees it. Harmless when the
+        // account is already online elsewhere.
+        friends.SetPersonaState(EPersonaState.Online);
+
+        Announce(s, appid);
+        // Swift waits for this line before deleting the token file, and treats
+        // it as the point the session is actually live.
+        EmitJson(new Dictionary<string, object?> { ["playing"] = appid });
+
+        // Wait for EOF, but notice a dropped connection rather than sitting on
+        // a dead socket believing we are still being counted.
+        var closed = Console.In.ReadToEndAsync();
+        while (!closed.IsCompleted)
+        {
+            await Task.WhenAny(closed, Task.Delay(TimeSpan.FromSeconds(5)));
+            if (!closed.IsCompleted && s.Client.IsConnected && s.Client.SteamID is { } me)
+            {
+                // Re-assert: another session's games-played can overwrite ours
+                // at any point, and re-sending is how the real client keeps its
+                // own status stuck. Also refreshes the diagnostic above.
+                Announce(s, appid);
+                friends.RequestFriendInfo(me,
+                    EClientPersonaStateFlag.Status
+                    | EClientPersonaStateFlag.GameExtraInfo
+                    | EClientPersonaStateFlag.Presence);
+            }
+            if (!closed.IsCompleted && !s.Client.IsConnected)
+            {
+                EmitJson(new Dictionary<string, object?>
+                {
+                    ["disconnected"] = true,
+                    ["error"] = "Steam connection dropped during play; time after this point was not recorded.",
+                });
+                return;
+            }
+        }
+
+        Announce(s, 0);
+        // Give the retraction time to reach the CM before the caller's finally
+        // block disconnects the socket underneath it, and to let Steam credit
+        // the session it just ended.
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        // Report the new total on the logon we already hold, rather than making
+        // the app spend a second one re-reading the whole library for one
+        // number. A stale read here costs nothing: the app refuses to move the
+        // counter backwards, and the next library refresh corrects it.
+        long? playtime = null;
+        try
+        {
+            playtime = await PlaytimeMinutes(s, steamid, appid);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"could not re-read play time: {ex.Message}");
+        }
+
+        EmitJson(new Dictionary<string, object?>
+        {
+            ["stopped"] = appid,
+            ["playtime_forever"] = playtime,
+        });
+    }
+
+    /// Total minutes Steam has recorded for one app.
+    static async Task<long?> PlaytimeMinutes(SteamSession s, ulong steamid, uint appid)
+    {
+        var player = s.Unified.CreateService<Player>();
+        var req = new CPlayer_GetOwnedGames_Request
+        {
+            steamid = steamid,
+            include_appinfo = false,
+            include_played_free_games = true,
+            include_free_sub = false,
+        };
+        req.appids_filter.Add(appid);
+
+        var resp = await player.GetOwnedGames(req);
+        if (resp.Result != EResult.OK)
+            throw new Exception($"GetOwnedGames failed: {resp.Result}");
+        return resp.Body.games.FirstOrDefault(g => g.appid == appid)?.playtime_forever;
     }
 
     // Report every DLC Steam lists for `appid`, flagged with whether this
@@ -708,6 +845,10 @@ sealed class SteamSession : IDisposable
     {
         Client = client; _cb = cb;
     }
+
+    /// Subscribe to a Steam callback for the life of this session.
+    public void Subscribe<T>(Action<T> handler) where T : CallbackMsg
+        => _cb.Subscribe(handler);
 
     static SteamSession StartPump()
     {

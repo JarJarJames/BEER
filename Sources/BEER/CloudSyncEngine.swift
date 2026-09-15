@@ -83,6 +83,21 @@ final class CloudSyncEngine: ObservableObject {
         try await run(bottle: bottle, appID: appID, auth: auth, doPull: true, doPush: true)
     }
 
+    /// Announce this game to Steam for the length of a play session, so its
+    /// hours land on the same counter as time played on a PC or a handheld.
+    /// Bracket it around the game process, between `pull` and `push`: the
+    /// helper holds a logon open, and concurrent logons on one account fight
+    /// over which session owns the in-game presence.
+    func beginPlaySession(appID: Int, auth: SteamAuthStore) async throws -> SteamPlaySession {
+        guard let account = auth.account else { throw CloudSyncError.notSignedIn }
+        return try await client.beginPlaySession(
+            appID: appID,
+            steamID64: account.steamID64,
+            account: account.accountName,
+            refreshToken: account.refreshToken
+        )
+    }
+
     /// Back up, then remove, the local saves for this game — the "start clean
     /// from cloud" / "don't let me mess up my saves" escape hatch. Never a true
     /// delete: everything is copied to a timestamped backup first.

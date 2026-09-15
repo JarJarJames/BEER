@@ -49,6 +49,9 @@ struct BEERApp: App {
                     depotDownloader.refresh()
                     library.load()
                     cloudAuth.load()
+                    // If a previous run died mid-game, stop any helper still
+                    // telling Steam we're playing.
+                    await PlaySessionRegistry.sweepOrphans()
                 }
         }
         .windowStyle(.titleBar)

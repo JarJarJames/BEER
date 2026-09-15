@@ -133,6 +133,10 @@ struct CloudSyncClient {
         let name: String
         let iconURL: String?
         let lastPlayed: Date?
+        /// Total minutes Steam has recorded for this app, across every device.
+        /// BEER contributes to this itself via `beginPlaySession` — see
+        /// `PlaySession` below.
+        let playtimeMinutes: Int?
     }
 
     /// Fetch the signed-in account's owned games via the authenticated client
@@ -148,13 +152,97 @@ struct CloudSyncClient {
             let name = (g["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "App \(appid)"
             let icon = (g["img_icon_url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let rt = (g["rtime_last_played"] as? NSNumber)?.doubleValue ?? 0
+            let minutes = (g["playtime_forever"] as? NSNumber)?.intValue ?? 0
             return OwnedGameInfo(
                 appID: appid,
                 name: name,
                 iconURL: icon.map { "https://media.steampowered.com/steamcommunity/public/images/apps/\(appid)/\($0).jpg" },
-                lastPlayed: rt > 0 ? Date(timeIntervalSince1970: rt) : nil
+                lastPlayed: rt > 0 ? Date(timeIntervalSince1970: rt) : nil,
+                playtimeMinutes: minutes > 0 ? minutes : nil
             )
         }
+    }
+
+    // MARK: - Play session
+
+    /// Announce `appID` to Steam as running, and keep announcing until the
+    /// returned session is ended.
+    ///
+    /// Steam credits play time to whichever logged-on client session claims to
+    /// be playing — the real Steam client holds no special privilege — so this
+    /// is what puts hours from a Wine-launched game onto the same counter as
+    /// hours played on a PC or a handheld.
+    ///
+    /// The helper holds one logon for the whole play session, so call this
+    /// *between* the pre-launch pull and the post-play push, never alongside
+    /// either: concurrent logons on one account fight over which session owns
+    /// the in-game presence.
+    func beginPlaySession(
+        appID: Int, steamID64: String, account: String, refreshToken: String
+    ) async throws -> SteamPlaySession {
+        let binary = try binaryOrThrow()
+        let tokenFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gn-play-\(UUID().uuidString).tok")
+        try refreshToken.write(to: tokenFile, atomically: true, encoding: .utf8)
+
+        let state = ResultBox()
+        let leftover = LineBox()
+        PlaySessionLog.start(appID: appID)
+        let process: SpawnedProcess
+        do {
+            process = try ShellRunner.spawn(
+                executable: binary.path,
+                arguments: [
+                    "playing", "--appid", "\(appID)", "--steamid", steamID64,
+                    "--account", account, "--token-file", tokenFile.path,
+                ],
+                environment: ["DOTNET_CLI_TELEMETRY_OPTOUT": "1", "DOTNET_NOLOGO": "1"],
+                outputHandler: { chunk in
+                    PlaySessionLog.append(chunk)
+                    for line in leftover.feed(chunk) {
+                        guard let data = line.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        else { continue }
+                        if let err = obj["error"] as? String {
+                            state.setError(err,
+                                           authFailed: (obj["auth_failed"] as? Bool) ?? false,
+                                           rateLimited: (obj["rate_limited"] as? Bool) ?? false)
+                        } else {
+                            state.setDict(obj)
+                        }
+                    }
+                }
+            )
+        } catch {
+            try? FileManager.default.removeItem(at: tokenFile)
+            throw error
+        }
+        PlaySessionRegistry.record(pid: process.processIdentifier)
+
+        // Wait for the logon to land — but never hold the game's launch
+        // hostage to it. Past the deadline we let the game start anyway and
+        // leave the helper to keep trying; late is better than not at all.
+        let deadline = Date().addingTimeInterval(30)
+        while state.dict == nil, state.error == nil, process.isRunning, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 100_000_000)
+        }
+        // The helper reads this file once, before it logs on, so by now it is
+        // consumed. It has to go either way: unlike a normal command's token
+        // file, nothing else deletes it for the life of a play session.
+        try? FileManager.default.removeItem(at: tokenFile)
+
+        let session = SteamPlaySession(appID: appID, process: process, state: state)
+        if let err = state.error {
+            await session.end()
+            if state.rateLimited { throw CloudSyncClientError.rateLimited }
+            if state.authFailed { throw CloudSyncClientError.authExpired }
+            throw CloudSyncClientError.helper(err)
+        }
+        if state.dict == nil, !process.isRunning {
+            await session.end()
+            throw CloudSyncClientError.helper("the play-session helper exited before it signed in")
+        }
+        return session
     }
 
     // MARK: - DLC
@@ -411,4 +499,114 @@ private final class ResultBox: @unchecked Sendable {
     var error: String? { lock.lock(); defer { lock.unlock() }; return _error }
     var authFailed: Bool { lock.lock(); defer { lock.unlock() }; return _authFailed }
     var rateLimited: Bool { lock.lock(); defer { lock.unlock() }; return _rateLimited }
+}
+
+// MARK: - Play session handle
+
+/// A live "playing this game" announcement held open with Steam for as long as
+/// the game runs. Always `end()` it — dropping it leaves the helper announcing
+/// until BEER itself exits.
+final class SteamPlaySession: Sendable {
+    let appID: Int
+    private let process: SpawnedProcess
+    private let state: ResultBox
+
+    fileprivate init(appID: Int, process: SpawnedProcess, state: ResultBox) {
+        self.appID = appID
+        self.process = process
+        self.state = state
+    }
+
+    /// Set when the helper reported a problem — most likely the Steam
+    /// connection dropping mid-game, after which the hours stop accruing.
+    var failureMessage: String? { state.error }
+
+    /// The app's new total, re-read by the helper on the logon it already held
+    /// once the session ended — so refreshing the number costs no extra logon.
+    /// Nil if the session failed, or if Steam had not yet credited the hours.
+    /// Only meaningful after `end()`.
+    var finalPlaytimeMinutes: Int? {
+        (state.dict?["playtime_forever"] as? NSNumber)?.intValue
+    }
+
+    /// Retract the announcement. Closing stdin is the helper's cue; it needs a
+    /// moment after that to tell Steam it has stopped, so give it time to exit
+    /// on its own rather than killing it outright.
+    func end() async {
+        await process.end()
+        PlaySessionRegistry.clear()
+    }
+}
+
+/// Remembers the PID of a live play-session helper so a BEER that died without
+/// unwinding can clean it up next launch.
+///
+/// Belt-and-braces: the helper already exits on its own when BEER's end of its
+/// stdin pipe closes, which covers even a force quit. This catches the
+/// remainder — a helper wedged on a dead socket, say.
+enum PlaySessionRegistry {
+    private struct Record: Codable { let pid: Int32 }
+
+    static func record(pid: Int32) {
+        try? AppPaths.ensureBaseDirectories()
+        guard let data = try? JSONEncoder().encode(Record(pid: pid)) else { return }
+        try? data.write(to: AppPaths.playSessionStateURL, options: .atomic)
+    }
+
+    static func clear() {
+        try? FileManager.default.removeItem(at: AppPaths.playSessionStateURL)
+    }
+
+    /// Stop a helper left behind by a previous run. Confirms the PID still
+    /// belongs to a CloudSync process before signalling it — PIDs get recycled,
+    /// and killing an unrelated process would be far worse than leaving a stale
+    /// "in-game" status behind.
+    static func sweepOrphans() async {
+        guard let data = try? Data(contentsOf: AppPaths.playSessionStateURL),
+              let record = try? JSONDecoder().decode(Record.self, from: data) else { return }
+        clear()
+
+        guard let result = try? await ShellRunner.run(
+            executable: "/bin/ps",
+            arguments: ["-p", "\(record.pid)", "-o", "comm="],
+            environment: [:],
+            outputHandler: { _ in }
+        ), result.exitCode == 0, result.output.contains("CloudSync") else { return }
+
+        kill(record.pid, SIGTERM)
+    }
+}
+
+/// Everything the play-session helper prints, captured to a file.
+///
+/// A play session outlives the call that starts it, so its output has nowhere
+/// else to go — and without this, a presence or play-time problem leaves no
+/// trace at all to debug from.
+enum PlaySessionLog {
+    private static let lock = NSLock()
+
+    static func start(appID: Int) {
+        lock.withLock {
+            try? AppPaths.ensureBaseDirectories()
+            let header = "=== play session — appid \(appID) — \(Date()) ===\n"
+            try? header.write(to: AppPaths.playSessionLogURL, atomically: true, encoding: .utf8)
+        }
+    }
+
+    static func append(_ text: String) {
+        lock.withLock {
+            let stamped = text
+                .split(separator: "\n", omittingEmptySubsequences: true)
+                .map { "\(Date().formatted(date: .omitted, time: .standard))  \($0)\n" }
+                .joined()
+            guard !stamped.isEmpty, let data = stamped.data(using: .utf8) else { return }
+            if let handle = try? FileHandle(forWritingTo: AppPaths.playSessionLogURL) {
+                defer { try? handle.close() }
+                _ = try? handle.seekToEnd()
+                try? handle.write(contentsOf: data)
+            } else {
+                try? stamped.write(to: AppPaths.playSessionLogURL, atomically: true, encoding: .utf8)
+            }
+        }
+    }
 }
