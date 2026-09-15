@@ -104,6 +104,7 @@ final class BottleStore: ObservableObject {
     /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
+        await configureControllers(bottle)
         await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
@@ -114,6 +115,28 @@ final class BottleStore: ObservableObject {
             bottle,
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
             mode: .wine(arguments: args)
+        )
+    }
+
+    /// Register the Mac's connected gamepads with Wine's HID bus driver, which
+    /// otherwise drops them and leaves every game reporting no controller. See
+    /// `ControllerSupport` for why this is needed at all.
+    ///
+    /// The list is rewritten on every launch so it tracks whatever is plugged in
+    /// now, and runs *before* `configureDisplayMode` so the `wineboot -k` at the
+    /// end of that call restarts the bus driver onto the new value.
+    private func configureControllers(_ bottle: Bottle) async {
+        let identifiers = ControllerSupport.connectedDeviceIdentifiers()
+        guard !identifiers.isEmpty else { return }
+
+        await runBottleCommand(
+            bottle,
+            operation: "Configuring controllers",
+            mode: .wine(arguments: [
+                "reg", "add", #"HKLM\System\CurrentControlSet\Services\winebus"#,
+                "/v", "EnableHidraw", "/t", "REG_SZ",
+                "/d", identifiers.joined(separator: ","), "/f"
+            ])
         )
     }
 
