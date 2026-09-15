@@ -113,6 +113,10 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
     /// when reapplying or restoring on an already-installed game.
     var gameInstallDirectory: String? = nil
+    /// DLC the user has enabled for this game. Drives the `[app::dlcs]` block
+    /// the Steam emulator reads, so the game is told it owns them. Optional so
+    /// bottles written before the DLC manager still decode.
+    var installedDLC: [InstalledDLC]? = nil
 
     // --- Display resolution ---
     // Retina mode makes Wine expose twice the macOS point dimensions to Windows
@@ -125,6 +129,10 @@ struct Bottle: Identifiable, Codable, Hashable {
 
     var effectiveGameLaunchArguments: String {
         gameLaunchArguments ?? ""
+    }
+
+    var effectiveInstalledDLC: [InstalledDLC] {
+        (installedDLC ?? []).sorted { $0.appID < $1.appID }
     }
 
     /// Move arguments entered through the old Steam-only field into the game
@@ -303,6 +311,24 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     }
 }
 
+/// One DLC the user has turned on for a game. Some DLC (season passes,
+/// artbooks) carry no depot at all — those are declared to the emulator but
+/// have no files on disk.
+struct InstalledDLC: Codable, Hashable, Identifiable {
+    var id: Int { appID }
+    var appID: Int
+    var name: String
+    var installedAt: Date
+
+    /// The emulator's ini parser reads to end-of-line, so a name carrying a
+    /// newline would corrupt the following entries.
+    var iniSafeName: String {
+        name.replacingOccurrences(of: "\n", with: " ")
+            .replacingOccurrences(of: "\r", with: " ")
+            .trimmingCharacters(in: .whitespaces)
+    }
+}
+
 enum SteamGameInstallStatus: String, Codable {
     case notInstalled
     case queued
@@ -310,6 +336,25 @@ enum SteamGameInstallStatus: String, Codable {
     case installed
     case updateAvailable
     case failed
+}
+
+/// A short outcome banner — the text plus whether it reads as a failure. Keeps
+/// a message and its red/green flag in one value instead of two properties that
+/// have to be assigned in step at every site.
+enum StatusMessage: Equatable {
+    case success(String)
+    case failure(String)
+
+    var text: String {
+        switch self {
+        case .success(let t), .failure(let t): return t
+        }
+    }
+
+    var isError: Bool {
+        if case .failure = self { return true }
+        return false
+    }
 }
 
 struct BottleLogEntry: Identifiable, Hashable {

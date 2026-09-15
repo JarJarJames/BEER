@@ -34,6 +34,8 @@ enum DepotDownloaderError: LocalizedError {
     case sessionExpired
     case downloadFailed(Int32, String)
     case launchExeNotFound
+    case installDirMissing(String)
+    case appNotOwned(String)
 
     var errorDescription: String? {
         switch self {
@@ -49,16 +51,24 @@ enum DepotDownloaderError: LocalizedError {
             return "DepotDownloader exited with code \(code). Last output:\n\(tail)"
         case .launchExeNotFound:
             return "Download completed but we couldn't find a Windows .exe in the install directory."
+        case .installDirMissing(let path):
+            return "The game's install folder is missing at \(path). Reinstall the game before adding DLC."
+        case .appNotOwned(let name):
+            return "\(name) isn't available on this Steam account. If you bought it recently, sign out and back in so Steam re-sends your licences."
         }
     }
 }
 
 @MainActor
 final class DepotDownloaderController: ObservableObject {
-    @Published private(set) var isBusy = false
     @Published var lastError: String?
+    @Published private(set) var activeDownloads = 0
+
+    var isBusy: Bool { activeDownloads > 0 }
 
     private let cloudClient = CloudSyncClient()
+    private var authSessionDepth = 0
+    private var authCacheURL: URL?
 
     private var stateURL: URL {
         AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
@@ -106,26 +116,6 @@ final class DepotDownloaderController: ObservableObject {
         auth: SteamCloudAccount,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
-        guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
-            throw DepotDownloaderError.binaryMissing
-        }
-
-        let authCache: URL
-        do {
-            authCache = try await cloudClient.prepareDepotDownloaderAuth(
-                executable: AppPaths.depotDownloaderExecutableURL,
-                account: auth.accountName,
-                refreshToken: auth.refreshToken
-            )
-        } catch {
-            throw DepotDownloaderError.authenticationFailed(error.localizedDescription)
-        }
-        rememberAuthCache(authCache)
-        defer {
-            try? FileManager.default.removeItem(at: authCache)
-            rememberAuthCache(nil)
-        }
-
         let bottlePrefix = AppPaths.prefixURL(for: bottle)
         let safe = sanitize(gameName)
         let installDir = bottlePrefix
@@ -134,8 +124,101 @@ final class DepotDownloaderController: ObservableObject {
             .appendingPathComponent(safe, isDirectory: true)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
-        isBusy = true
-        defer { isBusy = false }
+        try await download(appID: appID, into: installDir, auth: auth, events: events)
+
+        guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
+            throw DepotDownloaderError.launchExeNotFound
+        }
+        return InstallResult(installDirectory: installDir, launchExecutableHostPath: exe)
+    }
+
+    // MARK: - DLC install
+
+    /// Pull one DLC's depots into a game that is already installed.
+    ///
+    /// Safe to point at a populated install dir. DepotDownloader only deletes
+    /// files that were in a depot's *own* previous manifest and have since been
+    /// dropped from it; a DLC depot downloaded for the first time has no
+    /// previous manifest, so nothing existing is touched. That is what lets us
+    /// add DLC without re-downloading the base game.
+    func installDLC(
+        appID: Int,
+        installDir: URL,
+        auth: SteamCloudAccount,
+        events: @escaping @MainActor (DepotDownloaderEvent) -> Void
+    ) async throws {
+        var isDirectory: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: installDir.path, isDirectory: &isDirectory),
+              isDirectory.boolValue else {
+            throw DepotDownloaderError.installDirMissing(installDir.path)
+        }
+        try await download(appID: appID, into: installDir, auth: auth, events: events)
+    }
+
+    // MARK: - Shared download
+
+    /// Run DepotDownloader for one app into `installDir`, bridging BEER's
+    /// Steam token in for the lifetime of the process.
+    private func download(
+        appID: Int,
+        into installDir: URL,
+        auth: SteamCloudAccount,
+        events: @escaping @MainActor (DepotDownloaderEvent) -> Void
+    ) async throws {
+        guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
+            throw DepotDownloaderError.binaryMissing
+        }
+
+        try await withAuthSession(auth: auth) {
+            try await self.runDownload(appID: appID, into: installDir, auth: auth, events: events)
+        }
+    }
+
+    /// Hold a DepotDownloader credential cache for the duration of `body`.
+    ///
+    /// The cache lives at a fixed path derived from the DepotDownloader binary,
+    /// so every concurrent run shares one file: it is minted on the first entry
+    /// and removed only when the last one leaves. Nesting is what makes a batch
+    /// cheap — `installAll` wraps the whole loop, so a six-DLC run costs one
+    /// Steam logon to mint the cache instead of six.
+    func withAuthSession<T>(auth: SteamCloudAccount, _ body: () async throws -> T) async throws -> T {
+        if authSessionDepth == 0 {
+            do {
+                let cache = try await cloudClient.prepareDepotDownloaderAuth(
+                    executable: AppPaths.depotDownloaderExecutableURL,
+                    account: auth.accountName,
+                    refreshToken: auth.refreshToken
+                )
+                authCacheURL = cache
+                rememberAuthCache(cache)
+            } catch {
+                throw DepotDownloaderError.authenticationFailed(error.localizedDescription)
+            }
+        }
+        authSessionDepth += 1
+        defer {
+            authSessionDepth -= 1
+            if authSessionDepth == 0 {
+                if let cache = authCacheURL {
+                    try? FileManager.default.removeItem(at: cache)
+                }
+                authCacheURL = nil
+                rememberAuthCache(nil)
+            }
+        }
+        return try await body()
+    }
+
+    private func runDownload(
+        appID: Int,
+        into installDir: URL,
+        auth: SteamCloudAccount,
+        events: @escaping @MainActor (DepotDownloaderEvent) -> Void
+    ) async throws {
+        // Refcounted, not a Bool: a DLC install can overlap a base-game install,
+        // and whichever finished first used to clear the flag for both.
+        activeDownloads += 1
+        defer { activeDownloads -= 1 }
 
         let args: [String] = [
             "-app", String(appID),
@@ -153,7 +236,7 @@ final class DepotDownloaderController: ObservableObject {
         let lastEmittedProgress = Box<Double>(-1)
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
-        let installedSuccessfully = Box<Bool>(false)
+        let notOwned = Box<String?>(nil)
 
         let exit = try await runDepotDownloader(args: args) { line in
             tail.value.append(line)
@@ -186,9 +269,15 @@ final class DepotDownloaderController: ObservableObject {
                 authFailure.value = detail
             }
 
+            // Ownership. DepotDownloader reports this as a plain exception on
+            // stdout, so catch it here to explain it rather than surfacing a
+            // bare non-zero exit code.
+            if let name = parseNotOwned(line) {
+                notOwned.value = name
+            }
+
             // Completion sentinels
             if line.contains("Total downloaded:") || line.contains("Depot download complete") || line.contains("downloaded successfully") {
-                installedSuccessfully.value = true
                 Task { @MainActor in events(.downloadComplete) }
             }
         }
@@ -201,14 +290,13 @@ final class DepotDownloaderController: ObservableObject {
             throw DepotDownloaderError.authenticationFailed(detail)
         }
 
+        if let name = notOwned.value {
+            throw DepotDownloaderError.appNotOwned(name)
+        }
+
         guard exit == 0 else {
             throw DepotDownloaderError.downloadFailed(exit, tail.value.suffix(15).joined(separator: "\n"))
         }
-
-        guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
-            throw DepotDownloaderError.launchExeNotFound
-        }
-        return InstallResult(installDirectory: installDir, launchExecutableHostPath: exe)
     }
 
     // MARK: - Process invocation
@@ -305,6 +393,17 @@ private func parseAuthFailure(_ line: String) -> String? {
     }
     if lower.contains("guard data was rejected") { return "Steam Guard data was rejected" }
     return nil
+}
+
+/// DepotDownloader: "App 3368600 (Brushes with Death) is not available from
+/// this account." Returns the human-readable part for the error message.
+private func parseNotOwned(_ line: String) -> String? {
+    guard line.contains("is not available from this account") else { return nil }
+    if let m = line.firstMatch(of: /App ([0-9]+) \(([^)]*)\) is not available/) {
+        let name = String(m.output.2).trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "App \(m.output.1)" : name
+    }
+    return "This content"
 }
 
 // MARK: - Launch executable heuristic
