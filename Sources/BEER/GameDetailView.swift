@@ -1587,6 +1587,12 @@ struct EnvironmentPreset: Identifiable {
                 macOS only hands out forward-compatible OpenGL 3.2+ contexts, and Wine                 rejects any request that doesn't ask for one — which is most games, since                 SDL only sets that flag when told to. The result is a "could not create GL                 context" error on launch. This makes CrossOver's Wine add the flag itself.                 No effect on mainline Wine runtimes, or on games that use Direct3D.
                 """),
         EnvironmentPreset(
+            key: "SDL_AUDIO_DRIVER", value: "directsound",
+            title: "Fix crackling audio in SDL games",
+            detail: """
+                SDL prefers WASAPI, which crackles under Wine for some games. This routes                 audio through DirectSound instead, which is the same thing CrossOver's                 "set the app to Windows XP" advice achieves — SDL skips WASAPI on XP —                 without changing the Windows version the game sees.
+                """),
+        EnvironmentPreset(
             key: "MTL_HUD_ENABLED", value: "1",
             title: "Show Metal performance HUD",
             detail: "Apple's frame-rate overlay, drawn by Metal, so it works on any backend."),

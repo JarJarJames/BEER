@@ -259,6 +259,22 @@ final class BottleStore: ObservableObject {
             ])
         )
 
+        // The bottle's Windows version. `winecfg /v` writes the whole set of
+        // version registry values (HKLM product name, build number, CSD) that a
+        // hand-rolled `reg add` would have to know, and it runs headless.
+        //
+        // This is also the audio fix for SDL games that crackle on WASAPI: SDL
+        // only reaches for WASAPI on Vista and newer, so reporting winxp drops
+        // it onto DirectSound.
+        let winver = bottle.windowsVersion.trimmingCharacters(in: .whitespaces)
+        if !winver.isEmpty {
+            await runBottleCommand(
+                bottle,
+                operation: "Configuring Windows version (\(winver))",
+                mode: .wine(arguments: ["winecfg", "/v", winver])
+            )
+        }
+
         // These values are process-wide. Ensure the game starts in a fresh Wine
         // session instead of inheriting the mode used by the registry commands.
         await runBottleCommand(
