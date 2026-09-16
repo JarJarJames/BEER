@@ -66,6 +66,11 @@ final class CloudSyncEngine: ObservableObject {
 
     private let client = CloudSyncClient()
 
+    /// Save directories learned from the last successful sync, per appID. Kept
+    /// so `localSaveFingerprint` can tell whether a play session wrote anything
+    /// without spending a Steam logon to find out.
+    private var knownSaveDirs: [Int: Set<URL>] = [:]
+
     // MARK: - Public operations
 
     /// Pull newer cloud saves down. Backs up local saves first.
@@ -136,6 +141,7 @@ final class CloudSyncEngine: ObservableObject {
             mapToLocal($0.filename, userHome: userHome, installDir: installDir)?.deletingLastPathComponent()
         })
         if !trackedDirs.isEmpty {
+            knownSaveDirs[appID] = trackedDirs
             phase = "Backing up local saves…"
             report.backupPath = try? snapshotBackup(appID: appID, dirs: trackedDirs, label: doPush ? "before-sync" : "before-pull")
         }
@@ -151,11 +157,18 @@ final class CloudSyncEngine: ObservableObject {
                 guard let target = mapToLocal(rf.filename, userHome: userHome, installDir: installDir) else {
                     report.failures.append((rf.filename, "unknown cloud root")); continue
                 }
-                if let mtime = fileMTime(target), mtime >= rf.timestamp.addingTimeInterval(-2) {
+                // Local is strictly newer: the player's progress wins, and a
+                // full sync pushes it below. Never clobber it with the cloud.
+                if let mtime = fileMTime(target), mtime > rf.timestamp.addingTimeInterval(2) {
                     report.skipped += 1; continue
                 }
-                // Wine and some games touch every save on shutdown. Steam's
-                // content hash is authoritative when only metadata changed.
+                // Otherwise the clock can't decide anything: every file we pull
+                // is stamped with the cloud's timestamp, so "same time" is the
+                // normal state, and Wine touches saves on shutdown besides.
+                // Contents decide. This is also what heals a file that landed
+                // corrupt — matching the clock used to make it unpullable
+                // forever, which is how zip-wrapped cloud saves survived a fix
+                // to the downloader.
                 if localFileMatchesRemote(target, remote: rf) {
                     report.skipped += 1; continue
                 }
@@ -207,17 +220,19 @@ final class CloudSyncEngine: ObservableObject {
         }
 
         // ---- Execute the whole batch in one Steam session ----
+        var helperNotes: [String] = []
         if !downloads.isEmpty || !uploads.isEmpty {
             let total = downloads.count + uploads.count
             phase = "Syncing \(total) file\(total == 1 ? "" : "s")…"
-            let ops = try await client.batch(
+            let batch = try await client.batch(
                 appID: appID, downloads: downloads, uploads: uploads,
                 account: acct, refreshToken: token,
                 onProgress: { [weak self] done, total in
                     Task { @MainActor in self?.phase = "Syncing \(done)/\(total)…" }
                 }
             )
-            for op in ops {
+            helperNotes = batch.notes
+            for op in batch.ops {
                 if let err = op.error {
                     report.failures.append((op.filename, err))
                 } else if op.op == "download" {
@@ -230,17 +245,20 @@ final class CloudSyncEngine: ObservableObject {
 
         lastSyncAt = Date()
         lastReport = report
-        writeFailureLog(appID: appID, report: report)
+        writeFailureLog(appID: appID, report: report, helperNotes: helperNotes)
         phase = summary(report, doPull: doPull, doPush: doPush)
         return report
     }
 
     /// Persist the per-file failure reasons so they can be inspected (the UI
     /// only shows a count). Lives next to the backups for this app.
-    private func writeFailureLog(appID: Int, report: CloudSyncReport) {
+    private func writeFailureLog(appID: Int, report: CloudSyncReport, helperNotes: [String] = []) {
         let dir = AppPaths.cloudSaveBackupsDirectory(forAppID: appID)
         let url = dir.appendingPathComponent("last-sync.log")
         var text = "Sync \(Date())\n"
+        // Which helper actually ran. A stale binary shadowing the installed one
+        // is invisible otherwise, and it looks exactly like a helper bug.
+        text += "helper binary: \(CloudSyncClient.locateBinary()?.path ?? "not found")\n"
         text += "downloaded=\(report.downloaded) uploaded=\(report.uploaded) skipped=\(report.skipped) failed=\(report.failures.count)\n\n"
         if report.failures.isEmpty {
             text += "(no failures)\n"
@@ -248,6 +266,10 @@ final class CloudSyncEngine: ObservableObject {
             for f in report.failures {
                 text += "FAIL\t\(f.filename)\t\(f.reason)\n"
             }
+        }
+        if !helperNotes.isEmpty {
+            text += "\nhelper:\n"
+            for note in helperNotes { text += "  \(note)\n" }
         }
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? text.write(to: url, atomically: true, encoding: .utf8)
@@ -288,6 +310,34 @@ final class CloudSyncEngine: ObservableObject {
     }()
 
     // MARK: - Path mapping
+
+    /// A cheap signature of every tracked save file's size and modification
+    /// time. Nil when we have not yet learned where this game's saves live.
+    ///
+    /// Comparing this across a play session answers "did the game write
+    /// anything?" locally. That matters because the alternative — always
+    /// pushing — spends a Steam logon per launch, and a game that crash-loops
+    /// turns that into a burst of logons that Steam starts refusing outright,
+    /// taking the library refresh and the presence session down with it.
+    func localSaveFingerprint(appID: Int) -> String? {
+        guard let dirs = knownSaveDirs[appID], !dirs.isEmpty else { return nil }
+        let fm = FileManager.default
+        var parts: [String] = []
+        for dir in dirs.sorted(by: { $0.path < $1.path }) {
+            guard let walker = fm.enumerator(
+                at: dir,
+                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
+                options: [.skipsHiddenFiles]
+            ) else { continue }
+            for case let url as URL in walker {
+                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
+                let mtime = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
+                let size = values?.fileSize ?? 0
+                parts.append("\(url.path):\(mtime):\(size)")
+            }
+        }
+        return parts.isEmpty ? nil : parts.sorted().joined(separator: "|")
+    }
 
     private func resolveWineUserHome(for bottle: Bottle) throws -> URL {
         let usersDir = AppPaths.prefixURL(for: bottle)

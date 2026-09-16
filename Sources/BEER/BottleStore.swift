@@ -112,10 +112,22 @@ final class BottleStore: ObservableObject {
         if let arguments, !arguments.isEmpty {
             args.append(contentsOf: arguments.split(separator: " ").map(String.init))
         }
+        // Run the game from its own folder. Windows starts an executable with
+        // its directory as the working directory — that is what Explorer and
+        // Steam do — and games routinely open their data by relative path.
+        // Without this they inherit BEER's working directory and simply cannot
+        // find their own assets, which surfaces as a crash deep inside the
+        // game's resource loader rather than as a missing-file error.
+        let gameDirectory = URL(fileURLWithPath: executable).deletingLastPathComponent()
+        let launchDirectory = FileManager.default.fileExists(atPath: gameDirectory.path)
+            ? gameDirectory
+            : nil
+
         await runBottleCommand(
             bottle,
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
-            mode: .wine(arguments: args)
+            mode: .wine(arguments: args),
+            workingDirectory: launchDirectory
         )
 
         // The launched .exe returning is not the end of play. Plenty of games
@@ -386,7 +398,8 @@ final class BottleStore: ObservableObject {
         operation: String,
         mode: BottleCommandMode,
         allowWhileActive: Bool = false,
-        environmentOverrides: [String: String] = [:]
+        environmentOverrides: [String: String] = [:],
+        workingDirectory: URL? = nil
     ) async {
         guard allowWhileActive || !activeBottleIDs.contains(bottle.id) else { return }
 
@@ -411,6 +424,7 @@ final class BottleStore: ObservableObject {
                 executable: command.executable,
                 arguments: command.arguments,
                 environment: environment(for: bottle, prefix: prefix).merging(environmentOverrides) { _, new in new },
+                currentDirectory: workingDirectory,
                 outputHandler: { [weak self] chunk in
                     Task { @MainActor in
                         self?.appendLog(chunk.trimmingCharacters(in: .newlines), bottleID: bottle.id)
