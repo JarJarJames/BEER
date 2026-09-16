@@ -51,6 +51,20 @@ struct CloudSyncClient {
     ///   2. The dev build output, relative to the current working directory
     ///      (so `swift run` from the repo root just works).
     ///   3. App Support install dir (where scripts/build_cloudsync.sh puts it).
+    /// Where the helper is, in the order it should be trusted:
+    ///
+    ///  1. next to the app binary — a shipped .app bundles its own helper, and
+    ///     that copy always matches the app it was built with;
+    ///  2. the install in Application Support — what `build_cloudsync.sh`
+    ///     writes, so it is the current build for anyone developing too;
+    ///  3. `Tools/CloudSync/publish/`, in case the helper was published but not
+    ///     installed.
+    ///
+    /// Raw `dotnet build` output (`Tools/CloudSync/bin/…`) is deliberately NOT a
+    /// candidate. It used to come second, ahead of the install, and since it is
+    /// a complete runnable build that nothing ever refreshes, a stale copy there
+    /// silently shadowed every rebuilt helper — the app kept running old code
+    /// while the installed helper sat unused.
     static func locateBinary() -> URL? {
         let fm = FileManager.default
         var candidates: [URL] = []
@@ -60,12 +74,10 @@ struct CloudSyncClient {
         candidates.append(exeDir.appendingPathComponent("CloudSync"))
         candidates.append(exeDir.appendingPathComponent("CloudSync/CloudSync"))
 
-        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
-        for sub in ["Tools/CloudSync/bin/Release/net9.0/CloudSync",
-                    "Tools/CloudSync/bin/Release/net8.0/CloudSync"] {
-            candidates.append(cwd.appendingPathComponent(sub))
-        }
         candidates.append(AppPaths.cloudSyncExecutableURL)
+
+        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
+        candidates.append(cwd.appendingPathComponent("Tools/CloudSync/publish/CloudSync"))
 
         return candidates.first { fm.isExecutableFile(atPath: $0.path) }
     }
@@ -133,6 +145,9 @@ struct CloudSyncClient {
         let name: String
         let iconURL: String?
         let lastPlayed: Date?
+        /// Total minutes Steam has recorded for this app, across every device.
+        /// BEER contributes to this itself — see `SteamPresenceStore`.
+        let playtimeMinutes: Int?
     }
 
     /// Fetch the signed-in account's owned games via the authenticated client
@@ -148,12 +163,65 @@ struct CloudSyncClient {
             let name = (g["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "App \(appid)"
             let icon = (g["img_icon_url"] as? String).flatMap { $0.isEmpty ? nil : $0 }
             let rt = (g["rtime_last_played"] as? NSNumber)?.doubleValue ?? 0
+            let minutes = (g["playtime_forever"] as? NSNumber)?.intValue ?? 0
             return OwnedGameInfo(
                 appID: appid,
                 name: name,
                 iconURL: icon.map { "https://media.steampowered.com/steamcommunity/public/images/apps/\(appid)/\($0).jpg" },
-                lastPlayed: rt > 0 ? Date(timeIntervalSince1970: rt) : nil
+                lastPlayed: rt > 0 ? Date(timeIntervalSince1970: rt) : nil,
+                playtimeMinutes: minutes > 0 ? minutes : nil
             )
+        }
+    }
+
+    // MARK: - Presence
+
+    /// Start the long-lived presence helper and hand back its process, which
+    /// the caller drives with `send` and ends with `end`. See
+    /// `SteamPresenceStore` for what this session is for and why there is
+    /// exactly one of it.
+    func startPresence(
+        steamID64: String,
+        account: String,
+        refreshToken: String,
+        onLine: @escaping @Sendable ([String: Any]) -> Void
+    ) throws -> SpawnedProcess {
+        let binary = try binaryOrThrow()
+        let tokenFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gn-presence-\(UUID().uuidString).tok")
+        try refreshToken.write(to: tokenFile, atomically: true, encoding: .utf8)
+
+        PlaySessionLog.start()
+        let leftover = LineBox()
+        // The helper reads its token once at startup, before it logs on, so the
+        // first byte it prints proves it is past that point. Nothing else would
+        // remove this file for the life of the app.
+        let tokenCleanup = OnceBox { try? FileManager.default.removeItem(at: tokenFile) }
+
+        do {
+            let process = try ShellRunner.spawn(
+                executable: binary.path,
+                arguments: [
+                    "presence", "--steamid", steamID64,
+                    "--account", account, "--token-file", tokenFile.path,
+                ],
+                environment: ["DOTNET_CLI_TELEMETRY_OPTOUT": "1", "DOTNET_NOLOGO": "1"],
+                outputHandler: { chunk in
+                    tokenCleanup.run()
+                    PlaySessionLog.append(chunk)
+                    for line in leftover.feed(chunk) {
+                        guard let data = line.data(using: .utf8),
+                              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                        else { continue }
+                        onLine(obj)
+                    }
+                }
+            )
+            PlaySessionRegistry.record(pid: process.processIdentifier)
+            return process
+        } catch {
+            tokenCleanup.run()
+            throw error
         }
     }
 
@@ -214,6 +282,12 @@ struct CloudSyncClient {
     struct UploadJob { let filename: String; let local: URL; let mtime: Date }
     struct BatchOp { let op: String; let filename: String; let error: String? }
 
+    /// What one batch produced: the per-file outcomes, plus whatever the helper
+    /// said on stderr. Those notes used to be dropped on the floor, which is how
+    /// a downloader that silently wrote the wrong bytes still read as a clean
+    /// sync — they now land in the app's sync log.
+    struct BatchResult { let ops: [BatchOp]; let notes: [String] }
+
     /// Run many downloads + uploads inside a SINGLE logged-on helper session.
     /// One Steam logon for the whole sync — spawning a process per file gets the
     /// account CM-throttled after ~100 logons. `onProgress` fires per completed
@@ -225,8 +299,8 @@ struct CloudSyncClient {
         account: String,
         refreshToken: String,
         onProgress: @escaping @Sendable (Int, Int) -> Void
-    ) async throws -> [BatchOp] {
-        guard !downloads.isEmpty || !uploads.isEmpty else { return [] }
+    ) async throws -> BatchResult {
+        guard !downloads.isEmpty || !uploads.isEmpty else { return BatchResult(ops: [], notes: []) }
         let binary = try binaryOrThrow()
 
         let jobs: [String: Any] = [
@@ -250,7 +324,7 @@ struct CloudSyncClient {
         _ = try await runStreaming(binary: binary, args: [
             "batch", "--appid", String(appID), "--jobs", jobsFile.path,
             "--account", account, "--token-file", tokenFile.path
-        ]) { obj in
+        ], onNote: { collector.addNote($0) }) { obj in
             if obj["summary"] != nil { return }
             if let opName = obj["op"] as? String, let filename = obj["filename"] as? String {
                 let err = obj["error"] as? String
@@ -267,7 +341,7 @@ struct CloudSyncClient {
         if collector.rateLimited { throw CloudSyncClientError.rateLimited }
         if collector.authFailed { throw CloudSyncClientError.authExpired }
         if let fatal = collector.fatal, collector.ops.isEmpty { throw CloudSyncClientError.helper(fatal) }
-        return collector.ops
+        return BatchResult(ops: collector.ops, notes: collector.notes)
     }
 
     // MARK: - Process plumbing
@@ -320,6 +394,7 @@ struct CloudSyncClient {
     private func runStreaming(
         binary: URL,
         args: [String],
+        onNote: (@Sendable (String) -> Void)? = nil,
         onObject: @escaping @Sendable ([String: Any]) -> Void
     ) async throws -> Int32 {
         let leftover = LineBox()
@@ -331,7 +406,7 @@ struct CloudSyncClient {
                 for line in leftover.feed(chunk) {
                     guard let data = line.data(using: .utf8),
                           let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-                    else { continue }
+                    else { onNote?(line); continue }
                     onObject(obj)
                 }
             }
@@ -340,6 +415,8 @@ struct CloudSyncClient {
             if let data = line.data(using: .utf8),
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 onObject(obj)
+            } else {
+                onNote?(line)
             }
         }
         return result.exitCode
@@ -375,16 +452,23 @@ private final class LineBox: @unchecked Sendable {
 private final class BatchCollector: @unchecked Sendable {
     private let lock = NSLock()
     private var _ops: [CloudSyncClient.BatchOp] = []
+    private var _notes: [String] = []
     private var _fatal: String?
     private var _authFailed = false
     private var _rateLimited = false
 
     func add(_ op: CloudSyncClient.BatchOp) { lock.lock(); _ops.append(op); lock.unlock() }
+    /// Bounded: a chatty helper shouldn't be able to grow this without limit.
+    func addNote(_ note: String) {
+        lock.lock(); defer { lock.unlock() }
+        if _notes.count < 200 { _notes.append(note) }
+    }
     func setFatal(_ msg: String, authFailed: Bool, rateLimited: Bool) {
         lock.lock(); _fatal = msg; _authFailed = authFailed; _rateLimited = rateLimited; lock.unlock()
     }
 
     var ops: [CloudSyncClient.BatchOp] { lock.lock(); defer { lock.unlock() }; return _ops }
+    var notes: [String] { lock.lock(); defer { lock.unlock() }; return _notes }
     var count: Int { lock.lock(); defer { lock.unlock() }; return _ops.count }
     var fatal: String? { lock.lock(); defer { lock.unlock() }; return _fatal }
     var authFailed: Bool { lock.lock(); defer { lock.unlock() }; return _authFailed }
@@ -411,4 +495,21 @@ private final class ResultBox: @unchecked Sendable {
     var error: String? { lock.lock(); defer { lock.unlock() }; return _error }
     var authFailed: Bool { lock.lock(); defer { lock.unlock() }; return _authFailed }
     var rateLimited: Bool { lock.lock(); defer { lock.unlock() }; return _rateLimited }
+}
+
+
+/// Runs a closure the first time it is asked and never again.
+private final class OnceBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var body: (() -> Void)?
+
+    init(_ body: @escaping () -> Void) { self.body = body }
+
+    func run() {
+        let action: (() -> Void)? = lock.withLock {
+            defer { body = nil }
+            return body
+        }
+        action?()
+    }
 }

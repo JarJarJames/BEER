@@ -31,6 +31,7 @@ struct BEERApp: App {
     @StateObject private var library = SteamLibraryStore()
     @StateObject private var depotDownloader = DepotDownloaderInstaller()
     @StateObject private var cloudAuth = SteamAuthStore()
+    @StateObject private var presence = SteamPresenceStore()
 
     var body: some Scene {
         WindowGroup {
@@ -41,6 +42,7 @@ struct BEERApp: App {
                 .environmentObject(library)
                 .environmentObject(depotDownloader)
                 .environmentObject(cloudAuth)
+                .environmentObject(presence)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -49,6 +51,10 @@ struct BEERApp: App {
                     depotDownloader.refresh()
                     library.load()
                     cloudAuth.load()
+                    presence.load()
+                    // If a previous run died mid-game, stop any helper still
+                    // telling Steam we're playing.
+                    await PlaySessionRegistry.sweepOrphans()
                 }
         }
         .windowStyle(.titleBar)

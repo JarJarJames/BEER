@@ -32,6 +32,7 @@ using SteamKit2.Internal;
 // Commands:
 //   enumerate --appid N
 //   dlc       --appid N
+//   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
 //   prepare-depot-auth --depot-executable <path>
@@ -81,13 +82,18 @@ static class Program
             var account = Require(args, "account");
             uint appid = args.TryGetValue("appid", out var aid) ? uint.Parse(aid) : 0; // not needed by ownedgames
 
-            using var session = await SteamSession.LogOnAsync(account, token);
+            using var session = await SteamSession.LogOnAsync(
+                account, token,
+                cmd == "presence" ? SteamSession.PresenceLoginID : SteamSession.CommandLoginID);
             try
             {
                 switch (cmd)
                 {
                     case "ownedgames": await OwnedGames(session, ulong.Parse(Require(args, "steamid"))); break;
                     case "dlc": await Dlc(session, appid); break;
+                    case "presence":
+                        await Presence(session, ulong.Parse(Require(args, "steamid")));
+                        break;
                     case "enumerate": await Enumerate(session, appid); break;
                     case "batch": await Batch(session, appid, Require(args, "jobs")); break;
                     case "download":
@@ -260,6 +266,326 @@ static class Program
             ["rtime_last_played"] = g.rtime_last_played,
         }).ToList();
         EmitJson(new Dictionary<string, object?> { ["games"] = games });
+    }
+
+    // Tell Steam this session is playing `appid` — or, with 0, nothing at all.
+    //
+    // Steam credits play time to whichever logged-on client session claims to
+    // be playing; the real Steam client has no special privilege here. That is
+    // what lets BEER record hours for a game it launches through Wine, and it
+    // is the same mechanism GameNative uses on Android.
+    static void Announce(SteamSession s, uint appid)
+    {
+        var msg = new ClientMsgProtobuf<CMsgClientGamesPlayed>(EMsg.ClientGamesPlayedWithDataBlob);
+        if (appid != 0)
+            msg.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed { game_id = appid });
+        s.Client.Send(msg);
+    }
+
+    // One long-lived session for the whole time BEER is open: persona state,
+    // game announcements and play-time reads all share it.
+    //
+    // Sharing matters. Steam's games-played and persona state are both
+    // last-writer-wins across an account's sessions, so a second logon for
+    // gameplay would fight this one. One session, driven by commands.
+    //
+    // Commands arrive on stdin, one per line:
+    //   state <Online|Away|Invisible|Offline>
+    //   play <appid>
+    //   stop
+    //
+    // EOF ends the session. BEER holds the write end of that pipe, so EOF
+    // arrives if BEER dies by any means, including SIGKILL — macOS has no
+    // parent-death signal, and this is the only teardown that survives a force
+    // quit. Without it the account would be left looking permanently in-game.
+    static async Task Presence(SteamSession s, ulong steamid)
+    {
+        var friends = s.Client.GetHandler<SteamFriends>()!;
+        uint currentApp = 0;
+        // The keepalive thread re-announces while the command thread can be
+        // retracting. Unsynchronised, a re-announce that read `currentApp`
+        // before the stop can land *after* the retraction — leaving Steam
+        // believing the game is still running, permanently, because nothing
+        // announces again afterwards.
+        var announceGate = new object();
+
+        void SetPlaying(uint appid)
+        {
+            lock (announceGate)
+            {
+                currentApp = appid;
+                Announce(s, appid);
+            }
+        }
+        var currentState = EPersonaState.Online;
+        // Set when Steam ends the session because the account logged on
+        // somewhere else. Reconnecting then would start a kick war with that
+        // other client, so we stop and let the app tell the user instead.
+        var displaced = false;
+
+        s.Subscribe<SteamUser.LoggedOffCallback>(cb =>
+        {
+            if (cb.Result is EResult.LoggedInElsewhere or EResult.LogonSessionReplaced)
+                displaced = true;
+            EmitJson(new Dictionary<string, object?>
+            {
+                ["logged_off"] = cb.Result.ToString(),
+                ["displaced"] = displaced,
+            });
+        });
+
+        s.Subscribe<SteamClient.DisconnectedCallback>(cb =>
+        {
+            Interlocked.Increment(ref SteamSession.CallbacksSeen);
+            EmitJson(new Dictionary<string, object?>
+            {
+                ["disconnected"] = true,
+                ["user_initiated"] = cb.UserInitiated,
+            });
+        });
+
+        s.Subscribe<SteamClient.ConnectedCallback>(_ =>
+        {
+            Interlocked.Increment(ref SteamSession.CallbacksSeen);
+            EmitJson(new Dictionary<string, object?> { ["connected_callback"] = true });
+        });
+
+        // A reconnect is a brand-new logon that asserts nothing, so everything
+        // this session owns has to be re-applied each time.
+        s.Subscribe<SteamUser.LoggedOnCallback>(cb =>
+        {
+            if (cb.Result != EResult.OK)
+            {
+                EmitJson(new Dictionary<string, object?>
+                {
+                    ["error"] = $"Steam refused the reconnect: {cb.Result}",
+                });
+                return;
+            }
+            friends.SetPersonaState(currentState);
+            lock (announceGate)
+            {
+                if (currentApp != 0) Announce(s, currentApp);
+            }
+            EmitJson(new Dictionary<string, object?> { ["reconnected"] = true });
+        });
+
+        // Steam's own view of this persona, pushed on every change. This is
+        // where the app gets the nickname and avatar it displays, and it is the
+        // ground truth for whether an announcement actually took.
+        s.Subscribe<SteamFriends.PersonaStateCallback>(cb =>
+        {
+            if (s.Client.SteamID is not { } self || cb.FriendID != self) return;
+            // Steam answers a targeted info request with only the fields it was
+            // asked for; everything else arrives as a default — persona state
+            // Offline, app id 0, no name. Reporting one of those as fact blanks
+            // the name in the UI and claims the game stopped while it is still
+            // running. A real update always carries the name.
+            if (string.IsNullOrEmpty(cb.Name)) return;
+            EmitJson(new Dictionary<string, object?>
+            {
+                ["persona_name"] = cb.Name,
+                ["persona_state"] = cb.State.ToString(),
+                ["avatar_hash"] = cb.AvatarHash is null
+                    ? null
+                    : Convert.ToHexString(cb.AvatarHash).ToLowerInvariant(),
+                ["presence_appid"] = cb.GameAppID,
+                ["session_instances"] = cb.OnlineSessionInstances,
+            });
+        });
+
+        // Keep the announcement alive. Any other session on the account — the
+        // real Steam client above all — broadcasts its own games-played, and
+        // the last writer wins; re-sending is how the real client makes its own
+        // status stick. Also surfaces a dropped connection rather than letting
+        // us sit on a dead socket believing we are still being counted.
+        var stop = new CancellationTokenSource();
+        var keepalive = Task.Run(async () =>
+        {
+            var attempts = 0;
+            var ticks = 0;
+            var lastPump = -1L;
+            while (!stop.IsCancellationRequested)
+            {
+                try { await Task.Delay(TimeSpan.FromSeconds(5), stop.Token); }
+                catch (OperationCanceledException) { break; }
+
+                // A pump that stops advancing has stopped delivering callbacks,
+                // and every symptom of that is silent: the socket reconnects,
+                // the process stays alive, and nothing Steam sends is ever
+                // acted on again. Fail loudly instead of flapping for hours.
+                if (SteamSession.PumpIterations == lastPump)
+                {
+                    EmitJson(new Dictionary<string, object?>
+                    {
+                        ["error"] = "The Steam callback pump stopped responding, so status and play time can't be tracked. Restarting BEER should clear it.",
+                        ["fatal"] = true,
+                    });
+                    Environment.Exit(1);
+                }
+                lastPump = SteamSession.PumpIterations;
+
+                Console.Error.WriteLine(
+                    $"tick: connected={s.Client.IsConnected} steamid={s.Client.SteamID} " +
+                    $"pump={SteamSession.PumpIterations} faults={SteamSession.PumpFaults} " +
+                    $"callbacks={SteamSession.CallbacksSeen}");
+
+                if (s.Client.IsConnected)
+                {
+                    if (attempts > 0)
+                        EmitJson(new Dictionary<string, object?> { ["connection_restored"] = true });
+                    attempts = 0;
+                    lock (announceGate)
+                    {
+                        if (currentApp != 0) Announce(s, currentApp);
+                    }
+
+                    // Persona state is last-writer-wins across an account's
+                    // sessions, exactly like games-played, so it needs the same
+                    // periodic defence — but far less often, since nothing else
+                    // asserts it continuously and Steam pushes the real value
+                    // back unprompted whenever it changes.
+                    if (++ticks % 12 == 0) friends.SetPersonaState(currentState);
+                    continue;
+                }
+
+                // Displaced by another logon on this account — almost always
+                // the real Steam client. Reconnecting would just kick that one
+                // back, and the two would trade the account indefinitely.
+                if (displaced)
+                {
+                    EmitJson(new Dictionary<string, object?>
+                    {
+                        ["error"] = "Steam signed this session out because the account logged on somewhere else. Reopen BEER to restore status and play-time tracking.",
+                        ["fatal"] = true,
+                    });
+                    // Nothing this process can still do is useful, and the app
+                    // watches for it exiting to clear the status it shows.
+                    Environment.Exit(1);
+                    return;
+                }
+
+                // A CM dropping a long-lived client is routine, so reconnect —
+                // the session's existing ConnectedCallback logs back on. Back
+                // off so a persistent outage doesn't hammer Steam's rate limit.
+                attempts++;
+                if (attempts > 10)
+                {
+                    EmitJson(new Dictionary<string, object?>
+                    {
+                        ["error"] = "Lost the Steam connection and couldn't get it back. Status and play time aren't being recorded.",
+                        ["fatal"] = true,
+                    });
+                    Environment.Exit(1);
+                    return;
+                }
+                EmitJson(new Dictionary<string, object?> { ["reconnecting"] = attempts });
+                try { s.Client.Connect(); } catch { /* next tick retries */ }
+                try { await Task.Delay(TimeSpan.FromSeconds(Math.Min(5 * attempts, 30)), stop.Token); }
+                catch (OperationCanceledException) { break; }
+            }
+        });
+
+        // Declare "playing nothing" up front. Steam keeps the last games-played
+        // it was told, so a previous session that died without retracting — a
+        // crash, a force quit, a killed helper — leaves the account showing
+        // in-game indefinitely, and no later session clears it because none of
+        // them ever mention the stale game. This makes every launch self-healing.
+        SetPlaying(0);
+
+        EmitJson(new Dictionary<string, object?> { ["presence_ready"] = true });
+
+        // Seed the persona once so the app has a nickname and avatar to show
+        // without waiting for Steam to push an unprompted change. PlayerName
+        // has to be in the flags: Steam returns exactly the fields asked for,
+        // and leaving it out is what produced nameless updates before.
+        if (s.Client.SteamID is { } seed)
+            friends.RequestFriendInfo(seed,
+                EClientPersonaStateFlag.PlayerName
+                | EClientPersonaStateFlag.Status
+                | EClientPersonaStateFlag.GameExtraInfo
+                | EClientPersonaStateFlag.Presence);
+
+        // Console reads are synchronous underneath on Unix — ReadLineAsync
+        // hands back an already-completed task after blocking. Push it onto a
+        // pool thread so it can never occupy a thread something else needs.
+        string? line;
+        while ((line = await Task.Run(() => Console.In.ReadLine())) != null)
+        {
+            var parts = line.Trim().Split(' ', 2);
+            if (parts.Length == 0 || parts[0].Length == 0) continue;
+            try
+            {
+                switch (parts[0])
+                {
+                    // A fresh SteamKit logon's persona starts Offline, and Steam
+                    // does not broadcast a game for an offline persona — so the
+                    // app sends this before anything else, or nobody ever sees
+                    // the game.
+                    case "state":
+                        if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
+                        {
+                            currentState = wanted;
+                            friends.SetPersonaState(wanted);
+                        }
+                        break;
+
+                    case "play":
+                        SetPlaying(uint.Parse(parts[1]));
+                        EmitJson(new Dictionary<string, object?> { ["playing"] = currentApp });
+                        break;
+
+                    case "stop":
+                        var finished = currentApp;
+                        SetPlaying(0);
+                        // Let the retraction land and Steam credit the session
+                        // before re-reading the total.
+                        await Task.Delay(TimeSpan.FromSeconds(2));
+                        long? minutes = null;
+                        try { minutes = await PlaytimeMinutes(s, steamid, finished); }
+                        catch (Exception ex) { Console.Error.WriteLine($"play time re-read failed: {ex.Message}"); }
+                        EmitJson(new Dictionary<string, object?>
+                        {
+                            ["stopped"] = finished,
+                            ["playtime_forever"] = minutes,
+                        });
+                        break;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"command '{line}' failed: {ex.Message}");
+            }
+        }
+
+        stop.Cancel();
+        await keepalive;
+
+        SetPlaying(0);
+        friends.SetPersonaState(EPersonaState.Offline);
+        EmitJson(new Dictionary<string, object?> { ["shutdown"] = "retracted and going offline" });
+        // Let the retraction reach the CM before the caller disconnects the
+        // socket underneath it.
+        await Task.Delay(TimeSpan.FromSeconds(1));
+    }
+
+    /// Total minutes Steam has recorded for one app.
+    static async Task<long?> PlaytimeMinutes(SteamSession s, ulong steamid, uint appid)
+    {
+        var player = s.Unified.CreateService<Player>();
+        var req = new CPlayer_GetOwnedGames_Request
+        {
+            steamid = steamid,
+            include_appinfo = false,
+            include_played_free_games = true,
+            include_free_sub = false,
+        };
+        req.appids_filter.Add(appid);
+
+        var resp = await player.GetOwnedGames(req);
+        if (resp.Result != EResult.OK)
+            throw new Exception($"GetOwnedGames failed: {resp.Result}");
+        return resp.Body.games.FirstOrDefault(g => g.appid == appid)?.playtime_forever;
     }
 
     // Report every DLC Steam lists for `appid`, flagged with whether this
@@ -550,10 +876,55 @@ static class Program
         if (body.file_size != 0 && bytes.Length != body.file_size)
             Console.Error.WriteLine($"warning: downloaded {bytes.Length} bytes, expected {body.file_size}");
 
+        bytes = InflateCloudFile(bytes, body.file_size, body.raw_file_size, body.sha_file, filename);
+
         var dir = Path.GetDirectoryName(Path.GetFullPath(outPath));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
         await File.WriteAllBytesAsync(outPath, bytes);
         try { File.SetLastWriteTimeUtc(outPath, DateTimeOffset.FromUnixTimeSeconds((long)body.time_stamp).UtcDateTime); } catch { }
+    }
+
+    // Steam stores a cloud save wrapped: the transfer is a zip holding exactly
+    // one entry, which the Steam client names "z". Writing that payload verbatim
+    // hands the game a zip where it expects its own save format — Mewgenics,
+    // whose saves are SQLite, refuses it with "file is not a database".
+    //
+    // The wrapper is identified by its shape, not by the size fields: Steam does
+    // not reliably report raw_file_size on this response (it came back as 0 or as
+    // the compressed size for real Mewgenics saves), so trusting those silently
+    // passed the zip straight through. A save that is genuinely a zip is left
+    // alone — it takes more than one entry, or an entry not named "z".
+    //
+    // Anything that doesn't add up throws rather than returning bytes: a save we
+    // cannot verify must never reach the disk.
+    static byte[] InflateCloudFile(byte[] payload, uint fileSize, uint rawFileSize, byte[]? sha, string filename)
+    {
+        if (payload.Length < 4 || payload[0] != 'P' || payload[1] != 'K' || payload[2] != 3 || payload[3] != 4)
+            return payload;
+
+        using var archive = new ZipArchive(new MemoryStream(payload), ZipArchiveMode.Read);
+        if (archive.Entries.Count != 1 || archive.Entries[0].FullName != "z") return payload;
+
+        using var raw = new MemoryStream();
+        using (var entryStream = archive.Entries[0].Open())
+            entryStream.CopyTo(raw);
+        var data = raw.ToArray();
+
+        // Cross-check against raw_file_size only when Steam actually reported a
+        // distinct one, and verify integrity against whichever form the SHA1
+        // covers — it describes the stored blob for some files, the raw file for
+        // others, and either one proves the transfer arrived intact.
+        if (rawFileSize != 0 && rawFileSize != fileSize && data.Length != rawFileSize)
+            throw new Exception($"{filename}: decompressed to {data.Length} bytes, expected {rawFileSize}.");
+        if (sha != null && sha.Length > 0
+            && !SHA1.HashData(data).SequenceEqual(sha)
+            && !SHA1.HashData(payload).SequenceEqual(sha))
+            throw new Exception($"{filename}: contents match neither the cloud SHA1 of the file nor of the transfer.");
+
+        Console.Error.WriteLine(
+            $"{filename}: unwrapped Steam's zip, {payload.Length} -> {data.Length} bytes " +
+            $"(file_size={fileSize}, raw_file_size={rawFileSize})");
+        return data;
     }
 
     static async Task UploadCore(SteamSession s, uint appid, string filename, string inPath, long mtime)
@@ -685,6 +1056,12 @@ static class Program
 // a background thread for the lifetime of the session.
 sealed class SteamSession : IDisposable
 {
+    // Instrumentation. A session that quietly stops receiving callbacks looks
+    // identical to a healthy idle one, so these make the difference visible.
+    public static long PumpIterations;
+    public static long PumpFaults;
+    public static long CallbacksSeen;
+
     public SteamClient Client { get; }
     public Cloud Cloud { get; private set; } = null!;
     public SteamUnifiedMessages Unified { get; private set; } = null!;
@@ -709,6 +1086,10 @@ sealed class SteamSession : IDisposable
         Client = client; _cb = cb;
     }
 
+    /// Subscribe to a Steam callback for the life of this session.
+    public void Subscribe<T>(Action<T> handler) where T : CallbackMsg
+        => _cb.Subscribe(handler);
+
     static SteamSession StartPump()
     {
         var client = new SteamClient();
@@ -717,8 +1098,30 @@ sealed class SteamSession : IDisposable
         var token = session._pump.Token;
         _ = Task.Run(() =>
         {
+            try
+            {
             while (!token.IsCancellationRequested)
-                cb.RunWaitCallbacks(TimeSpan.FromMilliseconds(200));
+            {
+                // A throwing handler must never take the pump down with it.
+                // Unguarded, one bad callback silently ends callback delivery
+                // for the rest of the session: the connection still looks alive
+                // and commands still appear to work, but nothing Steam sends
+                // back — persona updates, disconnects, logoff reasons — is ever
+                // seen again. Short-lived commands got away with it; a session
+                // that runs for hours does not.
+                try
+                {
+                    cb.RunWaitCallbacks(TimeSpan.FromMilliseconds(200));
+                    Interlocked.Increment(ref PumpIterations);
+                }
+                catch (Exception ex)
+                {
+                    Interlocked.Increment(ref PumpFaults);
+                    try { Console.Error.WriteLine($"callback handler threw: {ex}"); } catch { }
+                }
+            }
+            }
+            finally { Console.Error.WriteLine($"callback pump stopped after {PumpIterations} iterations."); }
         });
         return session;
     }
@@ -745,12 +1148,65 @@ sealed class SteamSession : IDisposable
 
     /// Connect and log on with a SteamClient-audience refresh token, then bind
     /// the Cloud unified service.
-    public static async Task<SteamSession> LogOnAsync(string account, string refreshToken)
+    // Steam tells concurrent sessions on one account apart by LoginID. Left
+    // unset they all collide on the same default — so every new logon evicts
+    // the last with LogonSessionReplaced. That includes our own short-lived
+    // commands evicting the long-lived presence session, and the user's real
+    // Steam client evicting both.
+    //
+    // The presence session gets a fixed id so its own reconnects keep one
+    // identity; every other command gets a random one, so a library refresh or
+    // a cloud sync can't knock presence offline mid-game.
+    public const uint PresenceLoginID = 0x42454552; // "BEER"
+    public static readonly uint CommandLoginID = (uint)Random.Shared.Next(1, int.MaxValue);
+
+    /// Log on, retrying a connection that drops before the logon completes.
+    ///
+    /// Steam's CMs drop connections routinely — especially after a burst of
+    /// logons, which is exactly what a game crashing and being relaunched
+    /// produces. Treating the first drop as fatal turns one transient refusal
+    /// into a dead presence session and a failed library refresh at the same
+    /// moment.
+    ///
+    /// A refusal Steam actually explains (bad token, rate limit) is NOT retried:
+    /// re-attempting those only deepens the cooldown.
+    public static async Task<SteamSession> LogOnAsync(string account, string refreshToken, uint loginID)
+    {
+        Exception? last = null;
+        for (var attempt = 1; attempt <= 4; attempt++)
+        {
+            try
+            {
+                return await LogOnOnceAsync(account, refreshToken, loginID);
+            }
+            catch (LogonFailedException)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                last = ex;
+                Console.Error.WriteLine($"logon attempt {attempt}/4 failed: {ex.Message}");
+                if (attempt < 4)
+                    await Task.Delay(TimeSpan.FromSeconds(Math.Pow(2, attempt)));
+            }
+        }
+        throw last!;
+    }
+
+    static async Task<SteamSession> LogOnOnceAsync(string account, string refreshToken, uint loginID)
     {
         var session = StartPump();
         var user = session.Client.GetHandler<SteamUser>()!;
         var unified = session.Client.GetHandler<SteamUnifiedMessages>()!;
-        var loggedOn = new TaskCompletionSource();
+        // RunContinuationsAsynchronously is load-bearing, not a style choice.
+        // Without it, TrySetResult below runs everything awaiting this task
+        // inline on the callback pump thread — so the command itself ends up
+        // executing there. A command that suspends gives the thread back; one
+        // that parks on a blocking read never does, and the pump stops
+        // dispatching for good: no disconnects, no reconnect logons, no persona
+        // updates, while the process looks perfectly healthy.
+        var loggedOn = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
 
         session._cb.Subscribe<SteamClient.ConnectedCallback>(_ =>
         {
@@ -760,6 +1216,7 @@ sealed class SteamSession : IDisposable
                 Username = account,
                 AccessToken = refreshToken,
                 ShouldRememberPassword = true,
+                LoginID = loginID,
             });
         });
         session._cb.Subscribe<SteamClient.DisconnectedCallback>(_ =>
@@ -785,10 +1242,21 @@ sealed class SteamSession : IDisposable
         session.Cloud = unified.CreateService<Cloud>();
         session.Client.Connect();
 
-        var timeout = Task.Delay(TimeSpan.FromSeconds(45));
-        if (await Task.WhenAny(loggedOn.Task, timeout) == timeout)
-            throw new Exception("timed out connecting/logging on to Steam");
-        await loggedOn.Task; // surface logon exception if any
+        try
+        {
+            var timeout = Task.Delay(TimeSpan.FromSeconds(45));
+            if (await Task.WhenAny(loggedOn.Task, timeout) == timeout)
+                throw new Exception("timed out connecting/logging on to Steam");
+            await loggedOn.Task; // surface logon exception if any
+        }
+        catch
+        {
+            // Each attempt builds a fresh client and pump thread; a failed one
+            // has to be torn down or a retry leaks both.
+            session.Disconnect();
+            session.Dispose();
+            throw;
+        }
 
         Console.Error.WriteLine("logged on.");
         return session;

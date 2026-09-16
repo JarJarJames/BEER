@@ -101,9 +101,22 @@ final class SteamLibraryStore: ObservableObject {
                 headerImageURL: nil,
                 iconURL: $0.iconURL,
                 sizeOnDiskBytes: nil,
-                lastPlayed: $0.lastPlayed
+                lastPlayed: $0.lastPlayed,
+                playtimeMinutes: $0.playtimeMinutes
             )
         }
+    }
+
+    /// Apply a fresh play-time total reported by a finished play session.
+    ///
+    /// Never moves the counter backwards: Steam may not have credited the
+    /// session yet when the helper re-reads it, and a stale-but-lower total
+    /// must not overwrite a good one. The next library refresh corrects it.
+    func recordPlaytime(appID: Int, minutes: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
+        guard minutes > (games[index].playtimeMinutes ?? 0) else { return }
+        games[index].playtimeMinutes = minutes
+        persist()
     }
 
     func markInstalled(appID: Int, bottleID: UUID) {

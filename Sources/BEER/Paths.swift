@@ -66,6 +66,23 @@ enum AppPaths {
     /// Legacy plaintext Steam Cloud auth file from older builds. The refresh
     /// token now lives in the Keychain (see `Keychain` / `SteamAuthStore`);
     /// this path only exists so `load()` can migrate and delete it.
+    /// PID of a play-session helper that is currently announcing a game to
+    /// Steam, so a BEER that died without unwinding can clean it up next launch.
+    static var playSessionStateURL: URL {
+        applicationSupport.appendingPathComponent("play-session.json")
+    }
+
+    /// The Steam online status the user picked, applied on every connect.
+    static var presenceStateURL: URL {
+        applicationSupport.appendingPathComponent("presence-state.json")
+    }
+
+    /// Everything the current/last play-session helper printed. First stop
+    /// when Steam play time or in-game presence doesn't show up.
+    static var playSessionLogURL: URL {
+        applicationSupport.appendingPathComponent("play-session.log")
+    }
+
     static var steamCloudAuthStateURL: URL {
         applicationSupport.appendingPathComponent("steam-cloud-auth.json")
     }

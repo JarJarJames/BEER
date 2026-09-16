@@ -13,6 +13,7 @@ struct GameDetailView: View {
     @EnvironmentObject private var goldberg: GoldbergInstaller
     @EnvironmentObject private var cloudAuth: SteamAuthStore
     @EnvironmentObject private var cloudSync: CloudSyncEngine
+    @EnvironmentObject private var presence: SteamPresenceStore
     @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
     @EnvironmentObject private var dlcStore: DLCStore
     @State private var isShowingCloudConnect: Bool = false
@@ -37,6 +38,11 @@ struct GameDetailView: View {
     /// 20-second wineboot phase from being kicked off multiple times if the
     /// user clicks Install rapidly.
     @State private var isStartingInstall: Bool = false
+    /// Environment overrides are edited as an ordered list rather than straight
+    /// from the bottle's dictionary: a dictionary reorders as you type, which
+    /// makes the rows jump under the cursor. Committed back on every keystroke.
+    @State private var envVars: [EnvironmentVariable] = []
+    @State private var envLoadedFor: UUID?
 
     private var installedBottle: Bottle? {
         guard let id = game.installedBottleID else { return nil }
@@ -141,6 +147,9 @@ struct GameDetailView: View {
 
                 HStack(spacing: 12) {
                     Label("appID \(game.appID)", systemImage: "number")
+                    if let playtime = game.playtimeDisplay {
+                        Label(playtime, systemImage: "clock")
+                    }
                     if installedBottle != nil {
                         Label("Installed", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
@@ -348,6 +357,8 @@ struct GameDetailView: View {
                 .frame(maxWidth: 520)
                 Spacer()
             }
+
+            environmentRow(bottleID: bottleID, bottle: liveBottle)
 
             Divider()
 
@@ -1207,6 +1218,117 @@ struct GameDetailView: View {
         }
     }
 
+    // MARK: - Environment overrides
+
+    /// Per-bottle environment variables, applied to the game's Wine process.
+    ///
+    /// This is the escape hatch for the long tail of per-game breakage that no
+    /// amount of default-picking solves — a game needing a different graphics
+    /// backend, a DLL override, a debug toggle. Without it the only fix is
+    /// hand-editing `bottles.json`, which is not a fix a user can be asked to
+    /// perform.
+    @ViewBuilder
+    private func environmentRow(bottleID: UUID, bottle: Bottle) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            SettingsRow(title: "Environment", alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach($envVars) { $entry in
+                        HStack(spacing: 6) {
+                            TextField("NAME", text: $entry.key)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(width: 190)
+                            Text("=")
+                                .foregroundStyle(.secondary)
+                            TextField("value", text: $entry.value)
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 240)
+                            Button {
+                                envVars.removeAll { $0.id == entry.id }
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.borderless)
+                            .help("Remove this variable")
+
+                            if EnvironmentVariable.isOverriddenByBEER(entry.key) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.orange)
+                                    .help("BEER sets \(entry.key.trimmingCharacters(in: .whitespaces).uppercased()) itself, so this value is ignored at launch.")
+                            }
+                        }
+                    }
+
+                    HStack(spacing: 14) {
+                        Button {
+                            envVars.append(EnvironmentVariable(key: "", value: ""))
+                        } label: {
+                            Label("Add Variable", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderless)
+
+                        Menu {
+                            ForEach(EnvironmentPreset.all) { preset in
+                                Button {
+                                    apply(preset)
+                                } label: {
+                                    Text("\(preset.title) — \(preset.key)=\(preset.value)")
+                                }
+                                .help(preset.detail)
+                            }
+                        } label: {
+                            Label("Known Fixes", systemImage: "wrench.and.screwdriver")
+                        }
+                        .menuStyle(.borderlessButton)
+                        .fixedSize()
+                    }
+                }
+                Spacer()
+            }
+
+            Text("Set on the game's Wine process at launch. `WINEDLLOVERRIDES` is merged with the overrides BEER sets itself rather than replacing them. Changes apply next launch.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, SettingsRow<EmptyView>.captionIndent)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .task(id: bottleID) {
+            // Seed once per bottle. Re-seeding on every redraw would fight the
+            // user's cursor.
+            guard envLoadedFor != bottleID else { return }
+            envLoadedFor = bottleID
+            envVars = bottle.environmentOverrides
+                .sorted { $0.key < $1.key }
+                .map { EnvironmentVariable(key: $0.key, value: $0.value) }
+        }
+        .onChange(of: envVars) { _, _ in
+            commitEnvironment(bottleID: bottleID)
+        }
+    }
+
+    private func apply(_ preset: EnvironmentPreset) {
+        if let existing = envVars.firstIndex(where: { $0.key == preset.key }) {
+            envVars[existing].value = preset.value
+        } else {
+            envVars.append(EnvironmentVariable(key: preset.key, value: preset.value))
+        }
+    }
+
+    private func commitEnvironment(bottleID: UUID) {
+        var overrides: [String: String] = [:]
+        for entry in envVars {
+            let key = entry.key.trimmingCharacters(in: .whitespaces)
+            guard !key.isEmpty else { continue }
+            overrides[key] = entry.value
+        }
+        // Seeding the editor also fires onChange; writing only on a real
+        // difference keeps that from scheduling a pointless save on every
+        // appearance.
+        let current = bottles.bottles.first { $0.id == bottleID }?.environmentOverrides ?? [:]
+        guard overrides != current else { return }
+        bottles.scheduleMutation(bottleID: bottleID) { $0.environmentOverrides = overrides }
+    }
+
     private func launch(_ bottle: Bottle) {
         guard let exe = bottle.gameLaunchExecutable else { return }
         Task {
@@ -1247,14 +1369,40 @@ struct GameDetailView: View {
                 }
             }
 
+            // Signature of the saves as they stand going in. If the game
+            // writes nothing — which is what a crash on startup looks like —
+            // the post-play push has nothing to do, and skipping it skips a
+            // Steam logon. A crash-loop otherwise burns logons until Steam
+            // starts refusing them and the whole integration falls over.
+            let savesBefore = cloudSync.localSaveFingerprint(appID: game.appID)
+
+            // Announce the game on the app's live Steam session. One session
+            // is shared for everything — status, presence, play time — because
+            // Steam resolves games-played last-writer-wins across an account's
+            // logons, so a second session opened just for this would fight it.
+            presence.beginPlaying(appID: game.appID)
+
             await bottles.launchGameExecutable(
                 bottle,
                 executable: exe,
                 arguments: bottle.effectiveGameLaunchArguments
             )
 
+            // `launchGameExecutable` returns once the whole Wine session is
+            // idle, so by here play is genuinely over. Stopping hands back the
+            // new total, re-read on the session we already hold.
+            if let minutes = await presence.stopPlaying(appID: game.appID) {
+                library.recordPlaytime(appID: game.appID, minutes: minutes)
+            }
+
             // Re-check: the token may have expired during the pull above.
-            if cloudAuth.account != nil && !cloudAuth.sessionExpired {
+            let savesAfter = cloudSync.localSaveFingerprint(appID: game.appID)
+            let savesUnchanged = savesBefore != nil && savesAfter == savesBefore
+
+            if savesUnchanged {
+                cloudSyncIsError = false
+                cloudSyncMessage = "No save changes to upload."
+            } else if cloudAuth.account != nil && !cloudAuth.sessionExpired {
                 do {
                     let r = try await cloudSync.push(bottle: bottle, appID: game.appID, auth: cloudAuth)
                     cloudSyncIsError = !r.failures.isEmpty
@@ -1393,3 +1541,68 @@ private struct LabeledValue: View {
 }
 
 // MARK: - Downloads pane (stub)
+
+/// One row in the per-bottle environment editor. Carries its own identity so
+/// the list keeps its order while a key is being typed.
+struct EnvironmentVariable: Identifiable, Equatable {
+    let id = UUID()
+    var key: String
+    var value: String
+
+    /// Variables `BottleStore.environment(for:prefix:)` assigns unconditionally.
+    /// A user value for one of these never reaches the game, so the editor flags
+    /// it rather than letting someone believe they changed something.
+    ///
+    /// `WINEDLLOVERRIDES` is deliberately absent: that one is merged with BEER's
+    /// own overrides, so a user value does take effect.
+    private static let beerManagedKeys: Set<String> = [
+        "WINEPREFIX", "WINEARCH", "USER", "USERNAME", "PATH",
+    ]
+
+    static func isOverriddenByBEER(_ key: String) -> Bool {
+        beerManagedKeys.contains(key.trimmingCharacters(in: .whitespaces).uppercased())
+    }
+}
+
+/// Environment tweaks that fix a recognised class of breakage, so the fix is a
+/// menu item instead of something a user has to already know to type.
+struct EnvironmentPreset: Identifiable {
+    var id: String { "\(key)=\(value)" }
+    let key: String
+    let value: String
+    let title: String
+    let detail: String
+
+    static let all: [EnvironmentPreset] = [
+        EnvironmentPreset(
+            key: "SDL_GPU_DRIVER", value: "vulkan",
+            title: "Force SDL3 games onto Vulkan",
+            detail: """
+                SDL3's GPU API tries Direct3D 12 first and has no D3D11 fallback.                 DXVK doesn't implement D3D12, so the device comes back null and the                 game usually crashes on startup. This routes it to Vulkan instead.
+                """),
+        EnvironmentPreset(
+            key: "CX_FWD_COMPAT_GL_CTX", value: "1",
+            title: "Fix OpenGL games that won't start (GPTK/CrossOver)",
+            detail: """
+                macOS only hands out forward-compatible OpenGL 3.2+ contexts, and Wine                 rejects any request that doesn't ask for one — which is most games, since                 SDL only sets that flag when told to. The result is a "could not create GL                 context" error on launch. This makes CrossOver's Wine add the flag itself.                 No effect on mainline Wine runtimes, or on games that use Direct3D.
+                """),
+        EnvironmentPreset(
+            key: "SDL_AUDIO_DRIVER", value: "directsound",
+            title: "Fix crackling audio in SDL games",
+            detail: """
+                SDL prefers WASAPI, which crackles under Wine for some games. This routes                 audio through DirectSound instead, which is the same thing CrossOver's                 "set the app to Windows XP" advice achieves — SDL skips WASAPI on XP —                 without changing the Windows version the game sees.
+                """),
+        EnvironmentPreset(
+            key: "MTL_HUD_ENABLED", value: "1",
+            title: "Show Metal performance HUD",
+            detail: "Apple's frame-rate overlay, drawn by Metal, so it works on any backend."),
+        EnvironmentPreset(
+            key: "DXVK_HUD", value: "fps",
+            title: "Show DXVK frame counter",
+            detail: "Only appears when the game is actually running through DXVK."),
+        EnvironmentPreset(
+            key: "WINEDEBUG", value: "-all",
+            title: "Silence Wine debug output",
+            detail: "Trims log noise and a little overhead — at the cost of making beer.log much less useful when something breaks."),
+    ]
+}
