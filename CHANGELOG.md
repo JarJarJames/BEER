@@ -2,6 +2,23 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.4.1 — 2026-09-16
+
+### Fixed
+- **Cloud sync crashing with "Couldn't understand the CloudSync helper's
+  output."** A distributed BEER.app's bundled CloudSync helper could keep a
+  leftover quarantine flag from being downloaded/unzipped, which macOS
+  doesn't always clear from a helper launched as a subprocess — the kernel
+  would intermittently kill it mid-sync (SIGKILL, invalid code signature)
+  with no output to explain why. BEER now strips that flag from the helper
+  itself before running it, so this can't recur even after a fresh
+  download.
+- The error you'd see for a genuinely broken helper invocation now shows
+  the helper's actual output and exit code instead of a generic "no JSON
+  result", and a sync that fails before it can list cloud files now records
+  that failure in `last-sync.log` instead of silently leaving the previous
+  successful sync's entry in place.
+
 ## 0.4.0 — 2026-09-15
 
 The first release where BEER behaves like a Steam client instead of just a

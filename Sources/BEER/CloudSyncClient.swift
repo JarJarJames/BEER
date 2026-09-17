@@ -79,7 +79,26 @@ struct CloudSyncClient {
         let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
         candidates.append(cwd.appendingPathComponent("Tools/CloudSync/publish/CloudSync"))
 
-        return candidates.first { fm.isExecutableFile(atPath: $0.path) }
+        guard let found = candidates.first(where: { fm.isExecutableFile(atPath: $0.path) }) else { return nil }
+        clearQuarantineIfNeeded(found)
+        return found
+    }
+
+    /// Strip a stray `com.apple.quarantine` from the resolved helper binary.
+    ///
+    /// A distributed BEER.app downloaded through a browser gets every file
+    /// inside it quarantined on extraction. Opening the .app through Finder
+    /// clears that flag for the app itself, but this helper is launched via
+    /// `Process()`, not LaunchServices, and macOS doesn't reliably propagate
+    /// the "approved to run" clearing to it — so it can keep the flag
+    /// indefinitely. A quarantined, ad-hoc-signed binary invoked that way is
+    /// exactly what got one killed mid-run with SIGKILL "Code Signature
+    /// Invalid" (see CloudSync-2026-09-15-190136.ips), which surfaced to the
+    /// user as a baffling "no JSON result" error with nothing to act on.
+    /// Safe to clear unconditionally: this binary already ships inside the
+    /// app bundle we're running from.
+    private static func clearQuarantineIfNeeded(_ url: URL) {
+        url.path.withCString { _ = removexattr($0, "com.apple.quarantine", 0) }
     }
 
     private func binaryOrThrow() throws -> URL {
@@ -371,7 +390,8 @@ struct CloudSyncClient {
 
         let fullArgs = args + ["--account", account, "--token-file", tokenFile.path]
         let last = ResultBox()
-        _ = try await runStreaming(binary: binary, args: fullArgs) { obj in
+        let notes = NoteBox()
+        let exitCode = try await runStreaming(binary: binary, args: fullArgs, onNote: { notes.add($0) }) { obj in
             if let err = obj["error"] as? String {
                 last.setError(err,
                               authFailed: (obj["auth_failed"] as? Bool) ?? false,
@@ -384,7 +404,15 @@ struct CloudSyncClient {
         if last.authFailed { throw CloudSyncClientError.authExpired }
         if let err = last.error { throw CloudSyncClientError.helper(err) }
         guard let obj = last.dict else {
-            throw CloudSyncClientError.badOutput("no JSON result")
+            // The helper never printed a recognizable JSON line at all — it was
+            // killed or crashed outside its own exception handling, so there's
+            // no {"error": …} to relay. Fall back to whatever it did print
+            // (its stderr notes) plus the exit code, rather than the useless
+            // "no JSON result", so the real cause isn't lost.
+            let detail = notes.all.suffix(5).joined(separator: " | ")
+            throw CloudSyncClientError.badOutput(
+                detail.isEmpty ? "process exited \(exitCode) with no output" : "\(detail) (exit \(exitCode))"
+            )
         }
         return obj
     }
@@ -473,6 +501,21 @@ private final class BatchCollector: @unchecked Sendable {
     var fatal: String? { lock.lock(); defer { lock.unlock() }; return _fatal }
     var authFailed: Bool { lock.lock(); defer { lock.unlock() }; return _authFailed }
     var rateLimited: Bool { lock.lock(); defer { lock.unlock() }; return _rateLimited }
+}
+
+/// Non-JSON lines a helper invocation printed (its stderr notes), kept so a
+/// `runOnce` that never got a JSON result can report why instead of just
+/// "no JSON result". Bounded like `BatchCollector.addNote` for the same reason.
+private final class NoteBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var _notes: [String] = []
+
+    func add(_ note: String) {
+        lock.lock(); defer { lock.unlock() }
+        if _notes.count < 200 { _notes.append(note) }
+    }
+
+    var all: [String] { lock.lock(); defer { lock.unlock() }; return _notes }
 }
 
 private final class ResultBox: @unchecked Sendable {

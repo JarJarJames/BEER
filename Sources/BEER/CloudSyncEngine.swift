@@ -134,7 +134,19 @@ final class CloudSyncEngine: ObservableObject {
         var report = CloudSyncReport()
 
         phase = "Listing cloud files…"
-        let remote = try await client.enumerate(appID: appID, account: acct, refreshToken: token)
+        let remote: [CloudRemoteFile]
+        do {
+            remote = try await client.enumerate(appID: appID, account: acct, refreshToken: token)
+        } catch {
+            // Nothing was written to last-sync.log yet — without this, a sync
+            // that fails this early leaves the log (and anyone reading it to
+            // check "did the last push actually go through") pointing at
+            // whatever the previous SUCCESSFUL sync said, which reads as if
+            // nothing had gone wrong.
+            writeAbortedSyncLog(appID: appID,
+                                 reason: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
+            throw error
+        }
 
         // Snapshot every locally-present tracked file BEFORE touching anything.
         let trackedDirs = Set(remote.compactMap {
@@ -271,6 +283,18 @@ final class CloudSyncEngine: ObservableObject {
             text += "\nhelper:\n"
             for note in helperNotes { text += "  \(note)\n" }
         }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try? text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Record a sync that failed before it got far enough to build a real
+    /// report (i.e. listing cloud files itself failed) — see the call site.
+    private func writeAbortedSyncLog(appID: Int, reason: String) {
+        let dir = AppPaths.cloudSaveBackupsDirectory(forAppID: appID)
+        let url = dir.appendingPathComponent("last-sync.log")
+        var text = "Sync \(Date())\n"
+        text += "helper binary: \(CloudSyncClient.locateBinary()?.path ?? "not found")\n"
+        text += "FAILED before listing cloud files completed: \(reason)\n"
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? text.write(to: url, atomically: true, encoding: .utf8)
     }
