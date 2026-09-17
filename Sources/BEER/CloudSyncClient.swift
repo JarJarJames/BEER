@@ -36,7 +36,7 @@ enum CloudSyncClientError: LocalizedError {
         case .rateLimited:
             return "Steam is temporarily rate-limiting sign-ins for your account (too many recent logins). Wait a few minutes, then try again — don't re-sign-in, that only extends the cooldown. Your saves are safe."
         case .badOutput(let detail):
-            return "Couldn't understand the CloudSync helper's output: \(detail.prefix(200)). The helper may be out of date; rebuild BEER so the app and helper versions match."
+            return "Couldn't understand the CloudSync helper's output: \(detail.prefix(1500)). The helper may be out of date; rebuild BEER so the app and helper versions match."
         }
     }
 }
@@ -409,7 +409,7 @@ struct CloudSyncClient {
             // no {"error": …} to relay. Fall back to whatever it did print
             // (its stderr notes) plus the exit code, rather than the useless
             // "no JSON result", so the real cause isn't lost.
-            let detail = notes.all.suffix(5).joined(separator: " | ")
+            let detail = notes.all.suffix(15).joined(separator: " | ")
             throw CloudSyncClientError.badOutput(
                 detail.isEmpty ? "process exited \(exitCode) with no output" : "\(detail) (exit \(exitCode))"
             )

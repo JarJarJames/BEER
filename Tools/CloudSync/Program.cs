@@ -735,8 +735,11 @@ static class Program
     {
         var files = new List<object>();
         uint startIndex = 0;
+        int page = 0;
         while (true)
         {
+            page++;
+            Console.Error.WriteLine($"enumerate: requesting page {page} (start_index={startIndex})");
             var job = s.Cloud.EnumerateUserFiles(new CCloud_EnumerateUserFiles_Request
             {
                 appid = appid,
@@ -744,7 +747,17 @@ static class Program
                 count = 500,
                 start_index = startIndex,
             });
-            var resp = await job;
+            // A unified-message job that never completes must not hang this
+            // command forever with nothing on stdout to explain why. AsyncJob
+            // isn't itself a Task, so wrap it to race against a timeout.
+            var respTask = Task.Run(async () => await job);
+            var timeout = Task.Delay(TimeSpan.FromSeconds(30));
+            if (await Task.WhenAny(respTask, timeout) == timeout)
+                throw new Exception($"enumerate page {page}: timed out waiting for Steam's response");
+            var resp = await respTask;
+            Console.Error.WriteLine(
+                $"enumerate: page {page} result={resp.Result} files={resp.Body?.files?.Count.ToString() ?? "null"} " +
+                $"total_files={resp.Body?.total_files.ToString() ?? "null"}");
             if (resp.Result != EResult.OK)
                 throw new Exception($"EnumerateUserFiles failed: {resp.Result}");
             foreach (var f in resp.Body.files)
@@ -761,7 +774,15 @@ static class Program
             startIndex += (uint)resp.Body.files.Count;
             if (resp.Body.files.Count == 0 || startIndex >= resp.Body.total_files) break;
         }
-        EmitJson(new Dictionary<string, object?> { ["files"] = files });
+        Console.Error.WriteLine($"enumerate: {files.Count} files total, serializing…");
+        var json = JsonSerializer.Serialize(new Dictionary<string, object?> { ["files"] = files });
+        Console.Error.WriteLine($"enumerate: serialized {json.Length} chars, writing…");
+        lock (JsonOutputLock)
+        {
+            Console.WriteLine(json);
+            Console.Out.Flush();
+        }
+        Console.Error.WriteLine("enumerate: emitted.");
     }
 
     // Process many downloads/uploads in ONE logged-on session. Spawning a fresh
@@ -1047,8 +1068,17 @@ static class Program
 
     static void EmitJson(object o)
     {
+        // Serialize outside the lock/try-free path so a failure here (rather
+        // than in the write itself) is distinguishable in the trace, and
+        // flush explicitly rather than trusting Console.Out's autoflush —
+        // belt-and-suspenders for a helper whose final line has gone missing
+        // for reasons still being tracked down.
+        var json = JsonSerializer.Serialize(o);
         lock (JsonOutputLock)
-            Console.WriteLine(JsonSerializer.Serialize(o));
+        {
+            Console.WriteLine(json);
+            Console.Out.Flush();
+        }
     }
 }
 

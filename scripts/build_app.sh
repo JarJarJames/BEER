@@ -68,10 +68,20 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-echo "==> Ad-hoc code-signing…"
 # Strip extended attributes (quarantine, Finder info) that make codesign
 # reject the bundle with "resource fork … not allowed".
 xattr -cr "$APP_DIR"
+
+# Deliberately ad-hoc, not the local dev signing identity: "BEER Local Dev"
+# (scripts/setup_local_codesign_identity.sh) is trusted only in the keychain
+# that created it. Signing a build meant for OTHER people's Macs with it
+# would buy them nothing — their Gatekeeper has never heard of that identity
+# either way — so this stays ad-hoc, same as every previous release. Anyone
+# running the shipped app still needs the `xattr -dr com.apple.quarantine`
+# step in the README/release notes; the app's own quarantine self-heal
+# (CloudSyncClient.locateBinary) covers the bundled CloudSync helper
+# specifically, which is the part that used to SIGKILL silently.
+echo "==> Ad-hoc code-signing…"
 codesign --force --deep --sign - "$APP_DIR"
 
 echo "==> Zipping for distribution…"

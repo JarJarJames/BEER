@@ -2,6 +2,21 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.4.2 — 2026-09-17
+
+### Fixed
+- **Cloud sync could silently lose its result on larger syncs**, surfacing
+  as "Couldn't understand the CloudSync helper's output" even though
+  nothing was actually wrong with the helper or its version. The cause was
+  in BEER itself: it treated the helper's process-termination notification
+  as the signal that all of its output had arrived, but termination and the
+  pipe finishing delivery are two independent events with no guaranteed
+  order — a large result (hundreds of cloud files) could still be in
+  transit when termination fired, and that tail got silently dropped. BEER
+  now waits for the pipe's own end-of-file, the only signal that actually
+  guarantees nothing more is coming, before treating a sync's output as
+  complete.
+
 ## 0.4.1 — 2026-09-16
 
 ### Fixed

@@ -22,6 +22,35 @@ private final class OutputBuffer: @unchecked Sendable {
     }
 }
 
+/// Resumes a `run()` call exactly once, once BOTH the pipe has reached true
+/// EOF (nothing more will ever be read) and the exit code is known — in
+/// whichever order those two independent events happen to arrive.
+private final class CompletionGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var eofSeen = false
+    private var exitCode: Int32?
+    private var resumed = false
+
+    func markEOF(_ resume: (Int32) -> Void) {
+        lock.lock()
+        eofSeen = true
+        let code = exitCode
+        let shouldResume = !resumed && code != nil
+        if shouldResume { resumed = true }
+        lock.unlock()
+        if shouldResume, let code { resume(code) }
+    }
+
+    func markTerminated(exitCode: Int32, _ resume: (Int32) -> Void) {
+        lock.lock()
+        self.exitCode = exitCode
+        let shouldResume = !resumed && eofSeen
+        if shouldResume { resumed = true }
+        lock.unlock()
+        if shouldResume { resume(exitCode) }
+    }
+}
+
 /// A helper process that deliberately outlives the call that started it.
 ///
 /// The parent holds the write end of the child's stdin. Closing it is the
@@ -111,7 +140,12 @@ enum ShellRunner {
         process.standardError = pipe
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
-            guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+            guard !data.isEmpty else {
+                // True EOF — nothing more will ever arrive on this pipe.
+                pipe.fileHandleForReading.readabilityHandler = nil
+                return
+            }
+            guard let chunk = String(data: data, encoding: .utf8) else { return }
             outputHandler(chunk)
         }
         process.terminationHandler = { _ in
@@ -147,16 +181,38 @@ enum ShellRunner {
 
             let buffer = OutputBuffer()
 
+            // `terminationHandler` (the process exited) and the pipe reaching
+            // EOF (every byte the child ever wrote has been delivered here)
+            // are two DIFFERENT events with no ordering guarantee between
+            // them — a child that prints its result and exits immediately can
+            // have its final, possibly multi-read-sized write still winding
+            // its way through the pipe when termination is reported. Resuming
+            // on termination (as this used to) loses that tail silently.
+            // EOF — `readabilityHandler` firing with empty data — is the only
+            // signal that actually means "nothing more is ever coming", so
+            // that's what gates completion; the exit code still comes from
+            // `terminationHandler`, and whichever of the two fires second is
+            // what actually resumes the continuation.
+            let completion = CompletionGate()
+
             pipe.fileHandleForReading.readabilityHandler = { handle in
                 let data = handle.availableData
-                guard !data.isEmpty, let chunk = String(data: data, encoding: .utf8) else { return }
+                guard !data.isEmpty else {
+                    pipe.fileHandleForReading.readabilityHandler = nil
+                    completion.markEOF { exitCode in
+                        continuation.resume(returning: ProcessResult(exitCode: exitCode, output: buffer.output))
+                    }
+                    return
+                }
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
                 buffer.append(chunk)
                 outputHandler(chunk)
             }
 
             process.terminationHandler = { process in
-                pipe.fileHandleForReading.readabilityHandler = nil
-                continuation.resume(returning: ProcessResult(exitCode: process.terminationStatus, output: buffer.output))
+                completion.markTerminated(exitCode: process.terminationStatus) { exitCode in
+                    continuation.resume(returning: ProcessResult(exitCode: exitCode, output: buffer.output))
+                }
             }
 
             do {
