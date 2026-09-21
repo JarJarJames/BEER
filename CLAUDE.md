@@ -15,6 +15,11 @@ swift run BEER          # run it (the user does this to test)
 ```
 The CloudSync helper lives in `Tools/CloudSync/` (C# / .NET 9 / SteamKit2). `dotnet` is installed. See `Tools/CloudSync/README.md`.
 
+## Testing
+- Prefer **Swift Tests (XCTest)** over manual/live verification for account-related logic. When you write or touch code that deals with Steam account state — auth/token handling, cloud sync, presence, achievements, anything that parses or reacts to CloudSync output — add an offline test alongside it rather than relying solely on the user to click through it live.
+- Tests must be **offline-capable**: mock/stub the CloudSync helper boundary (its CLI output, JSON, exit codes) or inject fake protocol responses — never authenticate against the real account from a test (this doesn't relax the hard rule above).
+- Goal is cumulative: build a real, growing suite of offline Account tests over time, so regressions in account-adjacent logic get caught without a live Steam session every time.
+
 ## Layout
 - `Sources/BEER/` — the SwiftUI app.
 - `Tools/CloudSync/` — the native Steam-client helper (auth, owned games, cloud read/write).
