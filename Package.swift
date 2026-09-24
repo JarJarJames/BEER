@@ -8,7 +8,12 @@ let package = Package(
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "BEER", targets: ["BEER"])
+        .executable(name: "BEER", targets: ["BEER"]),
+        // Declared as a product (not just an internal target) so Xcode
+        // generates a separate scheme for it — that's what lets its own
+        // Previews use a lightweight library host instead of needing BEER's
+        // executable target to support ENABLE_DEBUG_DYLIB.
+        .library(name: "AchievementUI", targets: ["AchievementUI"])
     ],
     targets: [
         .target(
