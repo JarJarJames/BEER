@@ -35,6 +35,8 @@ using SteamKit2.Internal;
 //   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
+//   achievements-get   --appid N --steamid S
+//   achievements-store --appid N --steamid S --unlocks <path to JSON array of names>
 //   prepare-depot-auth --depot-executable <path>
 //
 // Auth (all commands): --token <refreshToken> --account <name>
@@ -96,6 +98,12 @@ static class Program
                         break;
                     case "enumerate": await Enumerate(session, appid); break;
                     case "batch": await Batch(session, appid, Require(args, "jobs")); break;
+                    case "achievements-get":
+                        await AchievementsGet(session, appid, ulong.Parse(Require(args, "steamid")));
+                        break;
+                    case "achievements-store":
+                        await AchievementsStore(session, appid, ulong.Parse(Require(args, "steamid")), Require(args, "unlocks"));
+                        break;
                     case "download":
                         await DownloadCore(session, appid, Require(args, "file"), Require(args, "out"));
                         EmitJson(new Dictionary<string, object?> { ["downloaded"] = true });
@@ -785,6 +793,80 @@ static class Program
         Console.Error.WriteLine("enumerate: emitted.");
     }
 
+    // Real achievement/stat schema + current unlock state for `appid`, read
+    // straight from Steam over the client protocol — the same one cloud saves
+    // already use, not the Publisher-key-gated Web API. Used to seed
+    // gbe_fork's local steam_settings/achievements.json with the account's
+    // REAL unlock state, so the emulator doesn't re-fire "just unlocked" for
+    // achievements already earned on the real profile.
+    static async Task AchievementsGet(SteamSession s, uint appid, ulong steamid)
+    {
+        var resp = await s.UserStats.GetUserStatsAsync(appid, steamid, TimeSpan.FromSeconds(30));
+        var (achievements, stats) = SchemaParser.Parse(resp.schema);
+        var blocksInOrder = resp.achievement_blocks
+            .Select(b => (IReadOnlyList<uint>)b.unlock_time)
+            .ToList();
+        var unlocks = AchievementState.UnlockTimes(blocksInOrder);
+
+        var achievementJson = achievements.Select(a => (object)new Dictionary<string, object?>
+        {
+            ["name"] = a.Name,
+            ["displayName"] = a.DisplayName,
+            ["description"] = a.Description,
+            ["hidden"] = a.Hidden,
+            ["icon"] = a.Icon,
+            ["icongray"] = a.IconGray,
+            ["unlocked"] = unlocks.ContainsKey((a.BlockIndex, a.BitIndex)),
+            ["unlockTime"] = unlocks.TryGetValue((a.BlockIndex, a.BitIndex), out var t) ? t : (object?)null,
+        }).ToList();
+        var statJson = stats.Select(st => (object)new Dictionary<string, object?>
+        {
+            ["name"] = st.Name,
+            ["type"] = st.Type,
+            ["default"] = st.Default,
+        }).ToList();
+
+        EmitJson(new Dictionary<string, object?>
+        {
+            ["achievements"] = achievementJson,
+            ["stats"] = statJson,
+            ["crcStats"] = resp.crc_stats,
+        });
+    }
+
+    // Push newly-unlocked achievements to the account's REAL Steam profile.
+    // This is the write side of the pair above — see UserStatsHandler's doc
+    // comment for why it's the one part of this feature that genuinely needs
+    // the user's own live-account verification rather than just compiling.
+    static async Task AchievementsStore(SteamSession s, uint appid, ulong steamid, string unlockedNamesPath)
+    {
+        var unlockedNames = JsonSerializer.Deserialize<List<string>>(
+            await File.ReadAllTextAsync(unlockedNamesPath)) ?? new List<string>();
+
+        // Re-fetch fresh — never trust a stale local view of block state,
+        // since another session (the real Steam client, or a previous BEER
+        // run) may have changed it since anything we cached.
+        var resp = await s.UserStats.GetUserStatsAsync(appid, steamid, TimeSpan.FromSeconds(30));
+        var (achievements, _) = SchemaParser.Parse(resp.schema);
+        var currentBlocks = resp.achievement_blocks
+            .Select(b => (StatId: b.achievement_id, UnlockTime: (IReadOnlyList<uint>)b.unlock_time))
+            .ToList();
+
+        var masks = AchievementState.BuildBlockMasks(achievements, currentBlocks, new HashSet<string>(unlockedNames));
+        var storeResp = await s.UserStats.StoreUserStatsAsync(
+            appid, steamid, resp.crc_stats,
+            masks.Select(m => (m.StatId, m.Mask)).ToList(),
+            TimeSpan.FromSeconds(30));
+
+        EmitJson(new Dictionary<string, object?>
+        {
+            ["ok"] = (EResult)storeResp.eresult == EResult.OK,
+            ["eresult"] = ((EResult)storeResp.eresult).ToString(),
+            ["statsOutOfDate"] = storeResp.stats_out_of_date,
+            ["statsFailedValidation"] = storeResp.stats_failed_validation.Count > 0,
+        });
+    }
+
     // Process many downloads/uploads in ONE logged-on session. Spawning a fresh
     // process (= fresh Steam logon) per file gets the account throttled by the
     // CM after ~100 logons; batching keeps it to a single logon per sync. File
@@ -1095,6 +1177,7 @@ sealed class SteamSession : IDisposable
     public SteamClient Client { get; }
     public Cloud Cloud { get; private set; } = null!;
     public SteamUnifiedMessages Unified { get; private set; } = null!;
+    public UserStatsHandler UserStats { get; } = new();
     readonly CallbackManager _cb;
     readonly CancellationTokenSource _pump = new();
     readonly TaskCompletionSource<List<SteamApps.LicenseListCallback.License>> _licenses =
@@ -1125,6 +1208,7 @@ sealed class SteamSession : IDisposable
         var client = new SteamClient();
         var cb = new CallbackManager(client);
         var session = new SteamSession(client, cb);
+        client.AddHandler(session.UserStats);
         var token = session._pump.Token;
         _ = Task.Run(() =>
         {

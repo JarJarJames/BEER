@@ -45,6 +45,7 @@ struct BEERApp: App {
                 .environmentObject(presence)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
+                .overlay(AchievementToastOverlay())
                 .task {
                     await store.load()
                     await detector.refresh()
@@ -55,6 +56,15 @@ struct BEERApp: App {
                     // If a previous run died mid-game, stop any helper still
                     // telling Steam we're playing.
                     await PlaySessionRegistry.sweepOrphans()
+                    // Retry any achievement unlocks that couldn't reach Steam
+                    // last time (offline, expired session, etc).
+                    if let account = cloudAuth.account, !cloudAuth.sessionExpired {
+                        await AchievementSyncQueue.retryAll(
+                            steamID64: account.steamID64,
+                            account: account.accountName,
+                            refreshToken: account.refreshToken
+                        )
+                    }
                 }
         }
         .windowStyle(.titleBar)

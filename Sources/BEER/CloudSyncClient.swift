@@ -55,9 +55,13 @@ struct CloudSyncClient {
     ///
     ///  1. next to the app binary — a shipped .app bundles its own helper, and
     ///     that copy always matches the app it was built with;
-    ///  2. the install in Application Support — what `build_cloudsync.sh`
-    ///     writes, so it is the current build for anyone developing too;
-    ///  3. `Tools/CloudSync/publish/`, in case the helper was published but not
+    ///  2. the SwiftPM prebuild plugin's output (Plugins/CloudSyncPrebuild) —
+    ///     `swift build`/`swift run` republish this automatically whenever
+    ///     Tools/CloudSync/ changes, so for local dev it's always at least as
+    ///     fresh as what's on disk, no manual script run required;
+    ///  3. the install in Application Support — what `build_cloudsync.sh`
+    ///     writes, kept as a fallback for whoever still runs it by hand;
+    ///  4. `Tools/CloudSync/publish/`, in case the helper was published but not
     ///     installed.
     ///
     /// Raw `dotnet build` output (`Tools/CloudSync/bin/…`) is deliberately NOT a
@@ -74,14 +78,40 @@ struct CloudSyncClient {
         candidates.append(exeDir.appendingPathComponent("CloudSync"))
         candidates.append(exeDir.appendingPathComponent("CloudSync/CloudSync"))
 
+        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
+        if let pluginOutput = locatePluginPublishedBinary(under: cwd) {
+            candidates.append(pluginOutput)
+        }
+
         candidates.append(AppPaths.cloudSyncExecutableURL)
 
-        let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
         candidates.append(cwd.appendingPathComponent("Tools/CloudSync/publish/CloudSync"))
 
         guard let found = candidates.first(where: { fm.isExecutableFile(atPath: $0.path) }) else { return nil }
         clearQuarantineIfNeeded(found)
         return found
+    }
+
+    /// Find the helper `Plugins/CloudSyncPrebuild` published under
+    /// `.build/plugins/outputs/…`. The exact intermediate path segments are an
+    /// SwiftPM implementation detail (they encode the package name and
+    /// target), so this searches for the fixed suffix
+    /// `CloudSyncPrebuild/CloudSyncPrebuildOutput/publish/CloudSync` rather
+    /// than hardcoding the full path.
+    private static func locatePluginPublishedBinary(under cwd: URL) -> URL? {
+        let outputsRoot = cwd.appendingPathComponent(".build/plugins/outputs")
+        guard let enumerator = FileManager.default.enumerator(
+            at: outputsRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+        ) else { return nil }
+
+        for case let url as URL in enumerator where url.lastPathComponent == "CloudSync" {
+            let parent = url.deletingLastPathComponent()
+            guard parent.lastPathComponent == "publish" else { continue }
+            if parent.deletingLastPathComponent().lastPathComponent == "CloudSyncPrebuildOutput" {
+                return url
+            }
+        }
+        return nil
     }
 
     /// Strip a stray `com.apple.quarantine` from the resolved helper binary.
@@ -276,6 +306,78 @@ struct CloudSyncClient {
         }
     }
 
+    // MARK: - Achievements
+
+    struct AchievementInfo: Identifiable, Equatable {
+        var id: String { name }
+        let name: String
+        let displayName: String
+        let description: String
+        let hidden: Bool
+        let icon: String?
+        let iconGray: String?
+        let unlocked: Bool
+        let unlockTime: Date?
+    }
+
+    struct AchievementSchema {
+        let achievements: [AchievementInfo]
+    }
+
+    /// Real achievement schema + current unlock state for `appID`, read
+    /// straight from Steam over the client protocol (same one cloud saves
+    /// use) — used to seed gbe_fork's local `steam_settings/achievements.json`
+    /// with the account's actual unlocks so the emulator doesn't re-fire
+    /// "just unlocked" toasts for achievements already earned on the real
+    /// profile.
+    func achievementSchema(appID: Int, steamID64: String, account: String, refreshToken: String) async throws -> AchievementSchema {
+        let obj = try await runOnce(
+            args: ["achievements-get", "--appid", String(appID), "--steamid", steamID64],
+            account: account, refreshToken: refreshToken
+        )
+        guard let raw = obj["achievements"] as? [[String: Any]] else {
+            throw CloudSyncClientError.badOutput("no achievements array")
+        }
+        let achievements = raw.compactMap { a -> AchievementInfo? in
+            guard let name = a["name"] as? String else { return nil }
+            let unlockTime = (a["unlockTime"] as? NSNumber)?.doubleValue
+            return AchievementInfo(
+                name: name,
+                displayName: (a["displayName"] as? String) ?? name,
+                description: (a["description"] as? String) ?? "",
+                hidden: a["hidden"] as? Bool ?? false,
+                icon: a["icon"] as? String,
+                iconGray: a["icongray"] as? String,
+                unlocked: a["unlocked"] as? Bool ?? false,
+                unlockTime: unlockTime.map { Date(timeIntervalSince1970: $0) }
+            )
+        }
+        return AchievementSchema(achievements: achievements)
+    }
+
+    struct AchievementSyncResult { let ok: Bool; let eresult: String; let statsOutOfDate: Bool }
+
+    /// Push newly-unlocked achievements to the account's REAL Steam profile.
+    /// This is the write side of the pair — see `UserStatsHandler` (CloudSync)
+    /// for why it's the one part of achievements support that genuinely needs
+    /// the user's own live-account verification rather than just compiling.
+    func pushAchievementUnlocks(appID: Int, steamID64: String, unlockedNames: [String], account: String, refreshToken: String) async throws -> AchievementSyncResult {
+        let tmp = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gn-achievements-\(UUID().uuidString).json")
+        try JSONSerialization.data(withJSONObject: unlockedNames).write(to: tmp, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: tmp) }
+
+        let obj = try await runOnce(
+            args: ["achievements-store", "--appid", String(appID), "--steamid", steamID64, "--unlocks", tmp.path],
+            account: account, refreshToken: refreshToken
+        )
+        return AchievementSyncResult(
+            ok: obj["ok"] as? Bool ?? false,
+            eresult: obj["eresult"] as? String ?? "Unknown",
+            statsOutOfDate: obj["statsOutOfDate"] as? Bool ?? false
+        )
+    }
+
     // MARK: - Cloud operations
 
     func enumerate(appID: Int, account: String, refreshToken: String) async throws -> [CloudRemoteFile] {
@@ -453,7 +555,11 @@ struct CloudSyncClient {
 
 // MARK: - Small thread-safe boxes (output handler runs off-main)
 
-private final class LineBox: @unchecked Sendable {
+// Not private: exercised directly by CloudSyncClientParsingTests (via
+// @testable import) so its line-splitting logic — the one place a helper
+// invocation's raw stdout is actually parsed — has offline coverage that
+// doesn't need a live helper process or Steam account.
+final class LineBox: @unchecked Sendable {
     private let lock = NSLock()
     private var buffer = ""
 
