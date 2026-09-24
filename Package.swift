@@ -13,12 +13,18 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "BEER",
-            path: "Sources/BEER"
+            path: "Sources/BEER",
+            plugins: ["CloudSyncPrebuild"]
         ),
         .testTarget(
             name: "BEERTests",
             dependencies: ["BEER"],
             path: "Tests/BEERTests"
+        ),
+        .plugin(
+            name: "CloudSyncPrebuild",
+            capability: .buildTool(),
+            path: "Plugins/CloudSyncPrebuild"
         )
     ]
 )
