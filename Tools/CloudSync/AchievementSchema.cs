@@ -4,10 +4,16 @@ using System.IO;
 using System.Linq;
 using SteamKit2;
 
-/// One achievement definition from a game's Steam stats schema, plus its
-/// position in the block/bit layout `ClientGetUserStats`/`ClientStoreUserStats2`
-/// use to report and set unlock state: block = flat bit index / 32, bit = flat
-/// bit index % 32 (Steam packs 32 achievements per block).
+/// One achievement definition from a game's Steam stats schema.
+///
+/// `BlockStatId` is the stat_id to use when reading/writing this
+/// achievement's unlock bit — it comes from the schema's OWN numeric key for
+/// its containing "ACHIEVEMENTS"-type stat entry (see `SchemaParser` below),
+/// not from `ClientGetUserStatsResponse.achievement_blocks`. That response
+/// only lists blocks Steam already has server-side state for, which is
+/// EMPTY for an account/game that has never had a stat recorded — exactly
+/// the case for a fresh test account, and the bug that made the first
+/// version of this silently write nothing.
 public sealed record AchievementDef(
     string Name,
     string DisplayName,
@@ -15,27 +21,29 @@ public sealed record AchievementDef(
     bool Hidden,
     string? Icon,
     string? IconGray,
-    int BlockIndex,
+    uint BlockStatId,
     int BitIndex);
 
 public sealed record StatDef(string Name, string Type, double Default);
 
 /// Parses the binary VDF "schema" blob `CMsgClientGetUserStatsResponse` returns.
-/// This is Valve's well-documented UserGameStatsSchema layout:
+/// This is Valve's live UserGameStatsSchema layout (confirmed against a real
+/// response for Spacewar/480, not just the older Steamworks docs):
 ///
-///   "&lt;appid&gt;"
+///   "480"
 ///   {
 ///     "stats"
 ///     {
-///       "0" { "type" "4" "bits" { "0" { "name" "ACH_X" "display" { "name" {...} "desc" {...} "hidden" "0" } "icon" "..." "icon_gray" "..." } ... } }
-///       "1" { "type" "1" "name" "some_stat" "default" "0" }
+///       "0" { "type" "ACHIEVEMENTS" "bits" { "0" { "name" "ACH_X" "display" { "name" "..." "desc" "..." "icon" "..." "icon_gray" "..." } } ... } }
+///       "1" { "type" "INT" "name" "some_stat" }
 ///     }
 ///   }
 ///
-/// Type 4 is the achievement bit-field; every other type is an ordinary
-/// numeric/float/avgrate stat. Achievements across every type-4 stat are
-/// flattened into one continuous 0-based bit index in schema order, which is
-/// how `achievement_blocks` in the get/store messages line up with them.
+/// Two things the numeric-type/nested-icon assumption in the Steamworks docs
+/// got wrong for a live response: `type` is a name ("ACHIEVEMENTS", "INT",
+/// "FLOAT", "AVGRATE"), and `icon`/`icon_gray` live under `display`, not
+/// directly on the bit. The stats dictionary's own numeric key (here "0")
+/// for an ACHIEVEMENTS entry IS that block's stat_id.
 public static class SchemaParser
 {
     public static (List<AchievementDef> Achievements, List<StatDef> Stats) Parse(byte[] schema)
@@ -54,18 +62,20 @@ public static class SchemaParser
         var statsRoot = appRoot["stats"];
         if (statsRoot == KeyValue.Invalid) return (achievements, stats);
 
-        var flatBit = 0;
         foreach (var stat in statsRoot.Children)
         {
-            var type = stat["type"].AsInteger(0);
-            if (type == 4)
+            var type = stat["type"].AsString() ?? "";
+            if (string.Equals(type, "ACHIEVEMENTS", StringComparison.OrdinalIgnoreCase))
             {
+                if (!uint.TryParse(stat.Name, out var blockStatId)) continue;
                 var bits = stat["bits"];
                 if (bits == KeyValue.Invalid) continue;
+
+                var bitIndex = 0;
                 foreach (var bit in bits.Children)
                 {
                     var name = bit["name"].AsString();
-                    if (string.IsNullOrWhiteSpace(name)) { flatBit++; continue; }
+                    if (string.IsNullOrWhiteSpace(name)) { bitIndex++; continue; }
 
                     var display = bit["display"];
                     var englishName = FirstNonEmpty(display["name"]["english"].AsString(), display["name"].AsString());
@@ -77,11 +87,11 @@ public static class SchemaParser
                         DisplayName: englishName ?? name!,
                         Description: englishDesc ?? "",
                         Hidden: hidden,
-                        Icon: NullIfEmpty(bit["icon"].AsString()),
-                        IconGray: NullIfEmpty(bit["icon_gray"].AsString()),
-                        BlockIndex: flatBit / 32,
-                        BitIndex: flatBit % 32));
-                    flatBit++;
+                        Icon: NullIfEmpty(display["icon"].AsString()),
+                        IconGray: NullIfEmpty(display["icon_gray"].AsString()),
+                        BlockStatId: blockStatId,
+                        BitIndex: bitIndex));
+                    bitIndex++;
                 }
             }
             else
@@ -90,7 +100,9 @@ public static class SchemaParser
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 stats.Add(new StatDef(
                     Name: name!,
-                    Type: type == 2 ? "float" : type == 3 ? "avgrate" : "int",
+                    Type: string.Equals(type, "FLOAT", StringComparison.OrdinalIgnoreCase) ? "float"
+                        : string.Equals(type, "AVGRATE", StringComparison.OrdinalIgnoreCase) ? "avgrate"
+                        : "int",
                     Default: stat["default"].AsFloat(0)));
             }
         }
@@ -106,56 +118,54 @@ public static class SchemaParser
 /// name instead of by block/bit position.
 public static class AchievementState
 {
-    /// (block, bit) -> unlock time, for every currently-unlocked achievement.
-    /// `blocksInOrder` must be in the same order `ClientGetUserStatsResponse`
-    /// returned them — that order IS the block index (0, 1, 2, ...).
-    public static Dictionary<(int Block, int Bit), uint> UnlockTimes(
-        IReadOnlyList<IReadOnlyList<uint>> blocksInOrder)
+    /// (stat_id, bit) -> unlock time, for every currently-unlocked
+    /// achievement Steam already has server-side state for. Keyed by the
+    /// block's real stat_id (not a positional index) since
+    /// `achievement_blocks` isn't guaranteed to list blocks in schema order,
+    /// and — the case that actually mattered here — it can be empty entirely
+    /// for an account/game with no stats ever recorded.
+    public static Dictionary<(uint StatId, int Bit), uint> UnlockTimes(
+        IReadOnlyList<(uint StatId, IReadOnlyList<uint> UnlockTime)> blocks)
     {
-        var result = new Dictionary<(int, int), uint>();
-        for (var block = 0; block < blocksInOrder.Count; block++)
-        {
-            var times = blocksInOrder[block];
-            for (var bit = 0; bit < times.Count; bit++)
-                if (times[bit] != 0) result[(block, bit)] = times[bit];
-        }
+        var result = new Dictionary<(uint, int), uint>();
+        foreach (var block in blocks)
+            for (var bit = 0; bit < block.UnlockTime.Count; bit++)
+                if (block.UnlockTime[bit] != 0) result[(block.StatId, bit)] = block.UnlockTime[bit];
         return result;
     }
 
     /// Builds the (stat_id, 32-bit mask) pairs to send back in
-    /// `CMsgClientStoreUserStats2.stats` for every achievement block: start
-    /// from Steam's own current state (so nothing already unlocked, including
-    /// by the real Steam client, ever gets cleared), then additionally set the
-    /// bits for `namesToUnlock`.
-    ///
-    /// `currentBlocks` must be in the same order the schema's flattened bit
-    /// index assumes (block 0, 1, 2, ...) — i.e. straight from a fresh
-    /// `GetUserStats` call, not cached from an earlier one.
+    /// `CMsgClientStoreUserStats2.stats`: start from whatever Steam already
+    /// has recorded for each block (so nothing already unlocked, including
+    /// by the real Steam client, ever gets cleared), make sure every block
+    /// the SCHEMA defines has an entry to write into — even one Steam has
+    /// never recorded anything for, which is the normal state for a
+    /// brand-new account/game and must not be silently skipped — then set
+    /// the bits for `namesToUnlock`.
     public static List<(uint StatId, uint Mask)> BuildBlockMasks(
         IReadOnlyList<AchievementDef> achievements,
         IReadOnlyList<(uint StatId, IReadOnlyList<uint> UnlockTime)> currentBlocks,
         ISet<string> namesToUnlock)
     {
-        var masks = new uint[currentBlocks.Count];
-        for (var b = 0; b < currentBlocks.Count; b++)
+        var masks = new Dictionary<uint, uint>();
+        foreach (var block in currentBlocks)
         {
             uint mask = 0;
-            var times = currentBlocks[b].UnlockTime;
-            for (var bit = 0; bit < times.Count; bit++)
-                if (times[bit] != 0) mask |= 1u << bit;
-            masks[b] = mask;
+            for (var bit = 0; bit < block.UnlockTime.Count; bit++)
+                if (block.UnlockTime[bit] != 0) mask |= 1u << bit;
+            masks[block.StatId] = mask;
         }
+
+        foreach (var ach in achievements)
+            if (!masks.ContainsKey(ach.BlockStatId))
+                masks[ach.BlockStatId] = 0;
 
         foreach (var ach in achievements)
         {
             if (!namesToUnlock.Contains(ach.Name)) continue;
-            if (ach.BlockIndex < 0 || ach.BlockIndex >= masks.Length) continue;
-            masks[ach.BlockIndex] |= 1u << ach.BitIndex;
+            masks[ach.BlockStatId] |= 1u << ach.BitIndex;
         }
 
-        var result = new List<(uint, uint)>();
-        for (var b = 0; b < currentBlocks.Count; b++)
-            result.Add((currentBlocks[b].StatId, masks[b]));
-        return result;
+        return masks.Select(kv => (kv.Key, kv.Value)).ToList();
     }
 }

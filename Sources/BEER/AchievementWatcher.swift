@@ -1,5 +1,6 @@
 import Foundation
 import Dispatch
+import AchievementUI
 
 // Watches a running game's local Goldberg (gbe_fork) achievement save file
 // for new unlocks and syncs them to the real Steam account.

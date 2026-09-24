@@ -1,5 +1,6 @@
 import XCTest
 @testable import BEER
+import AchievementUI
 
 // Achievements support seeds gbe_fork's steam_settings/achievements.json from
 // real Steam data and reads it back locally (no network) to label toasts.

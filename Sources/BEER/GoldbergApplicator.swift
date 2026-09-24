@@ -1,4 +1,5 @@
 import Foundation
+import AchievementUI
 
 // GoldbergApplicator drops the GBE_Fork Steamworks-emu stubs into a game's
 // install tree so the game launches without a running Steam process.
@@ -43,19 +44,6 @@ struct GoldbergPatchReport {
     var alreadyPatched: Int // count of DLLs we found but had already swapped
 
     var totalPatched: Int { patched.count + alreadyPatched }
-}
-
-/// A single achievement's display info as written into
-/// `steam_settings/achievements.json` — read back locally (no network) by
-/// `AchievementWatcher` to label a toast, since the file already carries
-/// everything needed once GoldbergApplicator has written it once.
-struct AchievementDisplayInfo: Codable, Equatable {
-    let name: String
-    let displayName: String
-    let description: String
-    let hidden: Bool
-    let icon: String?
-    let icongray: String?
 }
 
 enum GoldbergApplicator {

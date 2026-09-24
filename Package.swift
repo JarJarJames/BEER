@@ -11,14 +11,20 @@ let package = Package(
         .executable(name: "BEER", targets: ["BEER"])
     ],
     targets: [
+        .target(
+            name: "AchievementUI",
+            path: "Sources/AchievementUI"
+        ),
         .executableTarget(
             name: "BEER",
+            dependencies: ["AchievementUI"],
             path: "Sources/BEER",
+            resources: [.copy("Resources/achievement-unlock.mp3")],
             plugins: ["CloudSyncPrebuild"]
         ),
         .testTarget(
             name: "BEERTests",
-            dependencies: ["BEER"],
+            dependencies: ["BEER", "AchievementUI"],
             path: "Tests/BEERTests"
         ),
         .plugin(

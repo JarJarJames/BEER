@@ -804,7 +804,7 @@ static class Program
         var resp = await s.UserStats.GetUserStatsAsync(appid, steamid, TimeSpan.FromSeconds(30));
         var (achievements, stats) = SchemaParser.Parse(resp.schema);
         var blocksInOrder = resp.achievement_blocks
-            .Select(b => (IReadOnlyList<uint>)b.unlock_time)
+            .Select(b => (StatId: b.achievement_id, UnlockTime: (IReadOnlyList<uint>)b.unlock_time))
             .ToList();
         var unlocks = AchievementState.UnlockTimes(blocksInOrder);
 
@@ -816,8 +816,8 @@ static class Program
             ["hidden"] = a.Hidden,
             ["icon"] = a.Icon,
             ["icongray"] = a.IconGray,
-            ["unlocked"] = unlocks.ContainsKey((a.BlockIndex, a.BitIndex)),
-            ["unlockTime"] = unlocks.TryGetValue((a.BlockIndex, a.BitIndex), out var t) ? t : (object?)null,
+            ["unlocked"] = unlocks.ContainsKey((a.BlockStatId, a.BitIndex)),
+            ["unlockTime"] = unlocks.TryGetValue((a.BlockStatId, a.BitIndex), out var t) ? t : (object?)null,
         }).ToList();
         var statJson = stats.Select(st => (object)new Dictionary<string, object?>
         {

@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import AchievementUI
 
 struct GameDetailView: View {
     let game: SteamLibraryGame
@@ -644,6 +645,16 @@ struct GameDetailView: View {
                     } label: {
                         Label("Reapply (after GBE_Fork upgrade)", systemImage: "arrow.clockwise")
                     }
+                    Button {
+                        triggerTestAchievementUnlock(for: bottle)
+                    } label: {
+                        Label("Test: unlock next achievement", systemImage: "star.fill")
+                    }
+                    Button {
+                        resetLocalTestAchievements(for: bottle)
+                    } label: {
+                        Label("Test: reset local unlocks", systemImage: "arrow.counterclockwise")
+                    }
                     Button(role: .destructive) {
                         restoreOriginalDLLs(for: bottle)
                     } label: {
@@ -1047,6 +1058,59 @@ struct GameDetailView: View {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return AchievementFetchOutcome(achievements: [], note: "Achievements not seeded: \(msg)")
         }
+    }
+
+    /// Manually mark the next not-yet-earned achievement "earned" in the
+    /// local gbe_fork save file — a real, user-triggered click, not a
+    /// background write. Exercises the exact same watcher/toast/Steam-sync
+    /// pipeline a real in-game unlock would, so the toast UX can be tuned
+    /// and the live sync path re-tested on demand without needing to
+    /// actually complete an achievement's real condition in-game.
+    private func triggerTestAchievementUnlock(for bottle: Bottle) {
+        guard let installDir = resolvedInstallDirectory(for: bottle) else {
+            patchStatusMessage = "Could not locate the game's install directory."
+            patchStatusIsError = true
+            return
+        }
+        let schema = GoldbergApplicator.readAchievementsSchema(installDir: installDir)
+        guard !schema.isEmpty else {
+            patchStatusMessage = "No local achievement schema yet — click Apply first."
+            patchStatusIsError = true
+            return
+        }
+
+        let saveURL = AchievementWatcher.saveStateFile(bottle: bottle, appID: game.appID)
+        var earned = AchievementWatcher.parseEarned(at: saveURL)
+        guard let next = schema.first(where: { earned[$0.name] == nil }) else {
+            patchStatusMessage = "Every local achievement is already marked earned — restore/clear the save file to test again."
+            patchStatusIsError = false
+            return
+        }
+
+        earned[next.name] = Int(Date().timeIntervalSince1970)
+        let entries = earned.map { ["name": $0.key, "earned": true, "earned_time": $0.value] as [String: Any] }
+        do {
+            try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: entries, options: .prettyPrinted)
+            try data.write(to: saveURL, options: .atomic)
+            patchStatusMessage = "Test-unlocked \"\(next.displayName)\" locally. If the game is running, watch for the toast (~5s)."
+            patchStatusIsError = false
+        } catch {
+            patchStatusMessage = "Couldn't write test unlock: \(error.localizedDescription)"
+            patchStatusIsError = true
+        }
+    }
+
+    /// Clears the LOCAL test-unlock state only, so "Test: unlock next
+    /// achievement" has something left to unlock again. Does not touch the
+    /// real Steam account — an achievement genuinely unlocked there stays
+    /// unlocked; this only forgets what BEER has already marked earned in
+    /// the local gbe_fork save file, for repeat local/toast/sync testing.
+    private func resetLocalTestAchievements(for bottle: Bottle) {
+        let saveURL = AchievementWatcher.saveStateFile(bottle: bottle, appID: game.appID)
+        try? FileManager.default.removeItem(at: saveURL)
+        patchStatusMessage = "Cleared local test-achievement state — click \"Test: unlock next achievement\" to start over. Your real Steam unlocks are untouched."
+        patchStatusIsError = false
     }
 
     private func applyGoldbergPatch(to bottle: Bottle) {

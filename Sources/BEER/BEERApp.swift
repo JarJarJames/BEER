@@ -45,8 +45,12 @@ struct BEERApp: App {
                 .environmentObject(presence)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
-                .overlay(AchievementToastOverlay())
                 .task {
+                    // Starts listening for achievement unlocks so the
+                    // floating toast window (separate from this one, so it
+                    // stays visible over the game) is armed before anything
+                    // could post to it.
+                    AchievementOverlayWindow.shared.activate()
                     await store.load()
                     await detector.refresh()
                     depotDownloader.refresh()
