@@ -21,7 +21,7 @@ The CloudSync helper lives in `Tools/CloudSync/` (C# / .NET 9 / SteamKit2). `dot
 - Goal is cumulative: build a real, growing suite of offline Account tests over time, so regressions in account-adjacent logic get caught without a live Steam session every time.
 
 ## Layout
-- `Sources/BEER/` — the SwiftUI app.
+- `Sources/BEER/` — the SwiftUI app. Follow [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) when adding files: views nest under the screen that owns them, shared views go in `Reuseable Views/`, numbers and strings go in `Constants/`.
 - `Tools/CloudSync/` — the native Steam-client helper (auth, owned games, cloud read/write).
 - `scripts/` — build scripts.
 - State lives in `~/Library/Application Support/BEER/` (see `Paths.swift`).
