@@ -46,11 +46,14 @@ func parseAuthFailure(_ line: String) -> String? {
 
 /// DepotDownloader: "App 3368600 (Brushes with Death) is not available from
 /// this account." Returns the human-readable part for the error message.
+///
+/// Only the app-level line is fatal. "Depot 468550 is not available from this
+/// account." is printed for optional depots (DLC, other platforms) while the
+/// rest of the download proceeds, so it must not be reported as not owned.
 func parseNotOwned(_ line: String) -> String? {
-    guard line.contains("is not available from this account") else { return nil }
-    if let m = line.firstMatch(of: /App ([0-9]+) \(([^)]*)\) is not available/) {
-        let name = String(m.output.2).trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? "App \(m.output.1)" : name
+    guard let m = line.firstMatch(of: /App ([0-9]+) \(([^)]*)\) is not available from this account/) else {
+        return nil
     }
-    return "This content"
+    let name = String(m.output.2).trimmingCharacters(in: .whitespaces)
+    return name.isEmpty ? "App \(m.output.1)" : name
 }
