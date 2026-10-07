@@ -24,6 +24,10 @@ Aider, etc.). These mirror the human contributor rules — see `CONTRIBUTING.md`
 5. **Keep the Wine username pinned to `crossover`.** It's GPTK's hardcoded
    default; changing it strands existing bottles' save paths.
 
+## Project Layout
+
+See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placement rules. Follow it when adding files: views nest under the screen that owns them, shared views go in `Reuseable Views/`, and numbers and strings go in `Constants/`.
+
 ## Working agreement
 
 - **Verify by building, not by running against an account:** `swift build` for
