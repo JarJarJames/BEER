@@ -2,6 +2,25 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.5.1 — 2026-10-07
+
+Non-Steam games, in testing.
+
+### Added
+- **Add Non-Steam Game.** A **+** button in the library toolbar adds a game
+  you already have on disk. Pick its folder and executable, optionally a
+  cover image, and choose whether to move or copy the folder into BEER. The
+  game gets its own GPTK bottle with the same graphics, display, controller
+  and launch settings as a Steam game, and its folder lives in the bottle's
+  `drive_c/Games` next to the rest. Steam-only features (Cloud sync, play
+  time, achievements, DLC, the Steam emulator) don't apply and are hidden.
+  Removing one asks first, since it deletes the folder BEER holds.
+  Early: expect rough edges.
+
+### Fixed
+- Failed DepotDownloader installs now leave a per-app log, and the
+  "not owned" message names the app instead of a generic value.
+
 ## 0.5.0 — 2026-10-07
 
 Steam achievements, and a source tree that's easier to work in.
