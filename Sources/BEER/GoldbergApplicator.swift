@@ -1,4 +1,5 @@
 import Foundation
+import AchievementUI
 
 // GoldbergApplicator drops the GBE_Fork Steamworks-emu stubs into a game's
 // install tree so the game launches without a running Steam process.
@@ -53,13 +54,15 @@ enum GoldbergApplicator {
     static let appIDFile = "steam_appid.txt"
     static let userConfigFile = "configs.user.ini"
     static let appConfigFile = "configs.app.ini"
-    static let managedFiles: Set<String> = [appIDFile, userConfigFile, appConfigFile]
+    static let achievementsFile = "achievements.json"
+    static let statsFile = "stats.json"
+    static let managedFiles: Set<String> = [appIDFile, userConfigFile, appConfigFile, achievementsFile, statsFile]
 
     /// Walk the install dir and replace every steam_api*.dll with the matching
     /// GBE_Fork stub. Idempotent: re-running is safe and only patches DLLs we
     /// haven't already patched.
     @MainActor
-    static func apply(installDir: URL, appID: Int, account: String? = nil, steamID64: String? = nil, dlc: [InstalledDLC], using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
+    static func apply(installDir: URL, appID: Int, account: String? = nil, steamID64: String? = nil, dlc: [InstalledDLC], achievements: [CloudSyncClient.AchievementInfo] = [], using installer: GoldbergInstaller) throws -> GoldbergPatchReport {
         guard let stub64 = installer.steamApi64URL, let stub32 = installer.steamApi32URL else {
             throw GoldbergPatchError.stubsMissing
         }
@@ -88,7 +91,7 @@ enum GoldbergApplicator {
             if let existing = try? Data(contentsOf: dll), existing == stubData {
                 report.alreadyPatched += 1
                 // Still write the steam_settings folder in case it's missing.
-                let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, fileManager: fm)
+                let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, achievements: achievements, fileManager: fm)
                 report.settingsDirs.append(settings)
                 continue
             }
@@ -108,7 +111,7 @@ enum GoldbergApplicator {
             report.patched.append(dll)
 
             // Write steam_settings/steam_appid.txt beside it.
-            let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, fileManager: fm)
+            let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, achievements: achievements, fileManager: fm)
             report.settingsDirs.append(settings)
         }
 
@@ -216,6 +219,26 @@ enum GoldbergApplicator {
         return out.joined(separator: "\n").trimmingCharacters(in: .newlines)
     }
 
+    /// Read back the first `steam_settings/achievements.json` found under
+    /// `installDir` — the schema BEER itself wrote — so display info (name,
+    /// icon, description) is available locally, with no network call, to
+    /// whatever labels an unlock toast. Returns `[]` if none was ever written.
+    static func readAchievementsSchema(installDir: URL) -> [AchievementDisplayInfo] {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            return []
+        }
+        for case let url as URL in enumerator where url.lastPathComponent == "steam_settings" {
+            enumerator.skipDescendants()
+            let achievementsURL = url.appendingPathComponent(achievementsFile, isDirectory: false)
+            guard let data = try? Data(contentsOf: achievementsURL) else { continue }
+            if let decoded = try? JSONDecoder().decode([AchievementDisplayInfo].self, from: data) {
+                return decoded
+            }
+        }
+        return []
+    }
+
     // MARK: - Internals
 
     private static func findSteamApiDLLs(in installDir: URL) -> [URL]? {
@@ -233,7 +256,7 @@ enum GoldbergApplicator {
         return found
     }
 
-    private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, dlc: [InstalledDLC], fileManager fm: FileManager) throws -> URL {
+    private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, dlc: [InstalledDLC], achievements: [CloudSyncClient.AchievementInfo], fileManager fm: FileManager) throws -> URL {
         let settingsDir = dll.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
         try fm.createDirectory(at: settingsDir, withIntermediateDirectories: true)
         let appidFile = settingsDir.appendingPathComponent(appIDFile, isDirectory: false)
@@ -251,6 +274,52 @@ enum GoldbergApplicator {
         }
 
         try writeDLCSection(in: settingsDir, dlc: dlc, fileManager: fm)
+        if !achievements.isEmpty {
+            try writeAchievementsSchema(in: settingsDir, achievements: achievements, fileManager: fm)
+        }
         return settingsDir
+    }
+
+    // MARK: - Achievements
+
+    /// Rewrite `steam_settings/achievements.json` in every settings folder
+    /// already present under `installDir`, without touching the patched DLLs.
+    /// Lets a schema refresh (a newer achievement added to the game) reach an
+    /// already-patched install without a full re-patch — mirrors `updateDLC`.
+    @discardableResult
+    static func updateAchievements(installDir: URL, achievements: [CloudSyncClient.AchievementInfo]) throws -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isDirectoryKey]) else {
+            throw GoldbergPatchError.unreadableInstallDir(installDir.path)
+        }
+        var updated = 0
+        for case let url as URL in enumerator where url.lastPathComponent == "steam_settings" {
+            guard (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+            enumerator.skipDescendants()
+            try writeAchievementsSchema(in: url, achievements: achievements, fileManager: fm)
+            updated += 1
+        }
+        return updated
+    }
+
+    /// Write gbe_fork's `achievements.json` schema/definitions — name,
+    /// display strings, hidden flag, icons. Deliberately NOT the per-user
+    /// unlock state: that lives in the emulator's own `GSE Saves/<appid>/`
+    /// folder and is owned by the running game/emulator, not by BEER.
+    private static func writeAchievementsSchema(in settingsDir: URL, achievements: [CloudSyncClient.AchievementInfo], fileManager fm: FileManager) throws {
+        let achievementsURL = settingsDir.appendingPathComponent(achievementsFile, isDirectory: false)
+        let entries = achievements.map { a -> [String: Any] in
+            var entry: [String: Any] = [
+                "name": a.name,
+                "displayName": a.displayName,
+                "description": a.description,
+                "hidden": a.hidden,
+            ]
+            if let icon = a.icon { entry["icon"] = icon }
+            if let iconGray = a.iconGray { entry["icongray"] = iconGray }
+            return entry
+        }
+        let data = try JSONSerialization.data(withJSONObject: entries, options: [.prettyPrinted, .sortedKeys])
+        try data.write(to: achievementsURL, options: .atomic)
     }
 }

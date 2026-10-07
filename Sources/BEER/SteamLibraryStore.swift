@@ -72,15 +72,26 @@ final class SteamLibraryStore: ObservableObject {
 
         do {
             let fetched = try await fetchOwnedGamesViaClient(account: acct)
+            let fetchedAppIDs = Set(fetched.map(\.appID))
             // Preserve installedBottleID associations.
-            games = fetched.map { fresh in
+            var merged = fetched.map { fresh -> SteamLibraryGame in
                 if let existing = games.first(where: { $0.appID == fresh.appID }) {
-                    var merged = fresh
-                    merged.installedBottleID = existing.installedBottleID
-                    return merged
+                    var updated = fresh
+                    updated.installedBottleID = existing.installedBottleID
+                    return updated
                 }
                 return fresh
             }
+            // A game already installed here must never vanish from the list
+            // just because this particular fetch didn't include its appID —
+            // that would silently orphan a working bottle from the UI that
+            // launches it. Steam's owned-games response is the source of
+            // truth for everything else, but not for "is this uninstalled".
+            let stillInstalledButMissing = games.filter {
+                $0.installedBottleID != nil && !fetchedAppIDs.contains($0.appID)
+            }
+            merged.append(contentsOf: stillInstalledButMissing)
+            games = merged
             persist()
         } catch {
             auth?.noteCloudError(error)

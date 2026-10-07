@@ -1,5 +1,6 @@
 import AppKit
 import SwiftUI
+import AchievementUI
 
 struct GameDetailView: View {
     let game: SteamLibraryGame
@@ -644,6 +645,16 @@ struct GameDetailView: View {
                     } label: {
                         Label("Reapply (after GBE_Fork upgrade)", systemImage: "arrow.clockwise")
                     }
+                    Button {
+                        triggerTestAchievementUnlock(for: bottle)
+                    } label: {
+                        Label("Test: unlock next achievement", systemImage: "star.fill")
+                    }
+                    Button {
+                        resetLocalTestAchievements(for: bottle)
+                    } label: {
+                        Label("Test: reset local unlocks", systemImage: "arrow.counterclockwise")
+                    }
                     Button(role: .destructive) {
                         restoreOriginalDLLs(for: bottle)
                     } label: {
@@ -1016,6 +1027,92 @@ struct GameDetailView: View {
         return anyDLL ? .notApplied : .noDLLsFound
     }
 
+    private struct AchievementFetchOutcome {
+        let achievements: [CloudSyncClient.AchievementInfo]
+        /// Always non-nil, even on success — this is the only place that
+        /// reports whether achievements were actually seeded, since the fetch
+        /// itself is silent otherwise and a failure here has no other symptom
+        /// than achievements quietly never unlocking.
+        let note: String
+    }
+
+    /// Real achievement definitions for `appID`. Always best-effort: a
+    /// patch/install must succeed even when Steam can't be reached to seed
+    /// achievements, since games work fine under the emulator either way —
+    /// but `note` says exactly what happened, so a silent empty result isn't
+    /// indistinguishable from "this game has no Steam achievements".
+    private func fetchAchievementSchema(appID: Int) async -> AchievementFetchOutcome {
+        guard let account = cloudAuth.account, !cloudAuth.sessionExpired else {
+            return AchievementFetchOutcome(achievements: [], note: "Achievements not seeded (not signed in to Steam Cloud).")
+        }
+        do {
+            let schema = try await CloudSyncClient().achievementSchema(
+                appID: appID, steamID64: account.steamID64,
+                account: account.accountName, refreshToken: account.refreshToken
+            )
+            if schema.achievements.isEmpty {
+                return AchievementFetchOutcome(achievements: [], note: "Steam reports no achievements for this game.")
+            }
+            return AchievementFetchOutcome(achievements: schema.achievements, note: "Seeded \(schema.achievements.count) achievement\(schema.achievements.count == 1 ? "" : "s") from Steam.")
+        } catch {
+            let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            return AchievementFetchOutcome(achievements: [], note: "Achievements not seeded: \(msg)")
+        }
+    }
+
+    /// Manually mark the next not-yet-earned achievement "earned" in the
+    /// local gbe_fork save file — a real, user-triggered click, not a
+    /// background write. Exercises the exact same watcher/toast/Steam-sync
+    /// pipeline a real in-game unlock would, so the toast UX can be tuned
+    /// and the live sync path re-tested on demand without needing to
+    /// actually complete an achievement's real condition in-game.
+    private func triggerTestAchievementUnlock(for bottle: Bottle) {
+        guard let installDir = resolvedInstallDirectory(for: bottle) else {
+            patchStatusMessage = "Could not locate the game's install directory."
+            patchStatusIsError = true
+            return
+        }
+        let schema = GoldbergApplicator.readAchievementsSchema(installDir: installDir)
+        guard !schema.isEmpty else {
+            patchStatusMessage = "No local achievement schema yet — click Apply first."
+            patchStatusIsError = true
+            return
+        }
+
+        let saveURL = AchievementWatcher.saveStateFile(bottle: bottle, appID: game.appID)
+        var earned = AchievementWatcher.parseEarned(at: saveURL)
+        guard let next = schema.first(where: { earned[$0.name] == nil }) else {
+            patchStatusMessage = "Every local achievement is already marked earned — restore/clear the save file to test again."
+            patchStatusIsError = false
+            return
+        }
+
+        earned[next.name] = Int(Date().timeIntervalSince1970)
+        let entries = earned.map { ["name": $0.key, "earned": true, "earned_time": $0.value] as [String: Any] }
+        do {
+            try FileManager.default.createDirectory(at: saveURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            let data = try JSONSerialization.data(withJSONObject: entries, options: .prettyPrinted)
+            try data.write(to: saveURL, options: .atomic)
+            patchStatusMessage = "Test-unlocked \"\(next.displayName)\" locally. If the game is running, watch for the toast (~5s)."
+            patchStatusIsError = false
+        } catch {
+            patchStatusMessage = "Couldn't write test unlock: \(error.localizedDescription)"
+            patchStatusIsError = true
+        }
+    }
+
+    /// Clears the LOCAL test-unlock state only, so "Test: unlock next
+    /// achievement" has something left to unlock again. Does not touch the
+    /// real Steam account — an achievement genuinely unlocked there stays
+    /// unlocked; this only forgets what BEER has already marked earned in
+    /// the local gbe_fork save file, for repeat local/toast/sync testing.
+    private func resetLocalTestAchievements(for bottle: Bottle) {
+        let saveURL = AchievementWatcher.saveStateFile(bottle: bottle, appID: game.appID)
+        try? FileManager.default.removeItem(at: saveURL)
+        patchStatusMessage = "Cleared local test-achievement state — click \"Test: unlock next achievement\" to start over. Your real Steam unlocks are untouched."
+        patchStatusIsError = false
+    }
+
     private func applyGoldbergPatch(to bottle: Bottle) {
         guard let installDir = resolvedInstallDirectory(for: bottle) else {
             patchStatusMessage = "Could not locate the game's install directory."
@@ -1035,6 +1132,10 @@ struct GameDetailView: View {
                 return
             }
             do {
+                // Best-effort: a schema fetch failure must not block getting
+                // the emulator itself patched in — the game still runs fine
+                // without achievement support, it just won't unlock any.
+                let achievementFetch = await fetchAchievementSchema(appID: game.appID)
                 let report = try GoldbergApplicator.apply(
                     installDir: installDir,
                     appID: game.appID,
@@ -1044,6 +1145,7 @@ struct GameDetailView: View {
                     // otherwise drop the [app::dlcs] block and the game would
                     // stop seeing DLC it already has on disk.
                     dlc: bottles.live(bottle).effectiveInstalledDLC,
+                    achievements: achievementFetch.achievements,
                     using: goldberg
                 )
                 // Make sure the bottle has the install dir recorded for future ops.
@@ -1053,7 +1155,7 @@ struct GameDetailView: View {
                     await bottles.update(updated)
                 }
                 let total = report.patched.count + report.alreadyPatched
-                patchStatusMessage = "Steam emulator applied to \(total) DLL\(total == 1 ? "" : "s")."
+                patchStatusMessage = "Steam emulator applied to \(total) DLL\(total == 1 ? "" : "s"). \(achievementFetch.note)"
                 patchStatusIsError = false
             } catch {
                 patchStatusMessage = error.localizedDescription
@@ -1157,17 +1259,19 @@ struct GameDetailView: View {
                 if goldberg.isInstalled {
                     downloads.setStatus(appID: game.appID, phase: "Patching with Steam emulator…")
                     do {
+                        let achievementFetch = await fetchAchievementSchema(appID: game.appID)
                         let report = try GoldbergApplicator.apply(
                             installDir: result.installDirectory,
                             appID: game.appID,
                             account: cloudAuth.account?.accountName,
                             steamID64: cloudAuth.account?.steamID64,
                             dlc: bottles.live(bottle).effectiveInstalledDLC,
+                            achievements: achievementFetch.achievements,
                             using: goldberg
                         )
                         downloads.append(
                             appID: game.appID,
-                            log: "Goldberg: patched \(report.patched.count) DLLs (already-patched: \(report.alreadyPatched), settings: \(report.settingsDirs.count))."
+                            log: "Goldberg: patched \(report.patched.count) DLLs (already-patched: \(report.alreadyPatched), settings: \(report.settingsDirs.count)). \(achievementFetch.note)"
                         )
                     } catch {
                         // Patch failure isn't fatal — the user can still
@@ -1382,6 +1486,23 @@ struct GameDetailView: View {
             // logons, so a second session opened just for this would fight it.
             presence.beginPlaying(appID: game.appID)
 
+            // Watch for local achievement unlocks (from the Goldberg/gbe_fork
+            // shim) while the game runs, and sync any to the real account.
+            // Best-effort and non-fatal: no install dir or no signed-in
+            // account just means no watcher, not a blocked launch.
+            var achievementWatcher: AchievementWatcher?
+            if cloudUsable, let account = cloudAuth.account,
+               let installDir = resolvedInstallDirectory(for: bottle) {
+                let watcher = AchievementWatcher(
+                    bottle: bottle, appID: game.appID, installDir: installDir,
+                    steamID64: account.steamID64, account: account.accountName,
+                    refreshToken: account.refreshToken,
+                    onUnlock: { AchievementToastCenter.shared.post($0) }
+                )
+                watcher.start()
+                achievementWatcher = watcher
+            }
+
             await bottles.launchGameExecutable(
                 bottle,
                 executable: exe,
@@ -1394,6 +1515,11 @@ struct GameDetailView: View {
             if let minutes = await presence.stopPlaying(appID: game.appID) {
                 library.recordPlaytime(appID: game.appID, minutes: minutes)
             }
+
+            // One last check for anything unlocked in the final moments of
+            // play, then stop watching — the game isn't running anymore.
+            await achievementWatcher?.finalCheck()
+            achievementWatcher?.stop()
 
             // Re-check: the token may have expired during the pull above.
             let savesAfter = cloudSync.localSaveFingerprint(appID: game.appID)

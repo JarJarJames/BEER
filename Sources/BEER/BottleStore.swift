@@ -150,10 +150,19 @@ final class BottleStore: ObservableObject {
     /// Set up the opt-in controller fix, returning the macOS-side helper so the
     /// caller can stop it when the game exits. A failure here is logged and the
     /// game still launches — a broken D-pad beats refusing to start.
+    ///
+    /// Everything here — IOHID enumeration, spawning `dpad_helper` — runs on
+    /// this @MainActor class, i.e. the main thread. HID enumeration against a
+    /// Bluetooth pad has been observed to stall indefinitely, which froze the
+    /// whole app stone dead before Wine ever started (nothing after it in
+    /// beer.log, no wine process spawned). `withTimeout` below caps that risk
+    /// so a stuck HID/helper call degrades to "no controller fix this launch"
+    /// instead of taking the app down with it.
     private func prepareControllerFix(_ bottle: Bottle, executable: String) async -> Process? {
         guard bottle.effectiveControllerFix else { return nil }
 
-        guard let device = ControllerSupport.connectedDeviceIdentifiers().first else {
+        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
+              let device = identifiers.first else {
             appendLog("Controller fix enabled but no gamepad is connected.", bottleID: bottle.id)
             return nil
         }
@@ -173,13 +182,32 @@ final class BottleStore: ObservableObject {
         }
 
         let prefix = AppPaths.prefixURL(for: bottle)
-        guard let helper = ControllerSupport.startHelper(prefix: prefix, device: device) else {
+        let helperResult = await withTimeout(seconds: 3) { ControllerSupport.startHelper(prefix: prefix, device: device) }
+        guard let helper = helperResult ?? nil else {
             appendLog("Controller fix helper failed to start.", bottleID: bottle.id, isError: true)
             return nil
         }
 
         appendLog("Controller fix active for \(device).", bottleID: bottle.id)
         return helper
+    }
+
+    /// Runs `work` on a background thread with a hard deadline, returning
+    /// `nil` if it hasn't finished by `seconds`. `work` itself is abandoned,
+    /// not cancelled — this only stops it from blocking the caller, which is
+    /// enough for the controller-fix path: everything it guards is optional
+    /// and already designed to no-op cleanly on `nil`.
+    private func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () -> T) async -> T? {
+        await withTaskGroup(of: T?.self) { group in
+            group.addTask { work() as T? }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+                return nil
+            }
+            let result = await group.next() ?? nil
+            group.cancelAll()
+            return result
+        }
     }
 
     /// Wine's own hid.dll, which the shim forwards all but two exports to.
@@ -203,8 +231,8 @@ final class BottleStore: ObservableObject {
     /// now, and runs *before* `configureDisplayMode` so the `wineboot -k` at the
     /// end of that call restarts the bus driver onto the new value.
     private func configureControllers(_ bottle: Bottle) async {
-        let identifiers = ControllerSupport.connectedDeviceIdentifiers()
-        guard !identifiers.isEmpty else { return }
+        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
+              !identifiers.isEmpty else { return }
 
         await runBottleCommand(
             bottle,
