@@ -17,6 +17,16 @@ extension GameDetailViewModel {
                     return
                 }
             }
+            // A non-Steam game has no cloud, presence, or achievements to sync.
+            guard !game.effectiveIsNonSteam else {
+                await bottles.launchGameExecutable(
+                    bottle,
+                    executable: exe,
+                    arguments: bottle.effectiveGameLaunchArguments
+                )
+                return
+            }
+
             // Auto cloud sync: pull the latest saves down before play, and push
             // whatever changed back up after the game exits. Best-effort — a
             // sync hiccup must never block launching the game. Backups are taken

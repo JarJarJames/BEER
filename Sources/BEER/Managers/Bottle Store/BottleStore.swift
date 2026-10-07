@@ -121,6 +121,16 @@ final class BottleStore: ObservableObject {
         await save()
     }
 
+    /// Record a game the user brought in from a folder (no Steam app behind it).
+    func recordNonSteamInstall(_ bottle: Bottle, launchExecutable: String, installDirectory: String) async {
+        guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
+        bottles[index].gameLaunchExecutable = launchExecutable
+        bottles[index].gameInstallDirectory = installDirectory
+        bottles[index].gameInstallStatus = .installed
+        bottles[index].updatedAt = Date()
+        await save()
+    }
+
     func delete(_ bottle: Bottle) async {
         do {
             let url = AppPaths.prefixURL(for: bottle)

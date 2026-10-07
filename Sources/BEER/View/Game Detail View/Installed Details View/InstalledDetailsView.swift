@@ -13,9 +13,11 @@ struct InstalledDetailsView: View {
             DisplayModeRow(bottle: bottle)
             ControllerFixRow(bottle: bottle)
             LaunchArgumentsRow(bottle: bottle)
-            SteamEmulatorRow(bottle: bottle, model: model)
-            DLCRow(bottle: bottle, model: model)
-            SteamCloudRow(bottle: bottle, model: model)
+            if !model.game.effectiveIsNonSteam {
+                SteamEmulatorRow(bottle: bottle, model: model)
+                DLCRow(bottle: bottle, model: model)
+                SteamCloudRow(bottle: bottle, model: model)
+            }
 
             DisclosureGroup(isExpanded: $isAdvancedExpanded) {
                 AdvancedSettingsView(bottle: bottle)

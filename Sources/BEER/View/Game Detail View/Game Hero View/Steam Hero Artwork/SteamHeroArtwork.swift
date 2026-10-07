@@ -4,7 +4,17 @@ struct SteamHeroArtwork: View {
     let game: SteamLibraryGame
 
     var body: some View {
-        AsyncImage(url: game.libraryHeroImage) { phase in
+        if game.libraryHeroImage == nil && game.headerImage == nil {
+            Rectangle()
+                .fill(Color.secondary.opacity(0.15))
+                .overlay(Image(systemName: "gamecontroller").font(.largeTitle).foregroundStyle(.secondary))
+        } else {
+            artwork
+        }
+    }
+
+    private var artwork: some View {
+        AsyncImage(url: game.libraryHeroImage ?? game.headerImage) { phase in
             switch phase {
             case .empty:
                 Rectangle()

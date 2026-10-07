@@ -42,7 +42,7 @@ struct GameCardView: View {
                     Text(game.name)
                         .font(.callout.bold())
                         .lineLimit(1)
-                    Text("appID \(game.appID)")
+                    Text(game.effectiveIsNonSteam ? "Non-Steam" : "appID \(game.appID)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }

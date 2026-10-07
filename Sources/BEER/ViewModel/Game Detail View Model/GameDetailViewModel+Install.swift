@@ -5,18 +5,10 @@ extension GameDetailViewModel {
         startInstall()
     }
 
-    /// New game bottles default to GPTK (fastest, D3DMetal). Managed GPTK
-    /// runtimes are named "Managed GPTK-…" but resolve to a wine64 executable
-    /// (kind .systemWine), so match by name as well as kind. Falls back to the
-    /// first available runtime.
-    var preferredDefaultRuntime: RuntimeCandidate? {
-        let c = detector.candidates
-        return c.first { $0.displayName.localizedCaseInsensitiveContains("GPTK") || $0.displayName.localizedCaseInsensitiveContains("Game Porting") }
-            ?? c.first { $0.kind == .gamePortingToolkit }
-            ?? c.first
-    }
+    var preferredDefaultRuntime: RuntimeCandidate? { detector.preferredGameRuntime }
 
     func startInstall() {
+        guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
@@ -137,12 +129,28 @@ extension GameDetailViewModel {
         }
     }
 
+    /// Uninstalling a non-Steam game deletes the folder it was brought in as,
+    /// so it asks first. A Steam game can be downloaded again, so it doesn't.
+    func requestUninstall() {
+        if game.effectiveIsNonSteam {
+            confirmRemoveNonSteamGame = true
+        } else {
+            uninstall()
+        }
+    }
+
     func uninstall() {
-        guard let bottle = installedBottle else { return }
+        let appID = game.appID
+        let isNonSteam = game.effectiveIsNonSteam
+        let bottle = installedBottle
         Task { [self] in
-            await bottles.delete(bottle)
-            library.markUninstalled(appID: game.appID)
-            downloads.remove(appID: game.appID)
+            if let bottle { await bottles.delete(bottle) }
+            if isNonSteam {
+                library.removeNonSteamGame(appID: appID)
+            } else {
+                library.markUninstalled(appID: appID)
+            }
+            downloads.remove(appID: appID)
         }
     }
 }

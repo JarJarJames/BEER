@@ -30,7 +30,11 @@ struct GameHeroView: View {
                     .frame(maxWidth: 420, maxHeight: 150, alignment: .leading)
 
                 HStack(spacing: 12) {
-                    Label("appID \(game.appID)", systemImage: "number")
+                    if game.effectiveIsNonSteam {
+                        Label("Non-Steam", systemImage: "gamecontroller")
+                    } else {
+                        Label("appID \(game.appID)", systemImage: "number")
+                    }
                     if let playtime = game.playtimeDisplay {
                         Label(playtime, systemImage: "clock")
                     }
