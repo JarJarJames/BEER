@@ -21,20 +21,6 @@ import Foundation
 @MainActor
 final class DLCStore: ObservableObject {
 
-    enum LoadState: Equatable {
-        case idle
-        case loading
-        case loaded([CloudSyncClient.DLCInfo])
-        case failed(String)
-
-        var entries: [CloudSyncClient.DLCInfo] {
-            if case .loaded(let found) = self { return found }
-            return []
-        }
-
-        var owned: [CloudSyncClient.DLCInfo] { entries.filter(\.owned) }
-    }
-
     /// Discovery state per app. Keyed rather than "current app + a copy of its
     /// rows", so a slow reply for one game can't land on another's view.
     @Published private(set) var states: [Int: LoadState] = [:]

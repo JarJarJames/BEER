@@ -1,5 +1,3 @@
-import CoreImage
-import CoreImage.CIFilterBuiltins
 import SwiftUI
 
 // Sheet that runs SteamAuthStore.runQRAuth — show a real QR rendered from
@@ -14,9 +12,7 @@ struct SteamCloudQRSheet: View {
 
     let onConnected: () -> Void
 
-    @State private var session: SteamAuthStore.QRSession?
-    @State private var error: String?
-    @State private var task: Task<Void, Never>?
+    @StateObject private var qr = SteamQRAuthViewModel()
 
     var body: some View {
         VStack(spacing: 18) {
@@ -34,13 +30,13 @@ struct SteamCloudQRSheet: View {
                     .frame(maxWidth: 400)
             }
 
-            qrView
+            QRCodeView(challengeURL: qr.session?.challengeURL, hasError: qr.error != nil)
                 .frame(width: 280, height: 280)
                 .padding(16)
                 .background(Color.white)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
 
-            if let error {
+            if let error = qr.error {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(.red)
@@ -62,7 +58,7 @@ struct SteamCloudQRSheet: View {
             HStack {
                 Spacer()
                 Button(role: .destructive) {
-                    task?.cancel()
+                    qr.cancel()
                     dismiss()
                 } label: {
                     Text("Cancel")
@@ -74,58 +70,14 @@ struct SteamCloudQRSheet: View {
         .frame(width: 440)
         .interactiveDismissDisabled(true)
         .onAppear { startAuthIfNeeded() }
-        .onDisappear { task?.cancel() }
-    }
-
-    @ViewBuilder
-    private var qrView: some View {
-        if let urlString = session?.challengeURL,
-           let cgImage = generateQR(from: urlString) {
-            Image(decorative: cgImage, scale: 1.0)
-                .interpolation(.none)
-                .resizable()
-                .aspectRatio(contentMode: .fit)
-        } else if error != nil {
-            VStack {
-                Image(systemName: "exclamationmark.triangle")
-                    .font(.largeTitle)
-                    .foregroundStyle(.orange)
-                Text("Couldn't get a QR from Steam.")
-                    .foregroundStyle(.black)
-            }
-        } else {
-            ProgressView()
-        }
+        .onDisappear { qr.cancel() }
     }
 
     private func startAuthIfNeeded() {
-        guard task == nil else { return }
-        task = Task {
-            do {
-                try await auth.runQRAuth { qr in
-                    self.session = qr
-                }
-                // Completed — caller wants to know, then dismiss.
-                onConnected()
-                dismiss()
-            } catch is CancellationError {
-                // user clicked Cancel; sheet already dismissed
-            } catch let err as SteamAuthError {
-                self.error = err.errorDescription ?? String(describing: err)
-            } catch {
-                self.error = error.localizedDescription
-            }
+        qr.start(auth: auth, fallbackError: "Steam sign-in failed.") {
+            // Completed — caller wants to know, then dismiss.
+            onConnected()
+            dismiss()
         }
-    }
-
-    private func generateQR(from string: String) -> CGImage? {
-        guard let data = string.data(using: .utf8) else { return nil }
-        let filter = CIFilter.qrCodeGenerator()
-        filter.setValue(data, forKey: "inputMessage")
-        filter.setValue("M", forKey: "inputCorrectionLevel")
-        guard let outputImage = filter.outputImage else { return nil }
-        // Upscale so the image isn't a tiny pixelated mess when scaled.
-        let scaled = outputImage.transformed(by: CGAffineTransform(scaleX: 10, y: 10))
-        return CIContext().createCGImage(scaled, from: scaled.extent)
     }
 }

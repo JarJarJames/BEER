@@ -11,18 +11,6 @@ import Security
 // and works for an ad-hoc-signed, non-sandboxed app. Items live in the user's
 // login keychain and are scoped to this Mac (they don't sync to iCloud).
 enum Keychain {
-    enum KeychainError: LocalizedError {
-        case unexpectedStatus(OSStatus)
-
-        var errorDescription: String? {
-            switch self {
-            case .unexpectedStatus(let status):
-                let msg = SecCopyErrorMessageString(status, nil) as String? ?? "OSStatus \(status)"
-                return "Keychain error: \(msg)"
-            }
-        }
-    }
-
     /// Service identifier all BEER keychain items share. Older builds (named
     /// "GameNativeMac") used `legacyService`; see `SteamAuthStore.load()` for
     /// the one-time migration.

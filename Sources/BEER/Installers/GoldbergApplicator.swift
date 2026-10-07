@@ -1,5 +1,5 @@
-import Foundation
 import AchievementUI
+import Foundation
 
 // GoldbergApplicator drops the GBE_Fork Steamworks-emu stubs into a game's
 // install tree so the game launches without a running Steam process.
@@ -19,32 +19,6 @@ import AchievementUI
 // ship multiple copies (e.g. /redist, /tools, the main exe dir). For each
 // patched DLL we keep the original at `<name>.original` so a Restore action
 // can put everything back.
-
-enum GoldbergPatchError: LocalizedError {
-    case stubsMissing
-    case unreadableInstallDir(String)
-    case noSteamApiFound
-
-    var errorDescription: String? {
-        switch self {
-        case .stubsMissing:
-            return "The Steam emulator binaries weren't found. Reapply it from this game's settings."
-        case .unreadableInstallDir(let path):
-            return "Could not read the game's install directory at \(path)."
-        case .noSteamApiFound:
-            return "No steam_api.dll / steam_api64.dll was found in the install. Either the game doesn't use Steamworks, or the depot download is incomplete."
-        }
-    }
-}
-
-struct GoldbergPatchReport {
-    var patched: [URL]      // .dll paths we replaced
-    var backedUp: [URL]     // matching .original paths
-    var settingsDirs: [URL] // steam_settings folders we created
-    var alreadyPatched: Int // count of DLLs we found but had already swapped
-
-    var totalPatched: Int { patched.count + alreadyPatched }
-}
 
 enum GoldbergApplicator {
     /// Every file this type writes into a `steam_settings` folder. `restore()`

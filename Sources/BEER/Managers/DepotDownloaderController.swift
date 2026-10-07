@@ -15,50 +15,6 @@ import Foundation
 //   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
-private final class Box<T>: @unchecked Sendable {
-    var value: T
-    init(_ value: T) { self.value = value }
-}
-
-enum DepotDownloaderEvent {
-    case status(String)
-    case progress(Double)
-    case log(String)
-    case downloadComplete
-}
-
-enum DepotDownloaderError: LocalizedError {
-    case binaryMissing
-    case spawnFailed(String)
-    case authenticationFailed(String)
-    case sessionExpired
-    case downloadFailed(Int32, String)
-    case launchExeNotFound
-    case installDirMissing(String)
-    case appNotOwned(String)
-
-    var errorDescription: String? {
-        switch self {
-        case .binaryMissing:
-            return "DepotDownloader is not installed. Open the app's onboarding step to install it."
-        case .spawnFailed(let detail):
-            return "Could not start DepotDownloader: \(detail)"
-        case .authenticationFailed(let detail):
-            return "Steam sign-in failed: \(detail)"
-        case .sessionExpired:
-            return "Steam session expired."
-        case .downloadFailed(let code, let tail):
-            return "DepotDownloader exited with code \(code). Last output:\n\(tail)"
-        case .launchExeNotFound:
-            return "Download completed but we couldn't find a Windows .exe in the install directory."
-        case .installDirMissing(let path):
-            return "The game's install folder is missing at \(path). Reinstall the game before adding DLC."
-        case .appNotOwned(let name):
-            return "\(name) isn't available on this Steam account. If you bought it recently, sign out and back in so Steam re-sends your licences."
-        }
-    }
-}
-
 @MainActor
 final class DepotDownloaderController: ObservableObject {
     @Published var lastError: String?
@@ -103,11 +59,6 @@ final class DepotDownloaderController: ObservableObject {
     }
 
     // MARK: - Game install
-
-    struct InstallResult {
-        let installDirectory: URL
-        let launchExecutableHostPath: URL
-    }
 
     func installGame(
         appID: Int,
@@ -347,104 +298,4 @@ final class DepotDownloaderController: ObservableObject {
         let mapped = s.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
         return String(mapped).trimmingCharacters(in: CharacterSet(charactersIn: "_ ")).ifEmpty(default: "Game")
     }
-}
-
-// MARK: - Parser helpers (all nonisolated & pure)
-
-private func scrub(_ line: String) -> String {
-    var out = line.replacingOccurrences(of: "\r", with: "")
-    if let re = try? NSRegularExpression(pattern: "\\u{1B}\\[[0-9;]*[a-zA-Z]") {
-        let range = NSRange(out.startIndex..., in: out)
-        out = re.stringByReplacingMatches(in: out, range: range, withTemplate: "")
-    }
-    return out
-}
-
-private func parseStatusPhrase(_ line: String) -> String? {
-    let lower = line.lowercased()
-    if lower.contains("got app info") || lower.contains("got app info!") { return "Got app info" }
-    if lower.contains("got cdn auth token") { return "Authenticated with CDN" }
-    if lower.contains("pre-allocating") { return "Pre-allocating disk space…" }
-    if lower.contains("validating") { return "Validating files…" }
-    if lower.contains("downloading depot") { return "Downloading…" }
-    return nil
-}
-
-private func parseProgressFraction(_ line: String) -> Double? {
-    // DepotDownloader prints lines like " 12.34% C:\\... " during download.
-    if let m = line.firstMatch(of: /^\s*([0-9]+(?:\.[0-9]+)?)%/) {
-        if let v = Double(m.output.1) { return max(0, min(1, v / 100)) }
-    }
-    // Older builds: "Downloaded XYZ / TOTAL MB"
-    if let m = line.firstMatch(of: /Downloaded ([0-9.]+)\s*\/\s*([0-9.]+)\s*MB/) {
-        if let d = Double(m.output.1), let t = Double(m.output.2), t > 0 {
-            return max(0, min(1, d / t))
-        }
-    }
-    return nil
-}
-
-private func parseAuthFailure(_ line: String) -> String? {
-    let lower = line.lowercased()
-    if lower.contains("invalid password") { return "Invalid password" }
-    if lower.contains("rate limit") { return "Steam is rate-limiting sign-in attempts. Wait a few minutes." }
-    if lower.contains("unable to logon") {
-        return String(line.trimmingCharacters(in: .whitespaces))
-    }
-    if lower.contains("guard data was rejected") { return "Steam Guard data was rejected" }
-    return nil
-}
-
-/// DepotDownloader: "App 3368600 (Brushes with Death) is not available from
-/// this account." Returns the human-readable part for the error message.
-private func parseNotOwned(_ line: String) -> String? {
-    guard line.contains("is not available from this account") else { return nil }
-    if let m = line.firstMatch(of: /App ([0-9]+) \(([^)]*)\) is not available/) {
-        let name = String(m.output.2).trimmingCharacters(in: .whitespaces)
-        return name.isEmpty ? "App \(m.output.1)" : name
-    }
-    return "This content"
-}
-
-// MARK: - Launch executable heuristic
-
-enum LaunchExecutableFinder {
-    /// Walk the install dir, find Windows `.exe` files, and pick the most
-    /// likely main game executable. Heuristic:
-    ///   1. Drop common installers / redists / crash handlers.
-    ///   2. Prefer files whose basename contains the game name (letters-only compare).
-    ///   3. Otherwise return the largest remaining .exe.
-    static func find(in installDir: URL, gameName: String) -> URL? {
-        let fm = FileManager.default
-        guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.fileSizeKey, .isRegularFileKey]) else {
-            return nil
-        }
-
-        let skip = [
-            "unins", "redist", "vcredist", "vc_redist", "directx", "dxsetup", "dotnet", "dotnetfx",
-            "crashreport", "crashpad", "crashhandler", "uninstall", "uninstaller",
-            "_setup", "setup", "installer", "report", "updater", "patch", "easyanticheat",
-            "battleye", "anticheat"
-        ]
-
-        var candidates: [(url: URL, size: Int64, name: String)] = []
-        for case let url as URL in enumerator {
-            guard url.pathExtension.lowercased() == "exe" else { continue }
-            let lower = url.lastPathComponent.lowercased()
-            if skip.contains(where: { lower.contains($0) }) { continue }
-            let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).map(Int64.init) ?? 0
-            candidates.append((url, size, url.lastPathComponent))
-        }
-
-        let normalizedGame = gameName.lowercased().filter(\.isLetter)
-        if normalizedGame.count > 2,
-           let match = candidates.first(where: { $0.name.lowercased().filter(\.isLetter).contains(normalizedGame) }) {
-            return match.url
-        }
-        return candidates.max(by: { $0.size < $1.size })?.url
-    }
-}
-
-private extension String {
-    func ifEmpty(default value: String) -> String { isEmpty ? value : self }
 }

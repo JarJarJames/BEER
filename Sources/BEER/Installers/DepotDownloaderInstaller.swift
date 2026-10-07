@@ -45,7 +45,7 @@ final class DepotDownloaderInstaller: ObservableObject {
             let release = try await fetchLatestRelease()
             installedVersion = release.tag
 
-            statusMessage = "Downloading \(release.assetName) (\(byteString(release.size)))…"
+            statusMessage = "Downloading \(release.assetName) (\(release.size.fileSizeString))…"
             let zipURL = installDirectory.appendingPathComponent(release.assetName)
             try await download(from: release.assetURL, to: zipURL)
 
@@ -135,10 +135,6 @@ final class DepotDownloaderInstaller: ObservableObject {
         try FileManager.default.moveItem(at: tempURL, to: destination)
     }
 
-    private func byteString(_ bytes: Int64) -> String {
-        ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
-    }
-
     private struct GitHubRelease: Decodable {
         let tag_name: String
         let assets: [GitHubAsset]
@@ -148,24 +144,5 @@ final class DepotDownloaderInstaller: ObservableObject {
         let name: String
         let size: Int
         let browser_download_url: String
-    }
-}
-
-enum DepotDownloaderInstallerError: LocalizedError {
-    case releaseFetchFailed
-    case assetNotFound
-    case downloadFailed
-    case extractionFailed(String)
-    case executableMissing
-
-    var errorDescription: String? {
-        switch self {
-        case .releaseFetchFailed: return "Could not look up the latest DepotDownloader release on GitHub."
-        case .assetNotFound: return "The latest DepotDownloader release does not include a macOS arm64 zip."
-        case .downloadFailed: return "Downloading DepotDownloader failed."
-        case .extractionFailed(let detail):
-            return detail.isEmpty ? "Could not extract DepotDownloader." : "Could not extract DepotDownloader:\n\(detail)"
-        case .executableMissing: return "Extraction finished but the DepotDownloader binary was not present in the archive."
-        }
     }
 }
