@@ -110,6 +110,14 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("Translators", isDirectory: true)
     }
 
+    /// DepotDownloader's raw output for the most recent run of an app, kept so a
+    /// failed install can be diagnosed after the in-memory Downloads row is gone.
+    static func depotDownloaderLogURL(forAppID appID: Int) -> URL {
+        applicationSupport
+            .appendingPathComponent("DepotDownloaderLogs", isDirectory: true)
+            .appendingPathComponent("\(appID).log", isDirectory: false)
+    }
+
     /// Timestamped, out-of-bottle backups of a game's save folders. We snapshot
     /// here before EVERY cloud pull/push and before any "clear local saves", so
     /// a long-played save can always be recovered — even if a bottle is wiped.

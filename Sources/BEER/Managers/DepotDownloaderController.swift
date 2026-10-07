@@ -182,6 +182,14 @@ final class DepotDownloaderController: ObservableObject {
 
         await MainActor.run { events(.status("Connecting to Steam…")) }
 
+        let logURL = AppPaths.depotDownloaderLogURL(forAppID: appID)
+        try? FileManager.default.createDirectory(
+            at: logURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? "args: \(args.joined(separator: " "))\n".write(to: logURL, atomically: true, encoding: .utf8)
+        let logHandle = try? FileHandle(forWritingTo: logURL)
+        try? logHandle?.seekToEnd()
+        defer { try? logHandle?.close() }
+
         // Mutable scratch for the stdout parser thread.
         let tail = Box<[String]>([])
         let lastEmittedProgress = Box<Double>(-1)
@@ -190,6 +198,11 @@ final class DepotDownloaderController: ObservableObject {
         let notOwned = Box<String?>(nil)
 
         let exit = try await runDepotDownloader(args: args) { line in
+            // Skip per-chunk progress lines; everything else (logon, licence and
+            // ownership messages) is what a failed run needs.
+            if parseProgressFraction(line) == nil {
+                try? logHandle?.write(contentsOf: Data((line + "\n").utf8))
+            }
             tail.value.append(line)
             if tail.value.count > 60 { tail.value.removeFirst() }
             Task { @MainActor in events(.log(line)) }
