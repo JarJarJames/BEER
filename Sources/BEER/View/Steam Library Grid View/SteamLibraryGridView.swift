@@ -7,7 +7,9 @@ struct SteamLibraryGridView: View {
 
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var bottles: BottleStore
+    @EnvironmentObject private var detector: ToolchainDetector
     @StateObject private var model = SteamLibraryGridViewModel()
+    @State private var isAddingNonSteamGame = false
 
     private let columns: [GridItem] = [
         GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 18, alignment: .top)
@@ -23,7 +25,8 @@ struct SteamLibraryGridView: View {
                 installedOnly: installedOnly,
                 summary: installedOnly
                     ? "\(games.count) installed"
-                    : "\(model.installedCount(in: library.games, installedBottleIDs: installedIDs)) installed · \(library.games.count) games"
+                    : "\(model.installedCount(in: library.games, installedBottleIDs: installedIDs)) installed · \(library.games.count) games",
+                onAddNonSteamGame: { isAddingNonSteamGame = true }
             )
             Divider()
             if library.isFetchingLibrary && library.games.isEmpty {
@@ -54,6 +57,9 @@ struct SteamLibraryGridView: View {
                     .padding(22)
                 }
             }
+        }
+        .sheet(isPresented: $isAddingNonSteamGame) {
+            AddNonSteamGameSheet(bottles: bottles, library: library, detector: detector)
         }
     }
 }

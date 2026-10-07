@@ -57,6 +57,15 @@ struct GameDetailScreen: View {
             }
         }
         .confirmationDialog(
+            "Remove \(model.game.name)?",
+            isPresented: $model.confirmRemoveNonSteamGame
+        ) {
+            Button("Remove Game", role: .destructive, action: model.uninstall)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The game's folder inside BEER is deleted. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
+        }
+        .confirmationDialog(
             "Back up and clear local saves?",
             isPresented: Binding(get: { model.confirmClearBottle != nil }, set: { if !$0 { model.confirmClearBottle = nil } }),
             presenting: model.confirmClearBottle

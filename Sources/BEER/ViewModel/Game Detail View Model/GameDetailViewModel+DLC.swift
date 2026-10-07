@@ -19,7 +19,7 @@ extension GameDetailViewModel {
     /// Discovery costs a Steam logon, so this runs once per game per session
     /// (DLCStore caches and coalesces) and only for installed games.
     func loadDLC(force: Bool) async {
-        guard isSteamConnected, let auth = cloudAuth.account else { return }
+        guard !game.effectiveIsNonSteam, isSteamConnected, let auth = cloudAuth.account else { return }
         guard installedBottle != nil else { return }
         await dlcStore.load(appID: game.appID, auth: auth, force: force)
     }

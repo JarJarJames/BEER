@@ -18,6 +18,20 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     /// would silently discard the saved account and sign the user out.
     var playtimeMinutes: Int?
     var installedBottleID: UUID?
+    /// True for a game the user added from a folder on disk rather than one
+    /// Steam owns. Its `appID` is a negative placeholder that only identifies
+    /// it inside BEER, so nothing may send it to Steam. Optional for the same
+    /// decoding reason as `playtimeMinutes`.
+    var isNonSteam: Bool?
+    /// Cover art the user picked for a non-Steam game, a copy kept under
+    /// `AppPaths.customArtDirectory`.
+    var customImagePath: String?
+
+    var effectiveIsNonSteam: Bool { isNonSteam ?? false }
+
+    private var customImageURL: URL? {
+        customImagePath.map { URL(fileURLWithPath: $0) }
+    }
 
     /// Steam-style play time, e.g. "43.4 hours". Nil when the account has never
     /// played the game.
@@ -28,17 +42,20 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     }
 
     var headerImage: URL? {
-        URL(string: headerImageURL ?? "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/header.jpg")
+        if effectiveIsNonSteam { return customImageURL }
+        return URL(string: headerImageURL ?? "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/header.jpg")
     }
 
     /// Steam's wide, high-resolution Library backdrop. Unlike `header.jpg`,
     /// this contains artwork without a baked-in oversized game logo.
     var libraryHeroImage: URL? {
-        URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_hero.jpg")
+        if effectiveIsNonSteam { return customImageURL }
+        return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_hero.jpg")
     }
 
     /// Transparent title treatment Steam layers over its Library hero art.
     var libraryLogoImage: URL? {
-        URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/logo.png")
+        if effectiveIsNonSteam { return nil }
+        return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/logo.png")
     }
 }

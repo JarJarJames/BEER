@@ -8,7 +8,7 @@ extension GameDetailViewModel {
     }
 
     func refreshPatchStatus() async {
-        guard let bottle = installedBottle else {
+        guard let bottle = installedBottle, !game.effectiveIsNonSteam else {
             cachedPatchStatus = nil
             return
         }

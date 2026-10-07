@@ -29,6 +29,7 @@ final class GameDetailViewModel: ObservableObject {
     @Published var cloudSyncMessage: String?
     @Published var cloudSyncIsError: Bool = false
     @Published var confirmClearBottle: Bottle?
+    @Published var confirmRemoveNonSteamGame: Bool = false
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false
     @Published var isPatching: Bool = false

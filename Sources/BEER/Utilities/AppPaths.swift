@@ -36,6 +36,12 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("Downloads", isDirectory: true)
     }
 
+    /// Cover art copied in for non-Steam games, so the picture survives the
+    /// original file being moved or deleted.
+    static var customArtDirectory: URL {
+        applicationSupport.appendingPathComponent("CustomArt", isDirectory: true)
+    }
+
     static var metadataURL: URL {
         applicationSupport.appendingPathComponent("bottles.json")
     }

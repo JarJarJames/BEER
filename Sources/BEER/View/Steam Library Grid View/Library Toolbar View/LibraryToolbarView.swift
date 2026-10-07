@@ -4,6 +4,7 @@ struct LibraryToolbarView: View {
     @Binding var searchText: String
     let installedOnly: Bool
     let summary: String
+    var onAddNonSteamGame: () -> Void = {}
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var auth: SteamAuthStore
 
@@ -17,6 +18,11 @@ struct LibraryToolbarView: View {
             Text(summary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Button(action: onAddNonSteamGame) {
+                Label("Add Non-Steam Game", systemImage: "plus")
+            }
+            .labelStyle(.iconOnly)
+            .help("Add Non-Steam Game")
             Button {
                 Task { await library.fetchLibrary(auth: auth) }
             } label: {

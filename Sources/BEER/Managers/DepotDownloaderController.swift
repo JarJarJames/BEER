@@ -68,7 +68,7 @@ final class DepotDownloaderController: ObservableObject {
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
         let bottlePrefix = AppPaths.prefixURL(for: bottle)
-        let safe = sanitize(gameName)
+        let safe = gameName.safeGameFolderName
         let installDir = bottlePrefix
             .appendingPathComponent("drive_c", isDirectory: true)
             .appendingPathComponent("Games", isDirectory: true)
@@ -291,11 +291,5 @@ final class DepotDownloaderController: ObservableObject {
             lineHandler(scrub(leftover.value))
         }
         return result.exitCode
-    }
-
-    private func sanitize(_ s: String) -> String {
-        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: " -_."))
-        let mapped = s.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
-        return String(mapped).trimmingCharacters(in: CharacterSet(charactersIn: "_ ")).ifEmpty(default: "Game")
     }
 }

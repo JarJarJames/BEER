@@ -26,7 +26,7 @@ final class SteamLibraryStore: ObservableObject {
 
     func signOut() {
         account = .signedOut
-        games = []
+        games = games.filter(\.effectiveIsNonSteam)   // not tied to the account
         persist()
     }
 
@@ -56,7 +56,8 @@ final class SteamLibraryStore: ObservableObject {
 
         do {
             let fetched = try await fetchOwnedGamesViaClient(account: acct)
-            games = fetched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            let steamGames = fetched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+            games = steamGames + games.filter(\.effectiveIsNonSteam)
             persist()
         } catch {
             auth.noteCloudError(error)
@@ -72,31 +73,37 @@ final class SteamLibraryStore: ObservableObject {
 
         do {
             let fetched = try await fetchOwnedGamesViaClient(account: acct)
-            let fetchedAppIDs = Set(fetched.map(\.appID))
-            // Preserve installedBottleID associations.
-            var merged = fetched.map { fresh -> SteamLibraryGame in
-                if let existing = games.first(where: { $0.appID == fresh.appID }) {
-                    var updated = fresh
-                    updated.installedBottleID = existing.installedBottleID
-                    return updated
-                }
-                return fresh
-            }
-            // A game already installed here must never vanish from the list
-            // just because this particular fetch didn't include its appID —
-            // that would silently orphan a working bottle from the UI that
-            // launches it. Steam's owned-games response is the source of
-            // truth for everything else, but not for "is this uninstalled".
-            let stillInstalledButMissing = games.filter {
-                $0.installedBottleID != nil && !fetchedAppIDs.contains($0.appID)
-            }
-            merged.append(contentsOf: stillInstalledButMissing)
-            games = merged
+            games = Self.merge(existing: games, fetched: fetched)
             persist()
         } catch {
             auth?.noteCloudError(error)
             lastError = "Could not refresh library: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
         }
+    }
+
+    /// Fold a fresh owned-games fetch into the current list.
+    nonisolated static func merge(existing: [SteamLibraryGame], fetched: [SteamLibraryGame]) -> [SteamLibraryGame] {
+        let fetchedAppIDs = Set(fetched.map(\.appID))
+        // Preserve installedBottleID associations.
+        var merged = fetched.map { fresh -> SteamLibraryGame in
+            if let current = existing.first(where: { $0.appID == fresh.appID }) {
+                var updated = fresh
+                updated.installedBottleID = current.installedBottleID
+                return updated
+            }
+            return fresh
+        }
+        // A game already installed here must never vanish from the list
+        // just because this particular fetch didn't include its appID —
+        // that would silently orphan a working bottle from the UI that
+        // launches it. Steam's owned-games response is the source of
+        // truth for everything else, but not for "is this uninstalled".
+        merged.append(contentsOf: existing.filter {
+            !$0.effectiveIsNonSteam && $0.installedBottleID != nil && !fetchedAppIDs.contains($0.appID)
+        })
+        // Non-Steam games aren't in Steam's response at all.
+        merged.append(contentsOf: existing.filter(\.effectiveIsNonSteam))
+        return merged
     }
 
     private func fetchOwnedGamesViaClient(account acct: SteamCloudAccount) async throws -> [SteamLibraryGame] {
@@ -139,6 +146,33 @@ final class SteamLibraryStore: ObservableObject {
     func markUninstalled(appID: Int) {
         guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
         games[index].installedBottleID = nil
+        persist()
+    }
+
+    /// Add a game that lives outside Steam. Gets a negative placeholder appID,
+    /// which can't collide with a real one and is kept in the saved state so
+    /// the game keeps its identity across launches.
+    @discardableResult
+    func addNonSteamGame(name: String, bottleID: UUID, customImagePath: String?) -> SteamLibraryGame {
+        let taken = Set(games.map(\.appID))
+        var appID: Int
+        repeat { appID = -Int.random(in: 1...Int(Int32.max)) } while taken.contains(appID)
+        let game = SteamLibraryGame(
+            appID: appID, name: name, installedBottleID: bottleID,
+            isNonSteam: true, customImagePath: customImagePath
+        )
+        games.append(game)
+        games.sort { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        persist()
+        return game
+    }
+
+    func removeNonSteamGame(appID: Int) {
+        guard let game = games.first(where: { $0.appID == appID }), game.effectiveIsNonSteam else { return }
+        games.removeAll { $0.appID == appID }
+        if let path = game.customImagePath {
+            try? FileManager.default.removeItem(atPath: path)
+        }
         persist()
     }
 

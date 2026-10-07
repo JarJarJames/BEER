@@ -22,8 +22,12 @@ struct GameActionRow: View {
                         Label("Reveal Files", systemImage: "folder")
                     }
                     Divider()
-                    Button("Reinstall / Validate", action: model.startInstallOrLogin)
-                    Button("Uninstall", role: .destructive, action: model.uninstall)
+                    if model.game.effectiveIsNonSteam {
+                        Button("Remove Game…", role: .destructive, action: model.requestUninstall)
+                    } else {
+                        Button("Reinstall / Validate", action: model.startInstallOrLogin)
+                        Button("Uninstall", role: .destructive, action: model.requestUninstall)
+                    }
                 } label: {
                     Label("More", systemImage: "ellipsis")
                 }
@@ -43,6 +47,14 @@ struct GameActionRow: View {
                     model.cancelInstall(reason: "Cancelled.")
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
+                }
+                .controlSize(.large)
+            } else if model.game.effectiveIsNonSteam {
+                // The bottle is gone, so there is nothing left to launch.
+                Text("This game's files are missing.")
+                    .foregroundStyle(.white.opacity(0.78))
+                Button(role: .destructive, action: model.uninstall) {
+                    Label("Remove from Library", systemImage: "trash")
                 }
                 .controlSize(.large)
             } else {
