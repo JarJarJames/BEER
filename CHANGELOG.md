@@ -2,6 +2,43 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.5.0 — 2026-10-07
+
+Steam achievements, and a source tree that's easier to work in.
+
+### Added
+- **Steam achievements.** When BEER applies the Steam emulator to a game
+  (on install, or from the game's settings), it now seeds the emulator with
+  the game's real achievement list from Steam. While the game runs, BEER
+  watches for unlocks and shows a toast in its own always-on-top overlay
+  window, so it appears over the game rather than behind it, with a sound.
+  Each unlock is also pushed to your real Steam account. Unlocks that can't
+  reach Steam (offline, expired sign-in) are queued and retried the next
+  time BEER starts.
+- **Achievement testing tools.** On a game with the emulator applied, the
+  Steam emulator row's menu can unlock the next achievement locally and reset
+  the local test state, to try the toast and sync path without playing for
+  it. Resetting only clears BEER's local record; real Steam unlocks stay.
+
+### Changed
+- `swift build` and `swift run` now rebuild the CloudSync helper whenever its
+  sources change (a SwiftPM build-tool plugin), so the helper is always
+  current without running `scripts/build_cloudsync.sh` by hand.
+- **Source reorganized for contributors; no behavior change.** `Sources/BEER/`
+  is now grouped into `Managers/`, `Installers/`, `ViewModel/`, `Model/`,
+  `Utilities/`, `Extensions/`, `Constants/` and `View/`, with one type per
+  file and no file past about 300 lines. The 1,700-line game detail screen is
+  split into a view model plus one view per settings row, and the DLC
+  manager, runtime manager, library grid and both QR sign-in screens got the
+  same treatment. The folder map and placement rules are in
+  `PROJECT_STRUCTURE.md`, linked from `AGENTS.md`.
+
+### Fixed
+- **App freezing before a game starts.** The controller HID lookup and
+  helper launch are now capped at 3 seconds. A Bluetooth pad that stopped
+  answering could block the main thread indefinitely, hanging BEER before
+  Wine ever started.
+
 ## 0.4.2 — 2026-09-17
 
 ### Fixed
