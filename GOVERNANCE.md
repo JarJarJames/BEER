@@ -4,7 +4,7 @@ How decisions get made and how changes land in BEER.
 
 ## Roles
 
-- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames). Has final say
+- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames), on behalf of Widukind Technologies LLC. Has final say
   on scope and direction, and is currently the **only** person who can approve and
   merge pull requests into `master`. Reviews contributions but is stepping back
   from day-to-day development (see the README "Project status").

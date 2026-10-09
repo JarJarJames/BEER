@@ -118,6 +118,6 @@ channel to the maintainer.
 
 ## License
 
-[MIT](LICENSE). DepotDownloader, Goldberg/GBE, and Apple's Game Porting Toolkit
+[MIT](LICENSE), © Widukind Technologies LLC. DepotDownloader, Goldberg/GBE, and Apple's Game Porting Toolkit
 are fetched at runtime by the app and keep their own licenses — they are not
 redistributed in this repository.
