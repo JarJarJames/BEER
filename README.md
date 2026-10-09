@@ -73,6 +73,15 @@ It's still maintained, but **updates will be infrequent and support is limited**
 It's worked on in spare time, not on a schedule — expect slow responses on issues
 and pull requests, and don't depend on it for anything critical.
 
+### How it's built
+
+BEER began as an AI-generated prototype, just to get the game running. It has
+since become an experiment in steering AI coding tools within a consistent
+architecture: a documented layout (`PROJECT_STRUCTURE.md`), written rules for
+agents and contributors (`AGENTS.md`, `CONVENTIONS.md`), and an offline test
+suite that checks changes without a live Steam account. AI writes much of the
+code; a human directs the design and reviews it.
+
 **Maturity:** treat the current code as a working prototype, not a polished
 foundation. It runs, but it still needs real hardening — refactoring, test
 coverage, and architectural cleanup.
@@ -118,6 +127,6 @@ channel to the maintainer.
 
 ## License
 
-[MIT](LICENSE). DepotDownloader, Goldberg/GBE, and Apple's Game Porting Toolkit
+[MIT](LICENSE), © Widukind Technologies LLC. DepotDownloader, Goldberg/GBE, and Apple's Game Porting Toolkit
 are fetched at runtime by the app and keep their own licenses — they are not
 redistributed in this repository.

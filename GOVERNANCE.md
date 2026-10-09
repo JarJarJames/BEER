@@ -4,7 +4,7 @@ How decisions get made and how changes land in BEER.
 
 ## Roles
 
-- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames). Has final say
+- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames), on behalf of Widukind Technologies LLC. Has final say
   on scope and direction, and is currently the **only** person who can approve and
   merge pull requests into `master`. Reviews contributions but is stepping back
   from day-to-day development (see the README "Project status").
@@ -26,8 +26,8 @@ How decisions get made and how changes land in BEER.
 This project needs hands more than it needs gatekeeping. The path is informal and
 merit-based:
 
-1. Land a few solid, well-tested PRs (bug fixes or cleanup of the AI-generated
-   cruft are the fastest way to build trust).
+1. Land a few solid, well-tested PRs (bug fixes, tests, or tidying code that
+   doesn't yet follow `PROJECT_STRUCTURE.md` are the fastest way to build trust).
 2. Show good judgment in reviews and issues.
 3. Open an issue expressing interest (or comment on one you've contributed to).
 
