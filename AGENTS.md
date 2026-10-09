@@ -42,5 +42,5 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placemen
 - **Match the surrounding code** — naming, comment density, and idiom. Read
   `CONVENTIONS.md` before adding a new store/installer.
 - **You cannot merge.** All changes land via pull request and require the
-  maintainer's approval (`master` is protected). Open a PR; don't push to
-  `master`.
+  maintainer's approval (`master` is protected). Branch off `dev`, open the PR
+  against `dev`, and don't push to `master`.
