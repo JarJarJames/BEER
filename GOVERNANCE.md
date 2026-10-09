@@ -15,6 +15,8 @@ How decisions get made and how changes land in BEER.
 
 ## How changes land
 
+- Work lands in **`dev`**. `master` holds released code; the maintainer merges
+  `dev` into `master` when cutting a release.
 - `master` is **protected**. All changes go through a pull request — including the
   maintainer's own.
 - Every PR requires approval from a code owner (the maintainer) before it can

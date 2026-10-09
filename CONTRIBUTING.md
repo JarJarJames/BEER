@@ -40,8 +40,8 @@ swift run BEER          # run it
 
 ## Submitting a pull request
 
-1. Fork the repo and branch off `master`.
-2. Keep changes focused; one concern per PR.
+1. Fork the repo and branch off **`dev`** (not `master`).
+2. Keep changes focused; one concern per PR, and open it against `dev`.
 3. Make sure `swift build` succeeds. If you touched the helper, make sure
    `./scripts/build_cloudsync.sh` builds too.
 4. Describe **what** you changed and **how you tested it** (which game, which
