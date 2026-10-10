@@ -1,4 +1,4 @@
-# BEER
+# BEER (Bottled Executable Environment Runner)
 
 An experimental native macOS app that turns your Steam library into installable,
 per-game Wine bottles — with **bidirectional Steam Cloud save sync** so you can
