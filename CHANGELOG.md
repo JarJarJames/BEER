@@ -18,6 +18,14 @@ Notable changes to BEER. Versions follow the GitHub releases.
 - README rewritten around the architecture, cloud sync and security model,
   including a plain description of how and why the Steam emulator is used.
 
+### Fixed
+- **A cloud sync no longer runs if its save backup fails.** The backup
+  step's error was being ignored, so a sync on a full or unwritable disk
+  carried on and could overwrite local saves with no copy to go back to.
+  Now the sync stops before writing anything, says your saves are
+  untouched, and records why in `last-sync.log`. A game still launches
+  with its local saves if the pre-play pull stops this way.
+
 ### Security
 - Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam
   credentials (a Web API key before 0.2.1, then the refresh token) in

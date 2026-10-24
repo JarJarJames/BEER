@@ -4,7 +4,7 @@ extension CloudSyncEngine {
     /// Persist the per-file failure reasons so they can be inspected (the UI
     /// only shows a count). Lives next to the backups for this app.
     func writeFailureLog(appID: Int, report: CloudSyncReport, helperNotes: [String] = []) {
-        let dir = AppPaths.cloudSaveBackupsDirectory(forAppID: appID)
+        let dir = backupsDirectory(appID)
         let url = dir.appendingPathComponent("last-sync.log")
         var text = "Sync \(Date())\n"
         // Which helper actually ran. A stale binary shadowing the installed one
@@ -26,16 +26,29 @@ extension CloudSyncEngine {
         try? text.write(to: url, atomically: true, encoding: .utf8)
     }
 
-    /// Record a sync that failed before it got far enough to build a real
-    /// report (i.e. listing cloud files itself failed) — see the call site.
-    func writeAbortedSyncLog(appID: Int, reason: String) {
-        let dir = AppPaths.cloudSaveBackupsDirectory(forAppID: appID)
+    /// Record a sync that stopped before it got far enough to build a real
+    /// report: listing cloud files failed, or the backup did.
+    func writeAbortedSyncLog(appID: Int, stage: String, reason: String) {
+        let dir = backupsDirectory(appID)
         let url = dir.appendingPathComponent("last-sync.log")
         var text = "Sync \(Date())\n"
         text += "helper binary: \(CloudSyncClient.locateBinary()?.path ?? "not found")\n"
-        text += "FAILED before listing cloud files completed: \(reason)\n"
+        text += "FAILED while \(stage), before any file was written: \(reason)\n"
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         try? text.write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// Snapshot `dirs` before anything is written. A sync that can't make this
+    /// copy must not run: it is the only way back from a bad overwrite. The
+    /// failure is logged and rethrown as `CloudSyncError.backupFailed`.
+    func backUpBeforeWriting(appID: Int, dirs: Set<URL>, label: String) throws -> URL {
+        do {
+            return try snapshotBackup(appID: appID, dirs: dirs, label: label)
+        } catch {
+            let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            writeAbortedSyncLog(appID: appID, stage: "backing up local saves", reason: reason)
+            throw CloudSyncError.backupFailed(reason)
+        }
     }
 
     /// Copy every regular file under `dirs` into a fresh timestamped backup
@@ -44,7 +57,7 @@ extension CloudSyncEngine {
     func snapshotBackup(appID: Int, dirs: Set<URL>, label: String) throws -> URL {
         let fm = FileManager.default
         let stamp = Self.timestampFormatter.string(from: Date())
-        let root = AppPaths.cloudSaveBackupsDirectory(forAppID: appID)
+        let root = backupsDirectory(appID)
             .appendingPathComponent("\(stamp)-\(label)", isDirectory: true)
         var copiedAnything = false
         for dir in dirs where fm.fileExists(atPath: dir.path) {
@@ -58,7 +71,7 @@ extension CloudSyncEngine {
             copiedAnything = true
         }
         if !copiedAnything {
-            try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+            try fm.createDirectory(at: root, withIntermediateDirectories: true)
         }
         return root
     }
