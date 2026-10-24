@@ -1,30 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
 using SteamKit2;
 
-/// One achievement definition from a game's Steam stats schema.
-///
-/// `BlockStatId` is the stat_id to use when reading/writing this
-/// achievement's unlock bit — it comes from the schema's OWN numeric key for
-/// its containing "ACHIEVEMENTS"-type stat entry (see `SchemaParser` below),
-/// not from `ClientGetUserStatsResponse.achievement_blocks`. That response
-/// only lists blocks Steam already has server-side state for, which is
-/// EMPTY for an account/game that has never had a stat recorded — exactly
-/// the case for a fresh test account, and the bug that made the first
-/// version of this silently write nothing.
-public sealed record AchievementDef(
-    string Name,
-    string DisplayName,
-    string Description,
-    bool Hidden,
-    string? Icon,
-    string? IconGray,
-    uint BlockStatId,
-    int BitIndex);
-
-public sealed record StatDef(string Name, string Type, double Default);
+namespace CloudSync.Achievements;
 
 /// Parses the binary VDF "schema" blob `CMsgClientGetUserStatsResponse` returns.
 /// This is Valve's live UserGameStatsSchema layout (confirmed against a real
@@ -111,61 +87,4 @@ public static class SchemaParser
 
     static string? NullIfEmpty(string? s) => string.IsNullOrWhiteSpace(s) ? null : s;
     static string? FirstNonEmpty(params string?[] values) => values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
-}
-
-/// Turns the raw block/bit unlock state Steam reports (and the state we send
-/// back) into something the rest of the app can reason about by achievement
-/// name instead of by block/bit position.
-public static class AchievementState
-{
-    /// (stat_id, bit) -> unlock time, for every currently-unlocked
-    /// achievement Steam already has server-side state for. Keyed by the
-    /// block's real stat_id (not a positional index) since
-    /// `achievement_blocks` isn't guaranteed to list blocks in schema order,
-    /// and — the case that actually mattered here — it can be empty entirely
-    /// for an account/game with no stats ever recorded.
-    public static Dictionary<(uint StatId, int Bit), uint> UnlockTimes(
-        IReadOnlyList<(uint StatId, IReadOnlyList<uint> UnlockTime)> blocks)
-    {
-        var result = new Dictionary<(uint, int), uint>();
-        foreach (var block in blocks)
-            for (var bit = 0; bit < block.UnlockTime.Count; bit++)
-                if (block.UnlockTime[bit] != 0) result[(block.StatId, bit)] = block.UnlockTime[bit];
-        return result;
-    }
-
-    /// Builds the (stat_id, 32-bit mask) pairs to send back in
-    /// `CMsgClientStoreUserStats2.stats`: start from whatever Steam already
-    /// has recorded for each block (so nothing already unlocked, including
-    /// by the real Steam client, ever gets cleared), make sure every block
-    /// the SCHEMA defines has an entry to write into — even one Steam has
-    /// never recorded anything for, which is the normal state for a
-    /// brand-new account/game and must not be silently skipped — then set
-    /// the bits for `namesToUnlock`.
-    public static List<(uint StatId, uint Mask)> BuildBlockMasks(
-        IReadOnlyList<AchievementDef> achievements,
-        IReadOnlyList<(uint StatId, IReadOnlyList<uint> UnlockTime)> currentBlocks,
-        ISet<string> namesToUnlock)
-    {
-        var masks = new Dictionary<uint, uint>();
-        foreach (var block in currentBlocks)
-        {
-            uint mask = 0;
-            for (var bit = 0; bit < block.UnlockTime.Count; bit++)
-                if (block.UnlockTime[bit] != 0) mask |= 1u << bit;
-            masks[block.StatId] = mask;
-        }
-
-        foreach (var ach in achievements)
-            if (!masks.ContainsKey(ach.BlockStatId))
-                masks[ach.BlockStatId] = 0;
-
-        foreach (var ach in achievements)
-        {
-            if (!namesToUnlock.Contains(ach.Name)) continue;
-            masks[ach.BlockStatId] |= 1u << ach.BitIndex;
-        }
-
-        return masks.Select(kv => (kv.Key, kv.Value)).ToList();
-    }
 }

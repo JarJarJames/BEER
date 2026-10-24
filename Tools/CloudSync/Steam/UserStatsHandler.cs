@@ -1,9 +1,8 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.Internal;
+
+namespace CloudSync.Steam;
 
 /// Raw client-protocol handler for real Steam achievement/stat state.
 ///
