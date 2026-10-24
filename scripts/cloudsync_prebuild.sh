@@ -20,7 +20,11 @@ INSTALLED_FALLBACK="$HOME/Library/Application Support/BEER/CloudSync/CloudSync"
 echo "Rebuilding CloudSync helper (dev build, sources changed)…"
 mkdir -p "$OUT_DIR/publish"
 
+# --disable-build-servers: otherwise dotnet leaves a compiler server running
+# that inherits SwiftPM's output pipe. SwiftPM waits for that pipe to close,
+# so the whole build hangs until the server's ~10 minute idle timeout.
 dotnet publish "$PROJ/CloudSync.csproj" \
+    --disable-build-servers \
     -c Release \
     -r osx-arm64 \
     --self-contained true \
