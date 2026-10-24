@@ -17,6 +17,10 @@ Notable changes to BEER. Versions follow the GitHub releases.
   real Steam account; release builds no longer offer it.
 - README rewritten around the architecture, cloud sync and security model,
   including a plain description of how and why the Steam emulator is used.
+- Errors that were silently ignored in cloud sync, sign-in, downloads,
+  achievements and play sessions now go to the macOS unified log. Filter
+  Console.app on `io.github.jarjarjames.beer`. Paths and account details are
+  redacted in the log.
 
 ### Fixed
 - **A cloud sync no longer runs if its save backup fails.** The backup
@@ -25,6 +29,12 @@ Notable changes to BEER. Versions follow the GitHub releases.
   Now the sync stops before writing anything, says your saves are
   untouched, and records why in `last-sync.log`. A game still launches
   with its local saves if the pre-play pull stops this way.
+- **DepotDownloader's temporary credential cache can no longer be lost
+  track of.** If deleting it failed, BEER still erased its record of where
+  the cache was, so the crash-recovery cleanup could never find it again.
+  The record now stays until the cache is really gone.
+- "Back up & clear local saves" reports a folder it couldn't delete instead
+  of saying the saves were cleared.
 
 ### Security
 - Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam

@@ -78,8 +78,11 @@ final class CloudSyncEngine: ObservableObject {
         let backup = try backUpBeforeWriting(appID: appID, dirs: trackedDirs, label: "before-clear")
 
         phase = "Clearing local saves…"
-        for dir in trackedDirs where FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.removeItem(at: dir)
+        // The backup above already holds a copy, so a failure here is safe to
+        // report. Swallowing it would claim the saves were cleared when they
+        // weren't.
+        for dir in trackedDirs {
+            try FileManager.default.removeItemIfPresent(at: dir)
         }
         phase = "Local saves cleared. Backup saved."
         lastSyncAt = Date()

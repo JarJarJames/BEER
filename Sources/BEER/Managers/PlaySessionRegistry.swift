@@ -11,13 +11,17 @@ enum PlaySessionRegistry {
     private struct Record: Codable { let pid: Int32 }
 
     static func record(pid: Int32) {
-        try? AppPaths.ensureBaseDirectories()
-        guard let data = try? JSONEncoder().encode(Record(pid: pid)) else { return }
-        try? data.write(to: AppPaths.playSessionStateURL, options: .atomic)
+        // Without the record, a helper BEER loses track of can't be swept.
+        attempt("record the presence helper's PID", log: Log.session) {
+            try AppPaths.ensureBaseDirectories()
+            try JSONEncoder().encode(Record(pid: pid)).write(to: AppPaths.playSessionStateURL, options: .atomic)
+        }
     }
 
     static func clear() {
-        try? FileManager.default.removeItem(at: AppPaths.playSessionStateURL)
+        attempt("clear the presence helper's PID record", log: Log.session) {
+            try FileManager.default.removeItemIfPresent(at: AppPaths.playSessionStateURL)
+        }
     }
 
     /// Stop a helper left behind by a previous run. Confirms the PID still

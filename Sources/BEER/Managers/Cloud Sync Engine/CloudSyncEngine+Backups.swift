@@ -22,8 +22,10 @@ extension CloudSyncEngine {
             text += "\nhelper:\n"
             for note in helperNotes { text += "  \(note)\n" }
         }
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        attempt("write last-sync.log", log: Log.cloudSync) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Record a sync that stopped before it got far enough to build a real
@@ -34,8 +36,10 @@ extension CloudSyncEngine {
         var text = "Sync \(Date())\n"
         text += "helper binary: \(CloudSyncClient.locateBinary()?.path ?? "not found")\n"
         text += "FAILED while \(stage), before any file was written: \(reason)\n"
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        try? text.write(to: url, atomically: true, encoding: .utf8)
+        attempt("write last-sync.log", log: Log.cloudSync) {
+            try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+            try text.write(to: url, atomically: true, encoding: .utf8)
+        }
     }
 
     /// Snapshot `dirs` before anything is written. A sync that can't make this
@@ -46,6 +50,7 @@ extension CloudSyncEngine {
             return try snapshotBackup(appID: appID, dirs: dirs, label: label)
         } catch {
             let reason = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+            Log.cloudSync.error("Backup before writing saves for app \(appID, privacy: .public) failed; sync stopped: \(reason)")
             writeAbortedSyncLog(appID: appID, stage: "backing up local saves", reason: reason)
             throw CloudSyncError.backupFailed(reason)
         }

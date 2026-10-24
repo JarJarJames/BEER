@@ -45,15 +45,20 @@ enum AchievementSyncQueue {
     }
 
     private static func load() -> [Pending] {
-        guard let data = try? Data(contentsOf: fileURL),
-              let decoded = try? JSONDecoder().decode([Pending].self, from: data)
-        else { return [] }
-        return decoded
+        // No file means nothing is queued.
+        guard let data = try? Data(contentsOf: fileURL) else { return [] }
+        // A file that won't decode drops every queued unlock, so log it.
+        return attempt("decode the achievement retry queue", log: Log.achievements) {
+            try JSONDecoder().decode([Pending].self, from: data)
+        } ?? []
     }
 
     private static func save(_ pending: [Pending]) {
-        guard let data = try? JSONEncoder().encode(pending) else { return }
-        try? FileManager.default.createDirectory(at: AppPaths.applicationSupport, withIntermediateDirectories: true)
-        try? data.write(to: fileURL, options: .atomic)
+        // Unlocks that can't reach Steam only survive a relaunch through this file.
+        attempt("save the achievement retry queue", log: Log.achievements) {
+            let data = try JSONEncoder().encode(pending)
+            try FileManager.default.createDirectory(at: AppPaths.applicationSupport, withIntermediateDirectories: true)
+            try data.write(to: fileURL, options: .atomic)
+        }
     }
 }
