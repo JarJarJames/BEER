@@ -32,7 +32,7 @@ It does NOT run the real Steam client (that path is a dead end on GPTK — see �
 
 Two halves:
 - **Swift app** (`Sources/BEER/`) — UI, bottle management, install/launch, sync orchestration.
-- **CloudSync helper** (`Tools/CloudSync/`, C# / .NET 9 / SteamKit2) — speaks the real Steam *client* protocol for auth, owned-games, and cloud read/write. See `Tools/CloudSync/README.md`.
+- **CloudSync helper** (`Tools/CloudSync/`, C# / .NET 9 / SteamKit2) — speaks the real Steam *client* protocol for auth, owned-games, and cloud read/write. One class per command; offline xUnit tests in `Tools/CloudSync.Tests/`. See `Tools/CloudSync/README.md`.
 
 ## 3. Code map (Swift)
 

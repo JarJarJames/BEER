@@ -14,6 +14,8 @@ BEER/
 ├── Sources/                   Swift source (see below)
 ├── Tests/BEERTests/           Offline unit tests
 ├── Tools/CloudSync/           Native Steam-client helper (C# / .NET 9 / SteamKit2)
+├── Tools/CloudSync.Tests/     Offline xUnit tests for the helper
+├── .editorconfig              C# style rules, checked in CI
 ├── Plugins/CloudSyncPrebuild/ SwiftPM build-tool plugin that rebuilds the helper
 └── scripts/                   Build and dev helper scripts
 ```
@@ -53,6 +55,36 @@ Managers/Bottle Store/
 ```
 
 `CloudSyncClient`, `CloudSyncEngine`, `ControllerSupport` (in `Managers/`) and `GameDetailViewModel` (in `ViewModel/`) are split the same way. Stored properties can't live in extensions, so they stay in the main file; members the extensions share are internal, not `private`.
+
+## C# helper (`Tools/CloudSync/`)
+
+The helper is a command-line program: one invocation runs one command and prints JSON. It is grouped **by role**, like `Sources/BEER/`, and every folder is also a namespace (`Commands/Presence/` is `CloudSync.Commands.Presence`).
+
+| Folder | What lives here | What does *not* |
+|---|---|---|
+| `Program.cs` | `Main`: parse arguments, log on once, dispatch to a command, turn exceptions into the JSON error envelope | Command logic |
+| `Cli/` | Argument parsing (`CliArgs`) and the one stdout writer (`JsonOutput`) | Anything that talks to Steam |
+| `Steam/` | The logged-on session and protocol plumbing: `SteamSession`, `LogonFailedException`, `UserStatsHandler` | Command-specific behavior |
+| `Commands/` | One class per CLI command (`DlcCommand`, `BatchCommand`, …), each with a `RunAsync` entry point. A command that outgrows one file gets a folder (`Presence/`) | Helpers more than one command needs (those go to the role folder that fits) |
+| `Transfers/` | Steam Cloud file download/upload and unwrapping (`CloudTransfers`, `CloudFileUnwrapper`) | Command parsing or output |
+| `Achievements/` | The stats-schema parser and the records it produces | Network calls |
+
+Tests live in `Tools/CloudSync.Tests/`, in folders that mirror the helper's (`Transfers/CloudFileUnwrapperTests.cs` tests `Transfers/CloudFileUnwrapper.cs`).
+
+### C# conventions
+
+These follow [Microsoft's C# coding conventions](https://learn.microsoft.com/dotnet/csharp/fundamentals/coding-style/coding-conventions). The ones marked *(CI)* are in `.editorconfig` and fail `dotnet format --verify-no-changes`.
+
+1. **One type per file, named after the type.** Records, exceptions and settings classes count.
+2. **Keep files under about 300 lines**, as in Swift. A class that outgrows that becomes `partial` across files named `Type.Purpose.cs` (`PresenceSession.Keepalive.cs`), the C# form of `Type+Purpose.swift`.
+3. **File-scoped namespaces that match the folder** *(CI)*.
+4. **`using` directives outside the namespace, `System` first** *(CI)*.
+5. **Allman braces, four-space indents** *(CI)*.
+6. **Names:** PascalCase for types, methods and properties; `_camelCase` for private fields; PascalCase for constants and `static readonly` fields; async methods end in `Async` *(CI)*. Test methods are exempt from the `Async` suffix.
+7. **Commands keep their contract.** Command names, flags, JSON keys and exit codes are read by `CloudSyncClient` in Swift. Changing one is a change on both sides, with a Swift parsing test.
+8. **One logon per process.** A command never opens a second `SteamSession`; see `Tools/CloudSync/README.md`.
+9. **Warnings are errors in CI** (`-warnaserror`), nullable annotations included.
+10. **Tests are offline.** They never construct a `SteamClient` or touch the network. Logic worth testing gets pulled into a pure method (`CloudFileUnwrapper.Unwrap`) rather than tested through a session.
 
 ## Views (`View/`)
 
@@ -117,3 +149,5 @@ A view describes layout and reads state. A screen with logic gets a view model i
 | A new data type or error | `Model/<Name>.swift` |
 | A string or number | `Constants/` |
 | A test | `Tests/BEERTests/`, offline only |
+| A new helper command | `Tools/CloudSync/Commands/<Name>Command.cs`, a `case` in `Program.cs`, a row in `Tools/CloudSync/README.md` |
+| A helper test | `Tools/CloudSync.Tests/<same folder as the code>/`, offline only |

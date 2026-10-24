@@ -146,8 +146,15 @@ Steam account. It mocks the boundary between the app and its helpers and covers:
 - achievement unlock detection
 - bottle migration
 - non-Steam games
+- the dependency installer's manifest and detection
 
-Anything that touches account state gets an offline test alongside it.
+`dotnet test Tools/CloudSync.Tests` runs the helper's xUnit suite, also offline. It
+covers argument parsing, how logon failures are classified (rate limit or
+re-sign-in), unwrapping Steam's zipped cloud files, the achievement schema, and
+the helper's exit codes and JSON errors.
+
+CI runs both suites on every pull request, plus release builds and a C# style
+check. Anything that touches account state gets an offline test alongside it.
 
 ## Known limitations
 
@@ -176,7 +183,8 @@ Toolkit runtime, which is large.
 ```bash
 swift build                      # compile
 swift run BEER                   # run
-swift test                       # offline test suite
+swift test                       # offline app tests
+dotnet test Tools/CloudSync.Tests  # offline helper tests
 scripts/build_app.sh 0.5.2       # → .build/BEER.app + .build/BEER.zip
 ```
 
