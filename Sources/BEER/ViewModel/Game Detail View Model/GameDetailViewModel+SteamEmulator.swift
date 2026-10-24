@@ -43,6 +43,7 @@ extension GameDetailViewModel {
         }
     }
 
+    #if DEBUG
     /// Manually mark the next not-yet-earned achievement "earned" in the
     /// local gbe_fork save file — a real, user-triggered click, not a
     /// background write. Exercises the exact same watcher/toast/Steam-sync
@@ -95,6 +96,7 @@ extension GameDetailViewModel {
         patchStatusMessage = "Cleared local test-achievement state — click \"Test: unlock next achievement\" to start over. Your real Steam unlocks are untouched."
         patchStatusIsError = false
     }
+    #endif
 
     func applyGoldbergPatch(to bottle: Bottle) {
         guard let installDir = bottle.resolvedInstallDirectory else {

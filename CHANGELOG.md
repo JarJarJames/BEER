@@ -2,6 +2,22 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Changed
+- The Steam emulator row's **Test: unlock next achievement** and **Test:
+  reset local unlocks** tools are now only in development builds. A test
+  unlock goes through the same path as a real one, so it would reach the
+  real Steam account; release builds no longer offer it.
+- README rewritten around the architecture, cloud sync and security model,
+  including a plain description of how and why the Steam emulator is used.
+
+### Security
+- Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam
+  credentials (a Web API key before 0.2.1, then the refresh token) in
+  plaintext files. Current builds keep the token in the Keychain. See
+  `SECURITY.md` for what to do if you used an old build.
+
 ## 0.5.1 — 2026-10-07
 
 Non-Steam games, in testing.
