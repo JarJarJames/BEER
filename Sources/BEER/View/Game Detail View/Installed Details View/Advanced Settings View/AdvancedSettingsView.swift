@@ -44,6 +44,8 @@ struct AdvancedSettingsView: View {
 
             EnvironmentRow(bottleID: bottleID, bottle: liveBottle)
 
+            DependenciesRow(bottle: liveBottle)
+
             Divider()
 
             if let exe = liveBottle.gameLaunchExecutable {

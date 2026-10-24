@@ -28,7 +28,7 @@ The `BEER` target (`Sources/BEER/`) is grouped **by role**, with one exception: 
 |---|---|---|
 | `BEERApp.swift`, `AppDelegate.swift` | App entry point and app-delegate hooks | Feature code |
 | `Managers/` | Long-lived objects with state or side effects: stores (`BottleStore`, `SteamLibraryStore`, `DLCStore`, `DownloadsStore`, `SteamAuthStore`, `SteamPresenceStore`), `CloudSyncEngine`, `CloudSyncClient`, `AchievementWatcher`, `DepotDownloaderController`, `ToolchainDetector`, ... | Views, pure helpers |
-| `Installers/` | Things that download/install or patch components: `RuntimeInstaller`, `GraphicsTranslatorInstaller`, `GoldbergInstaller`, `GoldbergApplicator`, `DepotDownloaderInstaller` | Long-lived app state (that's a Manager) |
+| `Installers/` | Things that download/install or patch components: `RuntimeInstaller`, `GraphicsTranslatorInstaller`, `GoldbergInstaller`, `GoldbergApplicator`, `DepotDownloaderInstaller`, `WindowsDependencyInstaller` | Long-lived app state (that's a Manager) |
 | `ViewModel/` | State and actions for one screen or sheet (`GameDetailViewModel`, `DLCManagerViewModel`, `SteamQRAuthViewModel`, `SteamLibraryGridViewModel`, `EnvironmentEditorViewModel`) | Layout, or state shared by the whole app (that's a Manager) |
 | `Model/` | Data types, one per file: structs, enums, errors, reports. A type nested in a manager lives here as `Owner.Name.swift` | Logic that talks to the network or disk |
 | `Utilities/` | Stateless helpers and small concurrency boxes: `ShellRunner`, `Keychain`, `AppPaths`, `QRCodeGenerator`, the digests, `RuntimeBundle` | Anything holding long-lived state |
@@ -70,7 +70,7 @@ View/
 │   ├── Installed Details View/        One folder per settings row
 │   │   ├── Runtime Row/, Graphics Row/, Display Mode Row/, Controller Fix Row/,
 │   │   │   Launch Arguments Row/, Steam Emulator Row/, DLC Row/, Steam Cloud Row/
-│   │   └── Advanced Settings View/ -> Environment Row/, Wine Log View/, Labeled Value/
+│   │   └── Advanced Settings View/ -> Environment Row/, Dependencies Row/, Wine Log View/, Labeled Value/
 │   ├── Settings Row/                  Shared by every row above
 │   ├── DLC Manager View/ -> DLC Manager Row/, DLC Manager Footer/, ...
 │   └── Steam Cloud QR Sheet/

@@ -110,6 +110,12 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("Translators", isDirectory: true)
     }
 
+    /// Verified Microsoft redistributables (VC++, DirectX), kept so a second
+    /// bottle doesn't download them again. Re-hashed before every use.
+    static var dependenciesDirectory: URL {
+        applicationSupport.appendingPathComponent("Dependencies", isDirectory: true)
+    }
+
     /// DepotDownloader's raw output for the most recent run of an app, kept so a
     /// failed install can be diagnosed after the in-memory Downloads row is gone.
     static func depotDownloaderLogURL(forAppID appID: Int) -> URL {
