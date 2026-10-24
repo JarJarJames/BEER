@@ -1,0 +1,70 @@
+# C# style for the .NET helpers under Tools/. Follows Microsoft's C# coding
+# conventions (learn.microsoft.com/dotnet/csharp/fundamentals/coding-style).
+# CI runs `dotnet format --verify-no-changes`, so anything set to `warning`
+# here fails the build. Swift files are not covered; see PROJECT_STRUCTURE.md.
+root = true
+
+[*.cs]
+charset = utf-8
+indent_style = space
+indent_size = 4
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Usings: System first, outside the namespace.
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:warning
+
+# One namespace per file, file-scoped, matching the folder.
+csharp_style_namespace_declarations = file_scoped:warning
+dotnet_diagnostic.IDE0161.severity = warning
+dotnet_style_namespace_match_folder = true
+dotnet_diagnostic.IDE0130.severity = warning
+
+# Allman braces, four-space indents.
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# Language keywords over runtime type names (string, not String).
+dotnet_style_predefined_type_for_locals_parameters_members = true:warning
+dotnet_diagnostic.IDE0049.severity = warning
+
+# Private fields are _camelCase; everything else public-facing is PascalCase.
+dotnet_naming_rule.private_fields_underscore.severity = warning
+dotnet_naming_rule.private_fields_underscore.symbols = private_fields
+dotnet_naming_rule.private_fields_underscore.style = underscore_camel
+dotnet_naming_symbols.private_fields.applicable_kinds = field
+dotnet_naming_symbols.private_fields.applicable_accessibilities = private
+dotnet_naming_symbols.private_fields.required_modifiers =
+dotnet_naming_style.underscore_camel.capitalization = camel_case
+dotnet_naming_style.underscore_camel.required_prefix = _
+
+# Constants and static readonly fields are PascalCase (checked before the
+# private-field rule above, which would otherwise claim them).
+dotnet_naming_rule.constants_pascal.severity = warning
+dotnet_naming_rule.constants_pascal.symbols = constants
+dotnet_naming_rule.constants_pascal.style = pascal
+dotnet_naming_rule.constants_pascal.priority = 1
+dotnet_naming_symbols.constants.applicable_kinds = field
+dotnet_naming_symbols.constants.required_modifiers = const
+dotnet_naming_rule.static_readonly_pascal.severity = warning
+dotnet_naming_rule.static_readonly_pascal.symbols = static_readonly
+dotnet_naming_rule.static_readonly_pascal.style = pascal
+dotnet_naming_rule.static_readonly_pascal.priority = 2
+dotnet_naming_symbols.static_readonly.applicable_kinds = field
+dotnet_naming_symbols.static_readonly.required_modifiers = static, readonly
+dotnet_naming_rule.private_fields_underscore.priority = 3
+dotnet_naming_style.pascal.capitalization = pascal_case
+
+# Async methods end in Async.
+dotnet_naming_rule.async_methods_end_in_async.severity = warning
+dotnet_naming_rule.async_methods_end_in_async.symbols = async_methods
+dotnet_naming_rule.async_methods_end_in_async.style = ends_in_async
+dotnet_naming_rule.async_methods_end_in_async.priority = 4
+dotnet_naming_symbols.async_methods.applicable_kinds = method
+dotnet_naming_symbols.async_methods.required_modifiers = async
+dotnet_naming_style.ends_in_async.capitalization = pascal_case
+dotnet_naming_style.ends_in_async.required_suffix = Async

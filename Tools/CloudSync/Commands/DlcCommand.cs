@@ -1,6 +1,6 @@
-using SteamKit2;
 using CloudSync.Cli;
 using CloudSync.Steam;
+using SteamKit2;
 
 namespace CloudSync.Commands;
 
@@ -21,9 +21,9 @@ static class DlcCommand
 
         // Independent of everything below, and gated on a push Steam sends just
         // after logon — kick it off first and collect it once the DLC ids are known.
-        var ownedTask = OwnedAppIds(s, apps);
+        var ownedTask = OwnedAppIdsAsync(s, apps);
 
-        var baseInfo = await RequestAppInfo(apps, new[] { appid });
+        var baseInfo = await RequestAppInfoAsync(apps, new[] { appid });
         if (!baseInfo.TryGetValue(appid, out var baseApp) || baseApp is null)
             throw new Exception($"Steam returned no app info for {appid}");
 
@@ -50,7 +50,7 @@ static class DlcCommand
             if (tag != KeyValue.Invalid && uint.TryParse(tag.Value, out var id)) AddDlc(id);
         }
 
-        var dlcInfo = await RequestAppInfo(apps, dlcIds);
+        var dlcInfo = await RequestAppInfoAsync(apps, dlcIds);
         var owned = await ownedTask;
 
         var result = new List<object>();
@@ -74,7 +74,7 @@ static class DlcCommand
     }
 
     /// Every appid granted by the packages this account holds a licence for.
-    static async Task<HashSet<uint>> OwnedAppIds(SteamSession s, SteamApps apps)
+    static async Task<HashSet<uint>> OwnedAppIdsAsync(SteamSession s, SteamApps apps)
     {
         var licenses = await s.LicensesAsync();
         var requests = licenses
@@ -105,7 +105,7 @@ static class DlcCommand
 
     /// PICS product info for a set of apps, keyed by appid. Access tokens are
     /// fetched first because most non-public app info is gated behind one.
-    static async Task<Dictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>> RequestAppInfo(
+    static async Task<Dictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>> RequestAppInfoAsync(
         SteamApps apps, IEnumerable<uint> appIds)
     {
         var ids = appIds.Distinct().ToList();

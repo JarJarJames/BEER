@@ -53,26 +53,26 @@ sealed class SteamSession : IDisposable
         {
             try
             {
-            while (!token.IsCancellationRequested)
-            {
-                // A throwing handler must never take the pump down with it.
-                // Unguarded, one bad callback silently ends callback delivery
-                // for the rest of the session: the connection still looks alive
-                // and commands still appear to work, but nothing Steam sends
-                // back — persona updates, disconnects, logoff reasons — is ever
-                // seen again. Short-lived commands got away with it; a session
-                // that runs for hours does not.
-                try
+                while (!token.IsCancellationRequested)
                 {
-                    cb.RunWaitCallbacks(TimeSpan.FromMilliseconds(200));
-                    Interlocked.Increment(ref PumpIterations);
+                    // A throwing handler must never take the pump down with it.
+                    // Unguarded, one bad callback silently ends callback delivery
+                    // for the rest of the session: the connection still looks alive
+                    // and commands still appear to work, but nothing Steam sends
+                    // back — persona updates, disconnects, logoff reasons — is ever
+                    // seen again. Short-lived commands got away with it; a session
+                    // that runs for hours does not.
+                    try
+                    {
+                        cb.RunWaitCallbacks(TimeSpan.FromMilliseconds(200));
+                        Interlocked.Increment(ref PumpIterations);
+                    }
+                    catch (Exception ex)
+                    {
+                        Interlocked.Increment(ref PumpFaults);
+                        try { Console.Error.WriteLine($"callback handler threw: {ex}"); } catch { }
+                    }
                 }
-                catch (Exception ex)
-                {
-                    Interlocked.Increment(ref PumpFaults);
-                    try { Console.Error.WriteLine($"callback handler threw: {ex}"); } catch { }
-                }
-            }
             }
             finally { Console.Error.WriteLine($"callback pump stopped after {PumpIterations} iterations."); }
         });

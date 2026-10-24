@@ -1,8 +1,8 @@
 using System.Text.Json;
-using SteamKit2;
 using CloudSync.Achievements;
 using CloudSync.Cli;
 using CloudSync.Steam;
+using SteamKit2;
 
 namespace CloudSync.Commands;
 

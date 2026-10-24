@@ -1,6 +1,6 @@
-using SteamKit2;
 using CloudSync.Cli;
 using CloudSync.Steam;
+using SteamKit2;
 
 namespace CloudSync.Commands.Presence;
 

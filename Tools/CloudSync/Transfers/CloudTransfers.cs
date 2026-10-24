@@ -1,7 +1,7 @@
 using System.Security.Cryptography;
+using CloudSync.Steam;
 using SteamKit2;
 using SteamKit2.Internal;
-using CloudSync.Steam;
 
 namespace CloudSync.Transfers;
 
