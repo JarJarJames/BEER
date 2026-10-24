@@ -2,6 +2,15 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Added
+- **Dependencies** in a game's Advanced settings: one-click install of the
+  Visual C++ 2015–2026 runtime (x86 + x64) and the DirectX June 2010 runtime
+  into that game's bottle. Files come only from Microsoft and are checked
+  against a pinned SHA-256 before they run. Runtimes already in the bottle,
+  including ones installed with winetricks, show as installed.
+
 ## 0.5.1 — 2026-10-07
 
 Non-Steam games, in testing.

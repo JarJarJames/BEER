@@ -11,6 +11,9 @@ extension BottleStore {
         )
     }
 
+    /// Returns the command's exit code, or nil if it never ran (the bottle was
+    /// busy, or the process could not be started).
+    @discardableResult
     func runBottleCommand(
         _ bottle: Bottle,
         operation: String,
@@ -18,11 +21,12 @@ extension BottleStore {
         allowWhileActive: Bool = false,
         environmentOverrides: [String: String] = [:],
         workingDirectory: URL? = nil
-    ) async {
-        guard allowWhileActive || !activeBottleIDs.contains(bottle.id) else { return }
+    ) async -> Int32? {
+        guard allowWhileActive || !activeBottleIDs.contains(bottle.id) else { return nil }
 
         activeBottleIDs.insert(bottle.id)
         appendLog("\(operation)...", bottleID: bottle.id)
+        var exitCode: Int32?
 
         do {
             try AppPaths.ensureBaseDirectories()
@@ -50,6 +54,7 @@ extension BottleStore {
                 }
             )
 
+            exitCode = result.exitCode
             if result.exitCode == 0 {
                 appendLog("\(operation) finished.", bottleID: bottle.id)
             } else {
@@ -61,6 +66,7 @@ extension BottleStore {
         }
 
         activeBottleIDs.remove(bottle.id)
+        return exitCode
     }
 
     func command(for bottle: Bottle, prefix: URL, mode: BottleCommandMode) -> BottleCommand {
