@@ -11,9 +11,11 @@ enum PlaySessionLog {
 
     static func start() {
         lock.withLock {
-            try? AppPaths.ensureBaseDirectories()
             let header = "=== presence session — \(Date()) ===\n"
-            try? header.write(to: AppPaths.playSessionLogURL, atomically: true, encoding: .utf8)
+            attempt("start the presence session log", log: Log.session) {
+                try AppPaths.ensureBaseDirectories()
+                try header.write(to: AppPaths.playSessionLogURL, atomically: true, encoding: .utf8)
+            }
         }
     }
 
@@ -24,6 +26,9 @@ enum PlaySessionLog {
                 .map { "\(Date().formatted(date: .omitted, time: .standard))  \($0)\n" }
                 .joined()
             guard !stamped.isEmpty, let data = stamped.data(using: .utf8) else { return }
+            // Deliberately plain try?: this runs for every line the helper
+            // prints, so a broken disk would flood the system log. start()
+            // already reports a log file that can't be created.
             if let handle = try? FileHandle(forWritingTo: AppPaths.playSessionLogURL) {
                 defer { try? handle.close() }
                 _ = try? handle.seekToEnd()
