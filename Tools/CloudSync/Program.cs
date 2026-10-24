@@ -768,7 +768,8 @@ static class Program
                 $"total_files={resp.Body?.total_files.ToString() ?? "null"}");
             if (resp.Result != EResult.OK)
                 throw new Exception($"EnumerateUserFiles failed: {resp.Result}");
-            foreach (var f in resp.Body.files)
+            var body = resp.Body ?? throw new Exception($"enumerate page {page}: Steam returned OK with no body");
+            foreach (var f in body.files)
             {
                 files.Add(new Dictionary<string, object?>
                 {
@@ -779,8 +780,8 @@ static class Program
                     ["ugcid"] = f.ugcid.ToString(),
                 });
             }
-            startIndex += (uint)resp.Body.files.Count;
-            if (resp.Body.files.Count == 0 || startIndex >= resp.Body.total_files) break;
+            startIndex += (uint)body.files.Count;
+            if (body.files.Count == 0 || startIndex >= body.total_files) break;
         }
         Console.Error.WriteLine($"enumerate: {files.Count} files total, serializing…");
         var json = JsonSerializer.Serialize(new Dictionary<string, object?> { ["files"] = files });

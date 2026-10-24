@@ -1,5 +1,7 @@
 # BEER (Bottled Executable Environment Runner)
 
+[![CI](https://github.com/JarJarJames/BEER/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/JarJarJames/BEER/actions/workflows/ci.yml)
+
 BEER is a native macOS Steam library client for Apple Silicon. You sign in with
 the Steam Mobile App. BEER downloads the games your account owns, gives each one
 its own Wine bottle on Apple's Game Porting Toolkit, and syncs saves both ways
