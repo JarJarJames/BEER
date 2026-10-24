@@ -3,8 +3,9 @@
 BEER is a native macOS Steam library client for Apple Silicon. You sign in with
 the Steam Mobile App. BEER downloads the games your account owns, gives each one
 its own Wine bottle on Apple's Game Porting Toolkit, and syncs saves both ways
-with Steam Cloud. I built it to play **Kingdom Come: Deliverance** on my MacBook
-and pick up the same 60-hour save I left on my Windows PC. It does that now.
+with Steam Cloud. I built it to play **Kingdom Come: Deliverance** and
+**Kingdom Come: Deliverance II** on my MacBook and continue from the saves I left
+on my Windows PC. Both games now run on my Mac with their saves synced.
 Most of the work went into the parts that touch Steam: one Swift app driving
 a small SteamKit2 helper over a JSON CLI, a save sync that backs up before
 every write, and a logon strategy that stays clear of Steam's rate limits.
