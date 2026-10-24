@@ -68,3 +68,7 @@ dotnet_naming_symbols.async_methods.applicable_kinds = method
 dotnet_naming_symbols.async_methods.required_modifiers = async
 dotnet_naming_style.ends_in_async.capitalization = pascal_case
 dotnet_naming_style.ends_in_async.required_suffix = Async
+
+# Test methods are named for the behavior they check, not for being async.
+[Tools/CloudSync.Tests/**.cs]
+dotnet_naming_rule.async_methods_end_in_async.severity = none

@@ -18,4 +18,8 @@
     <Compile Remove="bin/**;obj/**;publish/**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudSync.Tests" />
+  </ItemGroup>
+
 </Project>

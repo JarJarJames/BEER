@@ -34,7 +34,7 @@ namespace CloudSync;
 
 static class Program
 {
-    static async Task<int> Main(string[] rawArgs)
+    internal static async Task<int> Main(string[] rawArgs)
     {
         var args = CliArgs.Parse(rawArgs);
         if (rawArgs.Length == 0 || !args.TryGetValue("_cmd", out var cmd))
