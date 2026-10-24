@@ -9,7 +9,7 @@ Most of the work went into the parts that touch Steam: one Swift app driving
 a small SteamKit2 helper over a JSON CLI, a save sync that backs up before
 every write, and a logon strategy that stays clear of Steam's rate limits.
 
-<!-- Screenshot / GIF: library view and a game page. Add as docs/screenshot.png. -->
+![BEER's game page for Kingdom Come: Deliverance II, showing its runtime, Steam emulator, DLC and Steam Cloud settings](docs/screenshot.png)
 
 > **Apple Silicon (M1+) and macOS 14+.** Intel Macs aren't supported.
 
