@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
@@ -9,6 +9,17 @@
 
   <ItemGroup>
     <PackageReference Include="SteamKit2" Version="3.4.0" />
+  </ItemGroup>
+
+  <!-- The SwiftPM prebuild plugin moves obj/ and bin/ into its own work
+       directory, which drops them from the SDK's default excludes. Without
+       this, files a plain `dotnet build` left in obj/ get compiled twice. -->
+  <ItemGroup>
+    <Compile Remove="bin/**;obj/**;publish/**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="CloudSync.Tests" />
   </ItemGroup>
 
 </Project>

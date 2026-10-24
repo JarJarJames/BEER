@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [dev, master]
+  push:
+    branches: [dev, master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  app:
+    name: Swift build and tests
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+
+      # `swift build` rebuilds the CloudSync helper through the
+      # CloudSyncPrebuild plugin, so the app job needs .NET too.
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 9.0.x
+
+      # The plugin's `dotnet publish` restores NuGet packages, which SwiftPM's
+      # plugin sandbox blocks. CI runners are disposable, so drop the sandbox.
+      - name: Build
+        run: swift build --disable-sandbox
+
+      - name: Test
+        run: swift test --disable-sandbox
+
+      - name: Release build
+        run: swift build -c release --disable-sandbox
+
+  helper:
+    name: CloudSync helper build, style and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 9.0.x
+
+      - name: Build
+        run: dotnet build Tools/CloudSync.Tests/CloudSync.Tests.csproj -c Release -warnaserror
+
+      # Fails on anything .editorconfig marks as a warning: layout, usings,
+      # namespaces that don't match folders, and naming.
+      - name: Style
+        run: |
+          dotnet format Tools/CloudSync/CloudSync.csproj --verify-no-changes
+          dotnet format Tools/CloudSync.Tests/CloudSync.Tests.csproj --verify-no-changes
+
+      - name: Test
+        run: dotnet test Tools/CloudSync.Tests/CloudSync.Tests.csproj -c Release --no-build

@@ -1,9 +1,8 @@
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using SteamKit2;
 using SteamKit2.Internal;
+
+namespace CloudSync.Steam;
 
 /// Raw client-protocol handler for real Steam achievement/stat state.
 ///
@@ -42,7 +41,7 @@ sealed class UserStatsHandler : ClientMsgHandler
         msg.Body.steam_id_for_user = steamId;
         msg.Body.schema_local_version = 0; // 0 = always send the full current schema back
 
-        var packet = await SendAndAwait(msg, msg.SourceJobID, timeout);
+        var packet = await SendAndAwaitAsync(msg, msg.SourceJobID, timeout);
         var resp = new ClientMsgProtobuf<CMsgClientGetUserStatsResponse>(packet);
         if ((EResult)resp.Body.eresult != EResult.OK)
             throw new Exception($"GetUserStats failed: {(EResult)resp.Body.eresult}");
@@ -73,11 +72,11 @@ sealed class UserStatsHandler : ClientMsgHandler
         foreach (var (statId, value) in stats)
             msg.Body.stats.Add(new CMsgClientStoreUserStats2.Stats { stat_id = statId, stat_value = value });
 
-        var packet = await SendAndAwait(msg, msg.SourceJobID, timeout);
+        var packet = await SendAndAwaitAsync(msg, msg.SourceJobID, timeout);
         return new ClientMsgProtobuf<CMsgClientStoreUserStatsResponse>(packet).Body;
     }
 
-    async Task<IPacketMsg> SendAndAwait(IClientMsg msg, ulong jobId, TimeSpan timeout)
+    async Task<IPacketMsg> SendAndAwaitAsync(IClientMsg msg, ulong jobId, TimeSpan timeout)
     {
         var tcs = new TaskCompletionSource<IPacketMsg>(TaskCreationOptions.RunContinuationsAsynchronously);
         _pending[jobId] = tcs;
