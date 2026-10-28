@@ -10,6 +10,19 @@ Notable changes to BEER. Versions follow the GitHub releases.
   into that game's bottle. Files come only from Microsoft and are checked
   against a pinned SHA-256 before they run. Runtimes already in the bottle,
   including ones installed with winetricks, show as installed.
+- **Steam's redistributable install scripts now run before launch.** Games
+  list shared redistributables (Visual C++, DirectX) that Steam installs on
+  first launch. BEER downloaded them into `_CommonRedist/` but never ran
+  them, so a game like Kenshi exited at startup missing the VC++ 2010
+  runtime. Each script entry now runs once per bottle and is recorded in
+  `beer-steam-redist.log` in the prefix. A failure is logged and retried
+  next launch, and the game still launches. .NET Framework installers are
+  skipped because they hang under Wine.
+- **Capture Display** toggle under Resolution in a game's settings. When on,
+  a fullscreen game captures the display, so the Dock and menu bar can't
+  appear over it and bring back a hidden cursor at the screen edges. Off by
+  default, so existing games behave as before.
+
 ### Changed
 - The Steam emulator row's **Test: unlock next achievement** and **Test:
   reset local unlocks** tools are now only in development builds. A test
@@ -21,6 +34,9 @@ Notable changes to BEER. Versions follow the GitHub releases.
   achievements and play sessions now go to the macOS unified log. Filter
   Console.app on `io.github.jarjarjames.beer`. Paths and account details are
   redacted in the log.
+- The CloudSync helper was restructured into one class per command, with
+  offline tests. Its commands and output are unchanged. CI now builds and
+  tests the app and the helper on every pull request.
 
 ### Fixed
 - **A cloud sync no longer runs if its save backup fails.** The backup
