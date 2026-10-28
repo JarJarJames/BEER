@@ -47,6 +47,20 @@ struct Bottle: Identifiable, Codable, Hashable {
         displayResolutionMode ?? .standard
     }
 
+    // Off by default: without capture the Dock and menu bar stay live, so the
+    // cursor a game hid reappears at the screen edges. Capturing blocks them,
+    // but also hides every other app's windows while the game is frontmost.
+    var captureDisplayInFullscreen: Bool? = nil
+
+    var effectiveCaptureDisplayInFullscreen: Bool {
+        captureDisplayInFullscreen ?? false
+    }
+
+    /// winemac.drv's `CaptureDisplaysForFullscreen` registry value.
+    var captureDisplaysRegistryValue: String {
+        effectiveCaptureDisplayInFullscreen ? "Y" : "N"
+    }
+
     // --- Controller compatibility ---
     // Opt-in per game. Off by default: it rewrites what the game reads from the
     // HID device, which is only correct for pads Wine mishandles. See
