@@ -25,8 +25,8 @@ final class WindowsDependencyInstaller: ObservableObject {
 
     /// Scratch space inside the prefix for things Windows tools need a C:
     /// path for. Free of spaces, unlike Application Support.
-    private static let windowsTempPath = #"C:\windows\temp"#
-    private static let prefixTempPath = "drive_c/windows/temp"
+    static let windowsTempPath = #"C:\windows\temp"#
+    static let prefixTempPath = "drive_c/windows/temp"
 
     func refresh(_ bottle: Bottle) {
         installed[bottle.id] = WindowsDependencyDetector.installed(inPrefix: AppPaths.prefixURL(for: bottle))
@@ -50,12 +50,14 @@ final class WindowsDependencyInstaller: ObservableObject {
             switch dependency {
             case .vcRedist:
                 setStatus(WindowsDependencyStrings.preparing, bottle)
-                try removeWinePlaceholders(inPrefix: prefix)
+                try Self.removeWinePlaceholders(WindowsDependencyManifest.vcRedistPlaceholderDLLs, inPrefix: prefix)
                 for (package, file) in files {
                     try await run(package, executable: file.path, bottle: bottle, bottles: bottles)
                 }
                 setStatus(WindowsDependencyStrings.applyingOverrides, bottle)
-                try await applyDLLOverrides(WindowsDependencyManifest.vcRedistDLLOverrides, bottle: bottle, bottles: bottles)
+                guard await bottles.applyNativeDLLOverrides(WindowsDependencyManifest.vcRedistDLLOverrides, to: bottle) else {
+                    throw WindowsDependencyError.installerFailed(file: "regedit", exitCode: nil)
+                }
                 guard WindowsDependencyDetector.hasNativeDLLs(for: .vcRedist, inPrefix: prefix) else {
                     throw WindowsDependencyError.notDetectedAfterInstall(dependency.title)
                 }
@@ -179,11 +181,13 @@ final class WindowsDependencyInstaller: ObservableObject {
         )
     }
 
-    /// See `WindowsDependencyManifest.vcRedistPlaceholderDLLs`. Only Wine's own
-    /// copies are removed — a real Microsoft DLL is left alone. Wine still loads
-    /// its builtin without the file, and Repair Prefix puts them back.
-    private func removeWinePlaceholders(inPrefix prefix: URL) throws {
-        for (directory, names) in WindowsDependencyManifest.vcRedistPlaceholderDLLs {
+    /// Clear Wine's own copies of DLLs a Microsoft installer is about to put
+    /// down, keyed by prefix-relative directory (see
+    /// `WindowsDependencyManifest.vcRedistPlaceholderDLLs`). Only Wine's copies
+    /// are removed — a real Microsoft DLL is left alone. Wine still loads its
+    /// builtin without the file, and Repair Prefix puts them back.
+    static func removeWinePlaceholders(_ placeholders: [String: [String]], inPrefix prefix: URL) throws {
+        for (directory, names) in placeholders {
             for name in names {
                 let url = prefix.appendingPathComponent(directory).appendingPathComponent(name)
                 if WindowsDependencyDetector.isWineBuiltin(url) {
@@ -191,18 +195,6 @@ final class WindowsDependencyInstaller: ObservableObject {
                 }
             }
         }
-    }
-
-    private func applyDLLOverrides(_ dlls: [String], bottle: Bottle, bottles: BottleStore) async throws {
-        let prefix = AppPaths.prefixURL(for: bottle)
-        let name = "beer-dll-overrides.reg"
-        let file = prefix.appendingPathComponent(Self.prefixTempPath).appendingPathComponent(name)
-        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Self.dllOverrideRegistry(dlls).write(to: file, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: file) }
-
-        try await run(label: "regedit", arguments: ["regedit", "/S", Self.windowsTempPath + #"\"# + name],
-                      bottle: bottle, bottles: bottles)
     }
 
     /// A `.reg` file setting each DLL to native-then-builtin — what winetricks'
