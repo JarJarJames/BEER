@@ -166,7 +166,8 @@ extension BottleStore {
             operation: "Configuring display capture",
             mode: .wine(arguments: [
                 "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
-                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", "N", "/f"
+                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ",
+                "/d", bottle.captureDisplaysRegistryValue, "/f"
             ])
         )
         await runBottleCommand(
