@@ -11,6 +11,7 @@ extension BottleStore {
     /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
+        await installSteamRedistributables(bottle)
         await configureControllers(bottle)
         let controllerHelper = await prepareControllerFix(bottle, executable: executable)
         await configureDisplayMode(bottle)

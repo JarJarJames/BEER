@@ -67,4 +67,28 @@ enum WindowsDependencyManifest {
         "drive_c/windows/syswow64": ["msvcp140.dll", "msvcp140_2.dll"],
         "drive_c/windows/system32": ["msvcp140.dll", "msvcp140_2.dll", "vcruntime140_1.dll"],
     ]
+
+    /// The runtime DLLs of the VC++ year Steam installs from
+    /// `_CommonRedist/vcredist/<year>`, flipped to native-first afterwards for
+    /// the same reason as `vcRedistDLLOverrides`. 2005 and 2008 install into
+    /// WinSxS, which Wine resolves by manifest, so they need nothing.
+    static func steamVCRuntimeDLLs(year: String) -> [String] {
+        switch year {
+        case "2010": ["msvcp100", "msvcr100", "mfc100", "mfc100u", "vcomp100", "atl100"]
+        case "2012": ["msvcp110", "msvcr110", "mfc110", "mfc110u", "vcomp110", "atl110"]
+        case "2013": ["msvcp120", "msvcr120", "mfc120", "mfc120u", "vcomp120"]
+        case "2015", "2017", "2019", "2022": vcRedistDLLOverrides
+        default: []
+        }
+    }
+
+    /// Wine's copies to clear before that year's installer runs. Before VC++
+    /// 14 the whole set goes: Wine stamps some with Microsoft's exact version
+    /// (msvcr120 is 12.0.40664.0 in both), and the MSI skips an equal version.
+    static func steamVCPlaceholderDLLs(year: String) -> [String: [String]] {
+        let dlls = steamVCRuntimeDLLs(year: year)
+        if dlls == vcRedistDLLOverrides { return vcRedistPlaceholderDLLs }
+        let files = dlls.map { $0 + ".dll" }
+        return ["drive_c/windows/syswow64": files, "drive_c/windows/system32": files]
+    }
 }
