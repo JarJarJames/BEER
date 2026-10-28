@@ -1,10 +1,14 @@
 name: CI
 
+# Docs-only changes can't break the build, so they skip CI. A change that
+# also touches code still runs everything.
 on:
   pull_request:
     branches: [dev, master]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
   push:
     branches: [dev, master]
+    paths-ignore: ['**.md', 'docs/**', 'LICENSE']
 
 permissions:
   contents: read
@@ -26,6 +30,18 @@ jobs:
         with:
           dotnet-version: 9.0.x
 
+      # Runners start empty, so without these every run downloads the helper's
+      # NuGet packages and compiles everything from scratch. Keyed on the
+      # commit so each run saves its own; restore-keys picks up the newest
+      # cache, and SwiftPM rebuilds whatever changed since.
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.nuget/packages
+            .build
+          key: swift-${{ runner.os }}-${{ github.sha }}
+          restore-keys: swift-${{ runner.os }}-
+
       # The plugin's `dotnet publish` restores NuGet packages, which SwiftPM's
       # plugin sandbox blocks. CI runners are disposable, so drop the sandbox.
       - name: Build
@@ -34,7 +50,10 @@ jobs:
       - name: Test
         run: swift test --disable-sandbox
 
+      # Catches optimizer-only failures. Slow, so it runs once a change lands
+      # on dev or master rather than on every pull request push.
       - name: Release build
+        if: github.event_name == 'push'
         run: swift build -c release --disable-sandbox
 
   helper:
@@ -46,6 +65,11 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: 9.0.x
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('Tools/**/*.csproj') }}
 
       - name: Build
         run: dotnet build Tools/CloudSync.Tests/CloudSync.Tests.csproj -c Release -warnaserror
