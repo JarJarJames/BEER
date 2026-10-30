@@ -28,6 +28,14 @@ Notable changes to BEER. Versions follow the GitHub releases.
   reset local unlocks** tools are now only in development builds. A test
   unlock goes through the same path as a real one, so it would reach the
   real Steam account; release builds no longer offer it.
+- **The Steam Controller fix is automatic.** The per-game toggle is gone.
+  At launch BEER checks the connected pads, and applies the fix only to a
+  pad whose HID report layout matches one it was measured on (Steam's
+  virtual pad today), matched by a fingerprint of its report descriptor and
+  not just its vendor and product ID. Inside the bottle the shim only
+  touches that pad, so a second, real controller passes through unchanged.
+  It also skips 32-bit games, which can't load the shim. Each launch logs
+  what it decided and why. Release builds now bundle the fix.
 - README rewritten around the architecture, cloud sync and security model,
   including a plain description of how and why the Steam emulator is used.
 - Errors that were silently ignored in cloud sync, sign-in, downloads,

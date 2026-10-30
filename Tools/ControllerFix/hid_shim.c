@@ -10,6 +10,12 @@
 // So: a macOS-side helper reads the D-pad where the bits still exist and
 // publishes a hat value; this shim fills it into the hat the game already reads.
 // Every other hid.dll entry point forwards straight to the builtin.
+//
+// Only the pad the helper matched is touched. winexinput.sys passes attribute
+// queries through to the source device, so HidD_GetAttributes on the device
+// the game reads still reports the source pad's vendor and product. We note
+// which preparsed data belongs to that pad when the game asks for it, and every
+// other device — a second, real controller included — passes through as-is.
 #include <windows.h>
 #include <stdio.h>
 
@@ -19,24 +25,43 @@
 #define HID_USAGE_GENERIC_Y 0x31
 #define HID_USAGE_GENERIC_RY 0x34
 #define HID_USAGE_PAGE_BUTTON 0x09
+#define MAX_TRACKED 32
 
 typedef LONG NTSTATUS;
 typedef USHORT USAGE;
 typedef USAGE *PUSAGE;
+typedef struct { ULONG Size; USHORT VendorID; USHORT ProductID; USHORT VersionNumber; } HID_ATTRS;
 typedef NTSTATUS (WINAPI *PFN_GETUSAGEVALUE)(int, USAGE, USHORT, USAGE, PULONG, PVOID, PCHAR, ULONG);
 typedef NTSTATUS (WINAPI *PFN_GETUSAGES)(int, USAGE, USHORT, PUSAGE, PULONG, PVOID, PCHAR, ULONG);
+typedef BOOLEAN (WINAPI *PFN_GETPREPARSED)(HANDLE, PVOID *);
+typedef BOOLEAN (WINAPI *PFN_FREEPREPARSED)(PVOID);
+typedef BOOLEAN (WINAPI *PFN_GETATTRIBUTES)(HANDLE, HID_ATTRS *);
 
 static PFN_GETUSAGEVALUE real_GetUsageValue;
 static PFN_GETUSAGES real_GetUsages;
+static PFN_GETPREPARSED real_GetPreparsedData;
+static PFN_FREEPREPARSED real_FreePreparsedData;
+static PFN_GETATTRIBUTES real_GetAttributes;
 static CRITICAL_SECTION lock;
 static char hat_path[MAX_PATH];
 static BOOL invert_y = TRUE;
 static BOOL menu_remap = FALSE;
 
-/* state[0] = hat (0 centred, 1..8), state[1] = Back/Start/L3/R3 bitmask */
-static void cached_state(unsigned char *out)
+/* Preparsed data handed out to the game, with the vendor/product it belongs to. */
+static struct { PVOID preparsed; USHORT vid, pid; } tracked[MAX_TRACKED];
+
+/* What the helper publishes — must match dpad_helper.c's layout. */
+struct pad_state {
+    unsigned char hat;      /* 0 centred, 1..8 */
+    unsigned char buttons;  /* Back/Start/L3/R3 bitmask */
+    unsigned char present;  /* 1 while the matched pad is attached */
+    unsigned char reserved;
+    USHORT vid, pid;        /* the pad the helper matched */
+};
+
+static void cached_state(struct pad_state *out)
 {
-    static unsigned char value[2];
+    static struct pad_state value;
     static DWORD last_tick;
 
     DWORD now = GetTickCount();
@@ -45,19 +70,65 @@ static void cached_state(unsigned char *out)
         last_tick = now;
         HANDLE f = CreateFileA(hat_path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE,
                                NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-        if (f != INVALID_HANDLE_VALUE) {
-            unsigned char b[2] = { 0, 0 };
-            DWORD read = 0;
-            if (ReadFile(f, b, 2, &read, NULL) && read == 2 && b[0] <= 8) {
-                value[0] = b[0];
-                value[1] = b[1];
-            }
+        struct pad_state s;
+        DWORD read = 0;
+        if (f == INVALID_HANDLE_VALUE) {
+            memset(&value, 0, sizeof(value));    /* no helper, no fix */
+        } else {
+            if (ReadFile(f, &s, sizeof(s), &read, NULL) && read == sizeof(s) && s.hat <= 8)
+                value = s;
             CloseHandle(f);
         }
     }
-    out[0] = value[0];
-    out[1] = value[1];
+    *out = value;
     LeaveCriticalSection(&lock);
+}
+
+/* The helper's state, if `preparsed` belongs to the pad it is reading. */
+static BOOL state_for(PVOID preparsed, struct pad_state *state)
+{
+    cached_state(state);
+    if (!state->present || !preparsed) return FALSE;
+
+    BOOL match = FALSE;
+    EnterCriticalSection(&lock);
+    for (int i = 0; i < MAX_TRACKED; i++) {
+        if (tracked[i].preparsed != preparsed) continue;
+        match = tracked[i].vid == state->vid && tracked[i].pid == state->pid;
+        break;
+    }
+    LeaveCriticalSection(&lock);
+    return match;
+}
+
+__declspec(dllexport) BOOLEAN WINAPI HidD_GetPreparsedData(HANDLE device, PVOID *preparsed)
+{
+    if (!real_GetPreparsedData) return FALSE;
+    BOOLEAN ok = real_GetPreparsedData(device, preparsed);
+    if (!ok || !preparsed || !*preparsed) return ok;
+
+    HID_ATTRS attrs = { sizeof(attrs) };
+    if (!real_GetAttributes || !real_GetAttributes(device, &attrs)) return ok;
+
+    EnterCriticalSection(&lock);
+    for (int i = 0; i < MAX_TRACKED; i++) {
+        if (tracked[i].preparsed) continue;
+        tracked[i].preparsed = *preparsed;
+        tracked[i].vid = attrs.VendorID;
+        tracked[i].pid = attrs.ProductID;
+        break;
+    }
+    LeaveCriticalSection(&lock);
+    return ok;
+}
+
+__declspec(dllexport) BOOLEAN WINAPI HidD_FreePreparsedData(PVOID preparsed)
+{
+    EnterCriticalSection(&lock);
+    for (int i = 0; i < MAX_TRACKED; i++)
+        if (tracked[i].preparsed == preparsed) tracked[i].preparsed = NULL;
+    LeaveCriticalSection(&lock);
+    return real_FreePreparsedData ? real_FreePreparsedData(preparsed) : FALSE;
 }
 
 __declspec(dllexport) NTSTATUS WINAPI HidP_GetUsageValue(int type, USAGE page, USHORT collection,
@@ -68,6 +139,9 @@ __declspec(dllexport) NTSTATUS WINAPI HidP_GetUsageValue(int type, USAGE page, U
         : (NTSTATUS)0xC0110000;
 
     if (type != 0 || !value) return status;
+
+    struct pad_state state;
+    if (!state_for(preparsed, &state)) return status;
 
     /* Steam's virtual pad reports Y in XInput's convention (up = positive)
      * inside a HID descriptor, where HID's convention is the opposite. Games
@@ -87,9 +161,7 @@ __declspec(dllexport) NTSTATUS WINAPI HidP_GetUsageValue(int type, USAGE page, U
             fprintf(stderr, "[hid-shim] game is reading the hat switch - D-pad path is live\n");
             fflush(stderr);
         }
-        unsigned char state[2];
-        cached_state(state);
-        *value = state[0];
+        *value = state.hat;
         return HIDP_STATUS_SUCCESS;
     }
     return status;
@@ -107,12 +179,12 @@ __declspec(dllexport) NTSTATUS WINAPI HidP_GetUsages(int type, USAGE page, USHOR
         || !list || !length)
         return status;
 
+    struct pad_state state;
+    if (!state_for(preparsed, &state)) return status;
+
     /* Wine mis-associates usages for items that declare them out of order, which
      * swaps Back/Start with L3/R3 on pads like Steam's virtual gamepad. Drop
      * Wine's version of those four and re-add what the device really reports. */
-    unsigned char state[2];
-    cached_state(state);
-
     ULONG kept = 0;
     for (ULONG i = 0; i < *length; i++) {
         USAGE u = list[i];
@@ -128,7 +200,7 @@ __declspec(dllexport) NTSTATUS WINAPI HidP_GetUsages(int type, USAGE page, USHOR
     static const USAGE remap_menu[4]  = { 7, 8, 7, 8 };
     const USAGE *remapped = menu_remap ? remap_menu : passthrough;
     for (int bit = 0; bit < 4; bit++) {
-        if (!(state[1] & (1u << bit))) continue;
+        if (!(state.buttons & (1u << bit))) continue;
         if (kept >= capacity) break;
         USAGE u = remapped[bit];
         BOOL already = FALSE;
@@ -156,9 +228,12 @@ BOOL WINAPI DllMain(HINSTANCE inst, DWORD reason, LPVOID reserved)
         if (h) {
             real_GetUsageValue = (PFN_GETUSAGEVALUE)GetProcAddress(h, "HidP_GetUsageValue");
             real_GetUsages = (PFN_GETUSAGES)GetProcAddress(h, "HidP_GetUsages");
+            real_GetPreparsedData = (PFN_GETPREPARSED)GetProcAddress(h, "HidD_GetPreparsedData");
+            real_FreePreparsedData = (PFN_FREEPREPARSED)GetProcAddress(h, "HidD_FreePreparsedData");
+            real_GetAttributes = (PFN_GETATTRIBUTES)GetProcAddress(h, "HidD_GetAttributes");
         }
         fprintf(stderr, "[hid-shim] loaded, hat source = %s, builtin = %s, invertY = %s, menuRemap = %s\n",
-                hat_path, real_GetUsageValue ? "ok" : "MISSING", invert_y ? "on" : "off", menu_remap ? "on" : "off");
+                hat_path, real_GetPreparsedData ? "ok" : "MISSING", invert_y ? "on" : "off", menu_remap ? "on" : "off");
         fflush(stderr);
     }
     return TRUE;

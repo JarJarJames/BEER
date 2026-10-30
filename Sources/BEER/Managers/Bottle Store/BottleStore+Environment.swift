@@ -59,7 +59,7 @@ extension BottleStore {
         env["USERNAME"] = "crossover"
         env["WINEDLLOVERRIDES"] = dllOverrides(
             for: bottle.effectiveGraphicsBackend,
-            controllerFix: bottle.effectiveControllerFix,
+            controllerFix: controllerFixBottleIDs.contains(bottle.id),
             userOverrides: bottle.environmentOverrides["WINEDLLOVERRIDES"]
         )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
@@ -157,8 +157,8 @@ extension BottleStore {
         //
         entries.append("gameinput=n,b")
 
-        // hid: only when the per-game controller fix is on, so a bottle that
-        // does not need it never loads the shim — see ControllerSupport.
+        // hid: only while this launch installed the controller fix, so a game
+        // that does not need it never loads the shim — see ControllerSupport.
         if controllerFix { entries.append("hid=n,b") }
 
         if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }

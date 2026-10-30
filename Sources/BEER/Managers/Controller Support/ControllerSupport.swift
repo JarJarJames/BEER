@@ -19,6 +19,11 @@ enum ControllerSupport {
     /// Every gamepad/joystick macOS currently exposes, as lowercase `vid:pid`
     /// — the form `winebus` parses out of `EnableHidraw`.
     static func connectedDeviceIdentifiers() -> [String] {
+        Set(connectedGamepads().map(\.identifier)).sorted()
+    }
+
+    /// Every gamepad/joystick macOS currently exposes.
+    static func connectedGamepads() -> [Gamepad] {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
 
         // Generic Desktop gamepad / joystick / multi-axis — the same usages
@@ -29,16 +34,20 @@ enum ControllerSupport {
 
         // Enumeration only — we never open the devices, so this needs no Input
         // Monitoring permission and never competes with the app holding the pad.
+        // The report descriptor is a registry property, readable without opening.
         guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
 
-        var identifiers: Set<String> = []
-        for device in devices {
+        return devices.compactMap { device in
             guard let vendor = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? Int,
                   let product = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int,
                   vendor != 0
-            else { continue }
-            identifiers.insert(String(format: "%04x:%04x", vendor, product))
+            else { return nil }
+            return Gamepad(
+                vendorID: vendor,
+                productID: product,
+                name: IOHIDDeviceGetProperty(device, kIOHIDProductKey as CFString) as? String ?? "Controller",
+                reportDescriptor: IOHIDDeviceGetProperty(device, kIOHIDReportDescriptorKey as CFString) as? Data ?? Data()
+            )
         }
-        return identifiers.sorted()
     }
 }

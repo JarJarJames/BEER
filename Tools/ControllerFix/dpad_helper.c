@@ -5,20 +5,29 @@
 // buttons 12-15 with no hat loses it inside the driver, before anything in the
 // bottle can see it. We read those buttons here, where they still exist.
 //
-// Matched by usage rather than by bit offset, so this does not depend on any
-// particular report layout.
+// The bit offsets below were measured against one specific report layout, so
+// the helper only attaches to a device whose HID report descriptor hashes to
+// the fingerprint BEER passes in. A pad with the same vendor/product but a
+// different descriptor is left alone and logged, never guessed at.
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <signal.h>
+#include <unistd.h>
+#include <dispatch/dispatch.h>
+#include <CommonCrypto/CommonDigest.h>
 #include <IOKit/hid/IOHIDManager.h>
 
 enum { BTN_BACK = 7, BTN_START = 8, BTN_L3 = 9, BTN_R3 = 10,
        DPAD_UP = 12, DPAD_DOWN = 13, DPAD_LEFT = 14, DPAD_RIGHT = 15 };
 
 static const char *g_path;
+static const char *g_fingerprint;
+static IOHIDDeviceRef g_device;
+static unsigned short g_vid, g_pid;
 static int g_up, g_down, g_left, g_right;
 static int g_back, g_start, g_l3, g_r3;
-static unsigned char g_last_hat = 0xff, g_last_btn = 0xff;
+static unsigned char g_last[8] = { 0xff };
 static int g_verbose;
 
 static unsigned char to_hat(void)
@@ -46,17 +55,28 @@ static unsigned char to_buttons(void)
                          | (g_r3    ? 8 : 0));
 }
 
+// Layout shared with hid_shim.c's `struct pad_state`:
+//   [0] hat  [1] Back/Start/L3/R3 mask  [2] pad attached  [3] 0
+//   [4..5] vendor  [6..7] product (little-endian)
+// The shim only touches the in-bottle device with this vendor/product, and
+// only while [2] is set.
 static void publish(void)
 {
-    unsigned char state[2] = { to_hat(), to_buttons() };
-    if (state[0] == g_last_hat && state[1] == g_last_btn) return;
-    g_last_hat = state[0];
-    g_last_btn = state[1];
+    unsigned char state[8] = {
+        to_hat(), to_buttons(), g_device ? 1 : 0, 0,
+        g_vid & 0xff, g_vid >> 8, g_pid & 0xff, g_pid >> 8
+    };
+    if (memcmp(state, g_last, sizeof(state)) == 0) return;
+    memcpy(g_last, state, sizeof(state));
 
-    FILE *f = fopen(g_path, "wb");
+    // Write-then-rename so the shim never reads a half-written state.
+    char tmp[1024];
+    snprintf(tmp, sizeof(tmp), "%s.tmp", g_path);
+    FILE *f = fopen(tmp, "wb");
     if (!f) return;
     fwrite(state, 1, sizeof(state), f);
     fclose(f);
+    rename(tmp, g_path);
 
     if (g_verbose) {
         fprintf(stderr, "[pad] hat=%u buttons=0x%x%s%s%s%s\n", state[0], state[1],
@@ -79,7 +99,7 @@ static void report_cb(void *ctx, IOReturn res, void *sender, IOHIDReportType typ
                       uint32_t id, uint8_t *report, CFIndex len)
 {
     (void)ctx; (void)res; (void)sender; (void)type; (void)id;
-    if (len < 3) return;
+    if (len < 3 || !g_device) return;
 
     uint8_t b = report[2];
     g_up    = (b >> 0) & 1;
@@ -94,31 +114,100 @@ static void report_cb(void *ctx, IOReturn res, void *sender, IOHIDReportType typ
     publish();
 }
 
+// SHA-256 of the device's HID report descriptor, as lowercase hex.
+static int descriptor_fingerprint(IOHIDDeviceRef dev, char out[CC_SHA256_DIGEST_LENGTH * 2 + 1])
+{
+    CFTypeRef value = IOHIDDeviceGetProperty(dev, CFSTR(kIOHIDReportDescriptorKey));
+    if (!value || CFGetTypeID(value) != CFDataGetTypeID()) return 0;
+
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
+    CC_SHA256(CFDataGetBytePtr(value), (CC_LONG)CFDataGetLength(value), digest);
+    for (int i = 0; i < CC_SHA256_DIGEST_LENGTH; i++) sprintf(out + i * 2, "%02x", digest[i]);
+    return 1;
+}
+
+static void clear_buttons(void)
+{
+    g_up = g_down = g_left = g_right = 0;
+    g_back = g_start = g_l3 = g_r3 = 0;
+}
+
 static void matched(void *ctx, IOReturn res, void *sender, IOHIDDeviceRef dev)
 {
     (void)ctx; (void)res; (void)sender;
     static uint8_t buf[64];
+
+    char fingerprint[CC_SHA256_DIGEST_LENGTH * 2 + 1];
+    if (!descriptor_fingerprint(dev, fingerprint) || strcmp(fingerprint, g_fingerprint) != 0) {
+        fprintf(stderr, "[pad] ignoring device: descriptor does not match the measured layout\n");
+        fflush(stderr);
+        return;
+    }
+    // One pad feeds the shim at a time; a second identical pad would
+    // otherwise overwrite the first's state report by report.
+    if (g_device) {
+        fprintf(stderr, "[pad] ignoring second matching device\n");
+        fflush(stderr);
+        return;
+    }
+
+    g_device = dev;
     IOHIDDeviceRegisterInputReportCallback(dev, buf, sizeof(buf), report_cb, NULL);
     fprintf(stderr, "[pad] device matched, decoding raw reports\n");
     fflush(stderr);
+    publish();
 }
 
 static void removed(void *ctx, IOReturn res, void *sender, IOHIDDeviceRef dev)
 {
-    (void)ctx; (void)res; (void)sender; (void)dev;
-    g_up = g_down = g_left = g_right = 0;
-    g_back = g_start = g_l3 = g_r3 = 0;
+    (void)ctx; (void)res; (void)sender;
+    if (dev != g_device) return;
+    g_device = NULL;
+    clear_buttons();
     publish();
+    fprintf(stderr, "[pad] device removed\n");
+    fflush(stderr);
+}
+
+// Leave a neutral, detached state behind so nothing reads a press that was
+// held when the helper stopped.
+static void shut_down(void)
+{
+    g_device = NULL;
+    clear_buttons();
+    publish();
+    exit(0);
 }
 
 int main(int argc, char **argv)
 {
-    if (argc < 4) { fprintf(stderr, "usage: dpad_helper <vid> <pid> <outfile> [-v]\n"); return 2; }
+    if (argc < 5) {
+        fprintf(stderr, "usage: dpad_helper <vid> <pid> <descriptor sha256> <outfile> [-v]\n");
+        return 2;
+    }
     long vid = strtol(argv[1], NULL, 0), pid = strtol(argv[2], NULL, 0);
-    g_path = argv[3];
-    g_verbose = (argc > 4);
+    g_vid = (unsigned short)vid;
+    g_pid = (unsigned short)pid;
+    g_fingerprint = argv[3];
+    g_path = argv[4];
+    g_verbose = (argc > 5);
 
     publish();
+
+    // Stopped by BEER when the game exits (SIGTERM), or orphaned if BEER
+    // itself goes away — either way, clean up rather than hold the pad open.
+    signal(SIGTERM, SIG_IGN);
+    signal(SIGINT, SIG_IGN);
+    dispatch_source_t term = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGTERM, 0, dispatch_get_main_queue());
+    dispatch_source_t intr = dispatch_source_create(DISPATCH_SOURCE_TYPE_SIGNAL, SIGINT, 0, dispatch_get_main_queue());
+    dispatch_source_t parent = dispatch_source_create(DISPATCH_SOURCE_TYPE_PROC, (uintptr_t)getppid(),
+                                                      DISPATCH_PROC_EXIT, dispatch_get_main_queue());
+    dispatch_source_set_event_handler(term, ^{ shut_down(); });
+    dispatch_source_set_event_handler(intr, ^{ shut_down(); });
+    dispatch_source_set_event_handler(parent, ^{ shut_down(); });
+    dispatch_resume(term);
+    dispatch_resume(intr);
+    dispatch_resume(parent);
 
     IOHIDManagerRef mgr = IOHIDManagerCreate(kCFAllocatorDefault, kIOHIDOptionsTypeNone);
     CFMutableDictionaryRef m = CFDictionaryCreateMutable(kCFAllocatorDefault, 0,

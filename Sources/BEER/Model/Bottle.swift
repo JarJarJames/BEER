@@ -61,16 +61,6 @@ struct Bottle: Identifiable, Codable, Hashable {
         effectiveCaptureDisplayInFullscreen ? "Y" : "N"
     }
 
-    // --- Controller compatibility ---
-    // Opt-in per game. Off by default: it rewrites what the game reads from the
-    // HID device, which is only correct for pads Wine mishandles. See
-    // `ControllerSupport` and `Tools/ControllerFix/README.md`.
-    var controllerFix: Bool? = nil
-
-    var effectiveControllerFix: Bool {
-        controllerFix ?? false
-    }
-
     var effectiveGameLaunchArguments: String {
         gameLaunchArguments ?? ""
     }

@@ -53,11 +53,13 @@ extension BottleStore {
         // The helper only exists to feed the running game; it has no reason to
         // outlive it, and leaving it behind would hold the pad open.
         controllerHelper?.terminate()
+        controllerFixBottleIDs.remove(bottle.id)
     }
 
-    /// Set up the opt-in controller fix, returning the macOS-side helper so the
-    /// caller can stop it when the game exits. A failure here is logged and the
-    /// game still launches — a broken D-pad beats refusing to start.
+    /// Apply the controller fix if a pad it was measured on is connected,
+    /// returning the macOS-side helper so the caller can stop it when the game
+    /// exits. Every outcome is logged, and a failure never blocks the launch —
+    /// a broken D-pad beats refusing to start.
     ///
     /// Everything here — IOHID enumeration, spawning `dpad_helper` — runs on
     /// this @MainActor class, i.e. the main thread. HID enumeration against a
@@ -67,11 +69,37 @@ extension BottleStore {
     /// so a stuck HID/helper call degrades to "no controller fix this launch"
     /// instead of taking the app down with it.
     func prepareControllerFix(_ bottle: Bottle, executable: String) async -> Process? {
-        guard bottle.effectiveControllerFix else { return nil }
+        controllerFixBottleIDs.remove(bottle.id)
+        // Start from a clean game folder; the shim goes back in only if this
+        // launch uses it, so a stale copy is never left loading on its own.
+        ControllerSupport.removeShim(forExecutable: executable)
 
-        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
-              let device = identifiers.first else {
-            appendLog("Controller fix enabled but no gamepad is connected.", bottleID: bottle.id)
+        guard ControllerSupport.fixIsInstalled else {
+            appendLog("Controller fix: \(ControllerSupport.FixError.artifactsMissing.localizedDescription)", bottleID: bottle.id)
+            return nil
+        }
+
+        guard let pads = await withTimeout(seconds: 3, { ControllerSupport.connectedGamepads() }) else {
+            appendLog("Controller fix: controller detection timed out; skipped for this launch.", bottleID: bottle.id)
+            return nil
+        }
+
+        let profile: ControllerSupport.FixProfile
+        switch ControllerSupport.detectFix(among: pads) {
+        case .supported(let matched, let pad):
+            profile = matched
+            appendLog("Controller fix: \(matched.name) detected (\(pad.identifier), descriptor matches).", bottleID: bottle.id)
+        case .unsupported(let others):
+            let names = others.map { "\($0.name) (\($0.identifier))" }.joined(separator: ", ")
+            appendLog("Controller fix: no measured layout for \(names); controllers passed through unchanged.", bottleID: bottle.id)
+            return nil
+        case .noGamepad:
+            appendLog("Controller fix: no controller connected; skipped for this launch.", bottleID: bottle.id)
+            return nil
+        }
+
+        guard ControllerSupport.isX86_64Executable(executable) else {
+            appendLog("Controller fix: game is not a 64-bit executable; the shim can't load into it.", bottleID: bottle.id)
             return nil
         }
 
@@ -90,13 +118,15 @@ extension BottleStore {
         }
 
         let prefix = AppPaths.prefixURL(for: bottle)
-        let helperResult = await withTimeout(seconds: 3) { ControllerSupport.startHelper(prefix: prefix, device: device) }
+        let helperResult = await withTimeout(seconds: 3) { ControllerSupport.startHelper(profile: profile, prefix: prefix) }
         guard let helper = helperResult ?? nil else {
+            ControllerSupport.removeShim(forExecutable: executable)
             appendLog("Controller fix helper failed to start.", bottleID: bottle.id, isError: true)
             return nil
         }
 
-        appendLog("Controller fix active for \(device).", bottleID: bottle.id)
+        controllerFixBottleIDs.insert(bottle.id)
+        appendLog("Controller fix active for \(profile.name).", bottleID: bottle.id)
         return helper
     }
 

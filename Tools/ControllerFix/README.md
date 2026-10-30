@@ -39,32 +39,66 @@ Two further quirks on the same device, both verified against real presses:
 Two halves, because the data is destroyed inside the driver:
 
 - `dpad_helper.c` — macOS, IOKit. Reads the pad's raw input reports where the
-  bits still exist and publishes two bytes (hat value, button mask) to a file
-  inside the bottle.
+  bits still exist and publishes its state to `drive_c/beer_dpad.bin` in the
+  bottle: hat value, Back/Start/L3/R3 mask, whether the pad is attached, and
+  the pad's vendor/product.
 - `hid_shim.c` — built as `hid.dll` for the bottle. Forwards every export to a
-  copy of Wine's own `hid.dll` renamed `hid_orig.dll`, and intercepts only
-  `HidP_GetUsageValue` (fills the empty hat, mirrors the Y axes) and
-  `HidP_GetUsages` (substitutes the four mislabelled buttons).
+  copy of Wine's own `hid.dll` renamed `hid_orig.dll`, and intercepts
+  `HidP_GetUsageValue` (fills the empty hat, mirrors the Y axes),
+  `HidP_GetUsages` (substitutes the four mislabelled buttons), and
+  `HidD_GetPreparsedData`/`HidD_FreePreparsedData` (to know which device each
+  call is about).
 
 Both files must be installed together: `hid.dll` without `hid_orig.dll` beside
 it aborts on the first forwarded call.
 
+## When it applies
+
+Automatically, per launch, and only when the evidence says it should:
+
+1. **BEER matches the pad by its descriptor.** The helper's bit offsets were
+   measured against one report layout, so BEER compares each connected pad's
+   HID report descriptor (read from IOHID without opening the device) against
+   the SHA-256 fingerprints in `ControllerFixProfiles`. Vendor/product alone
+   is not enough: the same IDs with a different layout is not applied to. No
+   match means no shim, no helper, and a log line naming what was connected.
+2. **The helper only reads that pad.** It re-checks the fingerprint itself,
+   follows the pad across disconnects, and on exit (game over, or BEER gone)
+   leaves a neutral, detached state behind.
+3. **The shim only touches that pad.** `winexinput.sys` passes attribute
+   queries through to the source device, so `HidD_GetAttributes` on the device
+   the game reads still reports the source pad's vendor/product. The shim
+   records which preparsed data belongs to the helper's pad and changes values
+   only for that device, and only while the helper reports it attached. Any
+   other controller is passed through unchanged.
+
+There is no setting. Every decision is logged for the launch: what was
+connected, whether it matched, and the shim's "D-pad path is live" once the
+game reads the hat.
+
 ## Building
 
 ```bash
-./build.sh /path/to/runtime/lib/wine/x86_64-windows/hid.dll
+./build.sh            # installs into Application Support, for `swift run`
+./build.sh <out-dir>  # what scripts/build_app.sh uses to bundle it
 ```
 
-`hid.dll` needs `mingw-w64`. The export list is generated from whichever
-runtime's `hid.dll` is passed, so the forwards always match that Wine build.
+`hid.dll` needs `mingw-w64`. Its forward list, `hid.def`, is checked in; Wine's
+`hid.dll` exports the same names across every runtime BEER installs. If one
+ever differs, regenerate it with `gen_def.py <runtime hid.dll> > hid.def`.
+
+## Adding a pad
+
+Measure its reports against real presses first, the way the Steam pad's were,
+then add its vendor/product and descriptor fingerprint to
+`ControllerFixProfiles`. An unmeasured pad is left alone by design.
 
 ## Status
 
-Verified end to end against Kingdom Come: Deliverance II on GPTK-4.0-cx26 with a
-2026 Steam Controller (Steam's virtual pad, `045e:028e`).
+The decode was verified end to end against Kingdom Come: Deliverance II on
+GPTK-4.0-cx26 with a 2026 Steam Controller (Steam's virtual pad, `045e:028e`),
+when the fix was a manual per-game switch. The automatic gating described above
+needs the same run repeated.
 
-The button bit offsets in `dpad_helper.c` were measured against that pad. They
-are almost certainly specific to Steam's virtual gamepad, so a different virtual
-pad needs its own verification before this is enabled for it — see
-`BEER_MENU_BUTTON_REMAP` / `BEER_INVERT_STICK_Y` in `hid_shim.c` for the escape
-hatches.
+`BEER_MENU_BUTTON_REMAP` / `BEER_INVERT_STICK_Y` in `hid_shim.c` remain as
+escape hatches.

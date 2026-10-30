@@ -11,7 +11,6 @@ struct InstalledDetailsView: View {
             RuntimeRow(bottle: bottle)
             GraphicsRow(bottle: bottle)
             DisplayModeRow(bottle: bottle)
-            ControllerFixRow(bottle: bottle)
             LaunchArgumentsRow(bottle: bottle)
             if !model.game.effectiveIsNonSteam {
                 SteamEmulatorRow(bottle: bottle, model: model)

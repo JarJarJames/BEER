@@ -5,6 +5,7 @@ set -euo pipefail
 #   • compiles the SwiftUI app in release
 #   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
 #     the .app so a fresh machine needs no extra setup
+#   • builds the controller fix (needs mingw-w64) and bundles both halves
 #   • ad-hoc code-signs the bundle so it launches
 #   • zips it for download (.build/BEER.zip)
 #
@@ -38,6 +39,15 @@ dotnet publish "$ROOT_DIR/Tools/CloudSync/CloudSync.csproj" \
 # for "CloudSync" alongside the running executable (Contents/MacOS).
 cp "$ROOT_DIR/Tools/CloudSync/publish/CloudSync" "$MACOS/CloudSync"
 chmod +x "$MACOS/CloudSync"
+
+echo "==> Building controller fix (dpad_helper + hid.dll shim)…"
+# The helper runs next to the app binary; the shim is data the app copies into
+# game folders, so it lives in Resources where codesign treats it as such.
+# ControllerSupport.helperURL / shimURL look in exactly these two places.
+CONTROLLER_FIX_OUT="$ROOT_DIR/.build/controller-fix"
+"$ROOT_DIR/Tools/ControllerFix/build.sh" "$CONTROLLER_FIX_OUT" >/dev/null
+cp "$CONTROLLER_FIX_OUT/dpad_helper" "$MACOS/dpad_helper"
+cp "$CONTROLLER_FIX_OUT/hid.dll" "$RESOURCES/hid.dll"
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

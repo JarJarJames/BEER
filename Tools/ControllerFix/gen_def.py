@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Emit a .def forwarding every hid.dll export to hid_orig, minus the two the
+"""Emit a .def forwarding every hid.dll export to hid_orig, minus the ones the
 shim implements itself. Usage: gen_def.py <path to Wine's hid.dll>"""
 import struct
 import sys
 
-IMPLEMENTED = {"HidP_GetUsageValue", "HidP_GetUsages"}
+IMPLEMENTED = {"HidP_GetUsageValue", "HidP_GetUsages", "HidD_GetPreparsedData", "HidD_FreePreparsedData"}
 
 
 def exports(path):

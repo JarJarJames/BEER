@@ -5,20 +5,20 @@ set -euo pipefail
 #   dpad_helper  — native arm64 macOS binary (IOKit)
 #   hid.dll      — x86_64 PE for the bottle (needs mingw-w64)
 #
-# hid.dll forwards every export to a copy of Wine's own hid.dll renamed
-# hid_orig.dll, so the export list is generated from whichever runtime the
-# bottle uses. Pass that runtime's hid.dll as $1.
+# hid.dll forwards every export it doesn't implement to a copy of Wine's own
+# hid.dll renamed hid_orig.dll. The forward list is `hid.def`, checked in: Wine's
+# hid.dll export list is the same across every runtime BEER installs. If a
+# runtime ever differs, regenerate it with gen_def.py.
+#
+# Output goes to $1 if given (scripts/build_app.sh bundles it into the .app),
+# otherwise to Application Support, where a `swift run` build finds it.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# BEER looks for the artifacts here (AppPaths.controllerFixDirectory), the same
-# way the CloudSync helper is installed into Application Support.
-OUT_DIR="${HOME}/Library/Application Support/BEER/ControllerFix"
-WINE_HID="${1:-}"
+OUT_DIR="${1:-${HOME}/Library/Application Support/BEER/ControllerFix}"
 
-# Default to the newest installed runtime's hid.dll when none is given.
-if [[ -z "$WINE_HID" ]]; then
-    WINE_HID="$(find "${HOME}/Library/Application Support/BEER/Runtimes" \
-        -path '*/x86_64-windows/hid.dll' 2>/dev/null | sort | tail -1)"
+if ! command -v x86_64-w64-mingw32-gcc >/dev/null; then
+    echo "error: x86_64-w64-mingw32-gcc not found (brew install mingw-w64)" >&2
+    exit 1
 fi
 
 mkdir -p "$OUT_DIR"
@@ -27,17 +27,8 @@ echo "==> dpad_helper (macOS)…"
 clang -O2 -o "$OUT_DIR/dpad_helper" "$ROOT_DIR/dpad_helper.c" \
     -framework IOKit -framework CoreFoundation
 
-if [[ -z "$WINE_HID" || ! -f "$WINE_HID" ]]; then
-    echo "==> skipping hid.dll: no runtime hid.dll found (pass one as \$1)"
-    exit 0
-fi
-
-echo "==> generating forward list from $(basename "$WINE_HID")…"
-python3 "$ROOT_DIR/gen_def.py" "$WINE_HID" > "$OUT_DIR/hid.def"
-
 echo "==> hid.dll (PE)…"
 x86_64-w64-mingw32-gcc -O2 -s -shared \
-    -o "$OUT_DIR/hid.dll" "$ROOT_DIR/hid_shim.c" "$OUT_DIR/hid.def" -static
+    -o "$OUT_DIR/hid.dll" "$ROOT_DIR/hid_shim.c" "$ROOT_DIR/hid.def" -static
 
 echo "installed into $OUT_DIR"
-echo "Enable it per game with the Controller toggle in BEER."

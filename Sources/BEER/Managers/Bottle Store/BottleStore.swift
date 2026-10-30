@@ -10,6 +10,9 @@ final class BottleStore: ObservableObject {
 
     @Published var activeBottleIDs: Set<Bottle.ID> = []
 
+    /// Bottles whose running game has the controller fix installed.
+    var controllerFixBottleIDs: Set<Bottle.ID> = []
+
     @Published var lastError: String?
 
     func load() async {
