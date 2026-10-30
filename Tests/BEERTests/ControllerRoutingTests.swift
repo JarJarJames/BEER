@@ -2,37 +2,53 @@ import XCTest
 @testable import BEER
 
 final class ControllerRoutingTests: XCTestCase {
-    func testPlayStationPadsTakeTheSDLRoute() {
-        for identifier in ["054c:05c4", "054c:09cc", "054c:0ba0", "054c:0ce6", "054c:0df2"] {
-            XCTAssertTrue(ControllerSupport.usesSDLRoute([identifier]), identifier)
-        }
+    private var wineRoot: URL!
+
+    override func setUpWithError() throws {
+        wineRoot = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: wineRoot, withIntermediateDirectories: true)
     }
 
-    func testOnePlayStationPadRoutesEveryPadThroughSDL() {
-        XCTAssertTrue(ControllerSupport.usesSDLRoute(["045e:028e", "054c:0ce6"]))
+    override func tearDownWithError() throws {
+        try? FileManager.default.removeItem(at: wineRoot)
     }
 
-    /// Xbox and Steam pads work on the raw route, where the Steam Controller
-    /// fix applies, so nothing changes for them.
-    func testOtherPadsKeepTheRawRoute() {
-        XCTAssertFalse(ControllerSupport.usesSDLRoute(["045e:028e", "045e:0b13"]))
-        XCTAssertFalse(ControllerSupport.usesSDLRoute([]))
+    func testFindsWinebusUnderTheWineRoot() throws {
+        let unix = wineRoot.appendingPathComponent("lib/wine/x86_64-unix")
+        try FileManager.default.createDirectory(at: unix, withIntermediateDirectories: true)
+        XCTAssertNil(ControllerSupport.winebusDirectory(wineRoot: wineRoot))
+
+        try Data().write(to: unix.appendingPathComponent("winebus.so"))
+        XCTAssertEqual(ControllerSupport.winebusDirectory(wineRoot: wineRoot)?.standardizedFileURL, unix.standardizedFileURL)
     }
 
-    func testRegistryDisablesHidrawOnTheSDLRoute() {
-        XCTAssertEqual(
-            ControllerSupport.winebusRegistry(identifiers: ["045e:028e", "054c:0ce6"], sdlRoute: true),
-            "REGEDIT4\r\n\r\n"
-                + #"[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\winebus]"# + "\r\n"
-                + #""EnableHidraw"="045e:028e,054c:0ce6""# + "\r\n"
-                + #""DisableHidraw"=dword:00000001"# + "\r\n"
-        )
+    func testInstallsSDLBesideWinebusAndReplacesAnOlderCopy() throws {
+        let library = wineRoot.appendingPathComponent("built.dylib")
+        let destination = wineRoot.appendingPathComponent(ControllerSupport.sdlLibraryName)
+
+        try Data([1]).write(to: library)
+        try ControllerSupport.installSDL(library, into: wineRoot)
+        XCTAssertEqual(try Data(contentsOf: destination), Data([1]))
+
+        try Data([2]).write(to: library)
+        try ControllerSupport.installSDL(library, into: wineRoot)
+        XCTAssertEqual(try Data(contentsOf: destination), Data([2]))
     }
 
-    /// Written even with no pads, so a previous launch's SDL route is undone.
-    func testRegistryReEnablesHidrawOtherwise() {
-        let registry = ControllerSupport.winebusRegistry(identifiers: [], sdlRoute: false)
-        XCTAssertTrue(registry.contains(#""EnableHidraw"="""#))
-        XCTAssertTrue(registry.contains(#""DisableHidraw"=dword:00000000"#))
+    func testLeavesAnIdenticalCopyAlone() throws {
+        let library = wineRoot.appendingPathComponent("built.dylib")
+        let destination = wineRoot.appendingPathComponent(ControllerSupport.sdlLibraryName)
+        try Data([1]).write(to: library)
+        try ControllerSupport.installSDL(library, into: wineRoot)
+        let installed = try FileManager.default.attributesOfItem(atPath: destination.path)[.creationDate] as? Date
+
+        try ControllerSupport.installSDL(library, into: wineRoot)
+
+        XCTAssertEqual(try FileManager.default.attributesOfItem(atPath: destination.path)[.creationDate] as? Date, installed)
+    }
+
+    @MainActor
+    func testOverridesNoLongerLoadAControllerShim() {
+        XCTAssertFalse(BottleStore().dllOverrides(for: .automatic, userOverrides: nil).contains("hid"))
     }
 }

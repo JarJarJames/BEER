@@ -133,24 +133,16 @@ enum AppPaths {
             .appendingPathComponent(String(appID), isDirectory: true)
     }
 
+    /// BEER's SDL2 build for Wine's controller driver, as
+    /// `scripts/build_sdl.sh` installs it for a `swift run` build. A shipped
+    /// .app bundles its own copy instead; see `ControllerSupport`.
+    static var sdlLibraryURL: URL {
+        applicationSupport.appendingPathComponent("SDL/libSDL2-2.0.0.dylib")
+    }
+
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.
-    /// Artifacts for the controller fix (the `dpad_helper` binary and the
-    /// `hid.dll` shim) as `Tools/ControllerFix/build.sh` installs them for a
-    /// `swift run` build. A shipped .app bundles its own copies instead.
-    static var controllerFixDirectory: URL {
-        applicationSupport.appendingPathComponent("ControllerFix", isDirectory: true)
-    }
-
-    static var controllerFixHelperURL: URL {
-        controllerFixDirectory.appendingPathComponent("dpad_helper")
-    }
-
-    static var controllerFixShimURL: URL {
-        controllerFixDirectory.appendingPathComponent("hid.dll")
-    }
-
     static var goldbergDirectory: URL {
         applicationSupport.appendingPathComponent("Goldberg", isDirectory: true)
     }

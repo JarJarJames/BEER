@@ -59,14 +59,13 @@ extension BottleStore {
         env["USERNAME"] = "crossover"
         env["WINEDLLOVERRIDES"] = dllOverrides(
             for: bottle.effectiveGraphicsBackend,
-            controllerFix: controllerFixBottleIDs.contains(bottle.id),
             userOverrides: bottle.environmentOverrides["WINEDLLOVERRIDES"]
         )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"
-        if sdlControllerBottleIDs.contains(bottle.id) {
-            env[ControllerSupport.allowSteamVirtualGamepadVariable] = "1"
-        }
+        // Pads go through SDL, which skips Steam's virtual pads otherwise; see
+        // ControllerSupport.
+        env[ControllerSupport.allowSteamVirtualGamepadVariable] = "1"
         env["PATH"] = "\(runtimeDirectory):\(inheritedPath)"
 
         let libraryPaths = runtimeLibraryDirectories(for: bottle)
@@ -139,7 +138,7 @@ extension BottleStore {
     /// for — the user's entry goes last so it wins any conflict. (Previously
     /// this value overwrote `environmentOverrides["WINEDLLOVERRIDES"]`, so a
     /// user override was silently discarded.)
-    func dllOverrides(for backend: GraphicsBackend, controllerFix: Bool, userOverrides: String?) -> String {
+    func dllOverrides(for backend: GraphicsBackend, userOverrides: String?) -> String {
         var entries: [String] = []
 
         switch backend {
@@ -150,19 +149,12 @@ extension BottleStore {
         case .wineD3D: entries.append("d3d11,dxgi,d3d12=b")
         }
 
-        // Prefer native input DLLs when a bottle has them beside the executable.
-        // Both are "n,b", so a bottle without them falls back to Wine's builtins
-        // and nothing changes.
-        //
-        // gameinput: Wine's builtin is a stub whose GameInputCreate returns
-        // E_NOTIMPL, so GDK-era titles that detect controllers through GameInput
-        // (Kingdom Come: Deliverance II, Stalker 2) report zero pads.
-        //
+        // Prefer a native gameinput.dll when a bottle has one beside the
+        // executable; "n,b" falls back to Wine's builtin otherwise. Wine's builtin
+        // is a stub whose GameInputCreate returns E_NOTIMPL, so GDK-era titles
+        // that detect controllers through GameInput (Kingdom Come: Deliverance
+        // II, Stalker 2) report zero pads.
         entries.append("gameinput=n,b")
-
-        // hid: only while this launch installed the controller fix, so a game
-        // that does not need it never loads the shim — see ControllerSupport.
-        if controllerFix { entries.append("hid=n,b") }
 
         if let userOverrides, !userOverrides.isEmpty { entries.append(userOverrides) }
         return entries.joined(separator: ";")
