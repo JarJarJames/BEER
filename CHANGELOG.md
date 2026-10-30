@@ -2,7 +2,7 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.6.0 — 2026-10-30
 
 ### Added
 - **Dependencies** in a game's Advanced settings: one-click install of the
