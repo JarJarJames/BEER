@@ -110,6 +110,12 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("Translators", isDirectory: true)
     }
 
+    /// Verified Microsoft redistributables (VC++, DirectX), kept so a second
+    /// bottle doesn't download them again. Re-hashed before every use.
+    static var dependenciesDirectory: URL {
+        applicationSupport.appendingPathComponent("Dependencies", isDirectory: true)
+    }
+
     /// DepotDownloader's raw output for the most recent run of an app, kept so a
     /// failed install can be diagnosed after the in-memory Downloads row is gone.
     static func depotDownloaderLogURL(forAppID appID: Int) -> URL {
@@ -127,24 +133,16 @@ enum AppPaths {
             .appendingPathComponent(String(appID), isDirectory: true)
     }
 
+    /// BEER's SDL2 build for Wine's controller driver, as
+    /// `scripts/build_sdl.sh` installs it for a `swift run` build. A shipped
+    /// .app bundles its own copy instead; see `ControllerSupport`.
+    static var sdlLibraryURL: URL {
+        applicationSupport.appendingPathComponent("SDL/libSDL2-2.0.0.dylib")
+    }
+
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.
-    /// Artifacts for the opt-in controller fix, installed by
-    /// `Tools/ControllerFix/build.sh` (the `dpad_helper` binary and the
-    /// `hid.dll` shim). Mirrors how the CloudSync helper is installed.
-    static var controllerFixDirectory: URL {
-        applicationSupport.appendingPathComponent("ControllerFix", isDirectory: true)
-    }
-
-    static var controllerFixHelperURL: URL {
-        controllerFixDirectory.appendingPathComponent("dpad_helper")
-    }
-
-    static var controllerFixShimURL: URL {
-        controllerFixDirectory.appendingPathComponent("hid.dll")
-    }
-
     static var goldbergDirectory: URL {
         applicationSupport.appendingPathComponent("Goldberg", isDirectory: true)
     }

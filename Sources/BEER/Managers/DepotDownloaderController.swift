@@ -26,27 +26,49 @@ final class DepotDownloaderController: ObservableObject {
     private var authSessionDepth = 0
     private var authCacheURL: URL?
 
-    private var stateURL: URL {
-        AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
-    }
+    /// Where the in-flight credential cache's path is recorded, so a launch
+    /// after a crash can delete it. Tests point this at a temporary folder.
+    var stateURL = AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
 
     func load() {
         // If the app was terminated during a download, remove the transient
         // DepotDownloader credential cache recorded before the process began.
-        if let data = try? Data(contentsOf: stateURL),
-           let payload = try? JSONDecoder().decode(StoredState.self, from: data),
-           let path = payload.authCachePath {
-            try? FileManager.default.removeItem(atPath: path)
+        // No record is the normal case: nothing was left behind.
+        guard let data = try? Data(contentsOf: stateURL) else { return }
+        if let payload = attempt("decode the DepotDownloader auth record", log: Log.install, {
+               try JSONDecoder().decode(StoredState.self, from: data)
+           }),
+           let path = payload.authCachePath,
+           !removeAuthCache(at: URL(fileURLWithPath: path)) {
+            // Keep the record so the next launch tries the delete again.
+            return
         }
-        try? FileManager.default.removeItem(at: stateURL)
+        rememberAuthCache(nil)
+    }
+
+    /// Delete DepotDownloader's credential cache, which holds the refresh
+    /// token. Returns false if it is still on disk.
+    private func removeAuthCache(at url: URL) -> Bool {
+        do {
+            try FileManager.default.removeItemIfPresent(at: url)
+            return true
+        } catch {
+            Log.install.fault("Couldn't delete DepotDownloader's credential cache; the next launch will retry: \(error.localizedDescription)")
+            return false
+        }
     }
 
     private func rememberAuthCache(_ url: URL?) {
-        if let url,
-           let data = try? JSONEncoder().encode(StoredState(authCachePath: url.path)) {
-            try? data.write(to: stateURL, options: .atomic)
+        if let url {
+            // Without this record, a crash mid-download leaves the credential
+            // cache somewhere the next launch can't find it.
+            attempt("record the DepotDownloader auth cache path", log: Log.install) {
+                try JSONEncoder().encode(StoredState(authCachePath: url.path)).write(to: stateURL, options: .atomic)
+            }
         } else {
-            try? FileManager.default.removeItem(at: stateURL)
+            attempt("remove the DepotDownloader auth record", log: Log.install) {
+                try FileManager.default.removeItemIfPresent(at: stateURL)
+            }
         }
     }
 
@@ -150,11 +172,10 @@ final class DepotDownloaderController: ObservableObject {
         defer {
             authSessionDepth -= 1
             if authSessionDepth == 0 {
-                if let cache = authCacheURL {
-                    try? FileManager.default.removeItem(at: cache)
-                }
+                let removed = authCacheURL.map(removeAuthCache(at:)) ?? true
                 authCacheURL = nil
-                rememberAuthCache(nil)
+                // On failure keep the on-disk record so the next launch retries.
+                if removed { rememberAuthCache(nil) }
             }
         }
         return try await body()

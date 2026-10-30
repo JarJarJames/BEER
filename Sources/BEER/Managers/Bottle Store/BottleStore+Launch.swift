@@ -11,8 +11,8 @@ extension BottleStore {
     /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
+        await installSteamRedistributables(bottle)
         await configureControllers(bottle)
-        let controllerHelper = await prepareControllerFix(bottle, executable: executable)
         await configureDisplayMode(bottle)
 
         var args: [String] = [executable]
@@ -42,112 +42,36 @@ extension BottleStore {
         // BEER's real unit of work — so play is over when the prefix goes idle,
         // not when the one process we happened to spawn returns.
         //
-        // Three things hang off getting this boundary right: the play time we
-        // record, the post-play cloud push (which could otherwise start
-        // uploading saves the game was still writing), and the controller
-        // helper below, which would otherwise be killed out from under a game
-        // that is still running.
+        // Two things hang off getting this boundary right: the play time we
+        // record, and the post-play cloud push, which could otherwise start
+        // uploading saves the game was still writing.
         await waitForWineSessionExit(bottle)
-
-        // The helper only exists to feed the running game; it has no reason to
-        // outlive it, and leaving it behind would hold the pad open.
-        controllerHelper?.terminate()
     }
 
-    /// Set up the opt-in controller fix, returning the macOS-side helper so the
-    /// caller can stop it when the game exits. A failure here is logged and the
-    /// game still launches — a broken D-pad beats refusing to start.
-    ///
-    /// Everything here — IOHID enumeration, spawning `dpad_helper` — runs on
-    /// this @MainActor class, i.e. the main thread. HID enumeration against a
-    /// Bluetooth pad has been observed to stall indefinitely, which froze the
-    /// whole app stone dead before Wine ever started (nothing after it in
-    /// beer.log, no wine process spawned). `withTimeout` below caps that risk
-    /// so a stuck HID/helper call degrades to "no controller fix this launch"
-    /// instead of taking the app down with it.
-    func prepareControllerFix(_ bottle: Bottle, executable: String) async -> Process? {
-        guard bottle.effectiveControllerFix else { return nil }
-
-        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
-              let device = identifiers.first else {
-            appendLog("Controller fix enabled but no gamepad is connected.", bottleID: bottle.id)
-            return nil
-        }
-
-        do {
-            try ControllerSupport.installShim(
-                forExecutable: executable,
-                runtimeHid: runtimeHidURL(for: bottle)
-            )
-        } catch {
-            appendLog(
-                "Controller fix unavailable: \(error.localizedDescription)",
-                bottleID: bottle.id,
-                isError: true
-            )
-            return nil
-        }
-
-        let prefix = AppPaths.prefixURL(for: bottle)
-        let helperResult = await withTimeout(seconds: 3) { ControllerSupport.startHelper(prefix: prefix, device: device) }
-        guard let helper = helperResult ?? nil else {
-            appendLog("Controller fix helper failed to start.", bottleID: bottle.id, isError: true)
-            return nil
-        }
-
-        appendLog("Controller fix active for \(device).", bottleID: bottle.id)
-        return helper
-    }
-
-    /// Runs `work` on a background thread with a hard deadline, returning
-    /// `nil` if it hasn't finished by `seconds`. `work` itself is abandoned,
-    /// not cancelled — this only stops it from blocking the caller, which is
-    /// enough for the controller-fix path: everything it guards is optional
-    /// and already designed to no-op cleanly on `nil`.
-    func withTimeout<T: Sendable>(seconds: Double, _ work: @escaping @Sendable () -> T) async -> T? {
-        await withTaskGroup(of: T?.self) { group in
-            group.addTask { work() as T? }
-            group.addTask {
-                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
-                return nil
-            }
-            let result = await group.next() ?? nil
-            group.cancelAll()
-            return result
-        }
-    }
-
-    /// Wine's own hid.dll, which the shim forwards all but two exports to.
-    func runtimeHidURL(for bottle: Bottle) -> URL? {
+    /// Have Wine read every pad through SDL, using BEER's SDL build; see
+    /// `ControllerSupport` for why. Runs *before* `configureDisplayMode` so the
+    /// `wineboot -k` at the end of that call restarts the bus driver onto it.
+    func configureControllers(_ bottle: Bottle) async {
         let wineRoot = URL(fileURLWithPath: runtimeWinePath(for: bottle))
             .deletingLastPathComponent()
             .deletingLastPathComponent()
-
-        let candidates = [
-            wineRoot.appendingPathComponent("lib/wine/x86_64-windows/hid.dll"),
-            wineRoot.appendingPathComponent("lib64/wine/x86_64-windows/hid.dll")
-        ]
-        return candidates.first { FileManager.default.fileExists(atPath: $0.path) }
-    }
-
-    /// Register the Mac's connected gamepads with Wine's HID bus driver, which
-    /// otherwise drops them and leaves every game reporting no controller. See
-    /// `ControllerSupport` for why this is needed at all.
-    ///
-    /// The list is rewritten on every launch so it tracks whatever is plugged in
-    /// now, and runs *before* `configureDisplayMode` so the `wineboot -k` at the
-    /// end of that call restarts the bus driver onto the new value.
-    func configureControllers(_ bottle: Bottle) async {
-        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
-              !identifiers.isEmpty else { return }
+        if let library = ControllerSupport.sdlLibraryURL,
+           let winebusDirectory = ControllerSupport.winebusDirectory(wineRoot: wineRoot) {
+            do {
+                try ControllerSupport.installSDL(library, into: winebusDirectory)
+            } catch {
+                appendLog("Controllers: couldn't install BEER's SDL: \(error.localizedDescription). Xbox One/Series pads may not work.", bottleID: bottle.id, isError: true)
+            }
+        } else {
+            appendLog("Controllers: BEER's SDL isn't available (run scripts/build_sdl.sh); Xbox One/Series pads may not work.", bottleID: bottle.id)
+        }
 
         await runBottleCommand(
             bottle,
             operation: "Configuring controllers",
             mode: .wine(arguments: [
                 "reg", "add", #"HKLM\System\CurrentControlSet\Services\winebus"#,
-                "/v", "EnableHidraw", "/t", "REG_SZ",
-                "/d", identifiers.joined(separator: ","), "/f"
+                "/v", "DisableHidraw", "/t", "REG_DWORD", "/d", "1", "/f"
             ])
         )
     }
@@ -166,7 +90,8 @@ extension BottleStore {
             operation: "Configuring display capture",
             mode: .wine(arguments: [
                 "reg", "add", #"HKEY_CURRENT_USER\Software\Wine\Mac Driver"#,
-                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ", "/d", "N", "/f"
+                "/v", "CaptureDisplaysForFullscreen", "/t", "REG_SZ",
+                "/d", bottle.captureDisplaysRegistryValue, "/f"
             ])
         )
         await runBottleCommand(

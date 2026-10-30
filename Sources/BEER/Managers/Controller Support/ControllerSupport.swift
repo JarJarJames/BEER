@@ -1,44 +1,56 @@
 import Foundation
-import IOKit
-import IOKit.hid
 
-/// Makes game controllers visible to Wine.
+/// Makes game controllers work in Wine — any mix of them at once.
 ///
-/// macOS hands every pad to Wine through IOHID, which Wine's bus driver
-/// classifies as a "hidraw" device. `winebus` refuses to create hidraw gamepads
-/// unless their `vid:pid` appears in its `EnableHidraw` value — it enumerates
-/// them, logs `ignoring hidraw device <vid>:<pid>`, and drops them, so XInput
-/// reports zero controllers and games see nothing.
+/// Wine's controller driver (`winebus`) has two ways to read a pad, and only
+/// one of them works for every kind:
 ///
-/// Wine's built-in exceptions cover pads it recognises by ID, which leaves out
-/// anything synthesised: notably the virtual Xbox 360 pad (`045e:028e`) Steam
-/// publishes for a Steam Controller, and the virtual pads other remapping tools
-/// create. Rather than chase an ID list, we whitelist whatever the Mac itself
-/// currently reports as a gamepad.
+/// - Its raw HID bus only turns Xbox pads into XInput devices. It always takes
+///   DualShock 4 and DualSense pads, but never as XInput, so an XInput game
+///   sees no PlayStation pad at all. And by default it drops pads it doesn't
+///   know, Steam's virtual pad among them.
+/// - Its SDL bus presents every pad SDL knows as an XInput-style gamepad, but
+///   Wine drops SDL's copy of any pad the raw bus already took.
+///
+/// So BEER turns the raw bus off (`DisableHidraw`) and every pad goes through
+/// SDL. SDL skips Steam's virtual pads unless the app runs under Steam, which
+/// `allowSteamVirtualGamepadVariable` overrides.
+///
+/// GPTK's own SDL is built with Apple's GameController framework, which then
+/// claims Xbox One/Series pads, and GameController doesn't deliver input to
+/// Wine's background driver process, so those pads never reach a game. BEER
+/// gives Wine its own SDL build without it (`scripts/build_sdl.sh`), placed
+/// beside `winebus.so`: Wine loads SDL by bare name, and `winebus.so` searches
+/// its own folder before the runtime's copy, so no runtime file is replaced.
 enum ControllerSupport {
-    /// Every gamepad/joystick macOS currently exposes, as lowercase `vid:pid`
-    /// — the form `winebus` parses out of `EnableHidraw`.
-    static func connectedDeviceIdentifiers() -> [String] {
-        let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
+    static let allowSteamVirtualGamepadVariable = "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD"
 
-        // Generic Desktop gamepad / joystick / multi-axis — the same usages
-        // Wine's IOHID backend accepts as "a joystick or gamepad".
-        let matching = [kHIDUsage_GD_GamePad, kHIDUsage_GD_Joystick, kHIDUsage_GD_MultiAxisController]
-            .map { [kIOHIDDeviceUsagePageKey: kHIDPage_GenericDesktop, kIOHIDDeviceUsageKey: $0] }
-        IOHIDManagerSetDeviceMatchingMultiple(manager, matching as CFArray)
+    static let sdlLibraryName = "libSDL2-2.0.0.dylib"
 
-        // Enumeration only — we never open the devices, so this needs no Input
-        // Monitoring permission and never competes with the app holding the pad.
-        guard let devices = IOHIDManagerCopyDevices(manager) as? Set<IOHIDDevice> else { return [] }
+    /// A shipped .app bundles BEER's SDL; a `swift run` build uses what
+    /// `scripts/build_sdl.sh` installed into Application Support.
+    static var sdlLibraryURL: URL? {
+        let candidates = [Bundle.main.resourceURL?.appendingPathComponent(sdlLibraryName), AppPaths.sdlLibraryURL]
+        return candidates.compactMap { $0 }.first { FileManager.default.fileExists(atPath: $0.path) }
+    }
 
-        var identifiers: Set<String> = []
-        for device in devices {
-            guard let vendor = IOHIDDeviceGetProperty(device, kIOHIDVendorIDKey as CFString) as? Int,
-                  let product = IOHIDDeviceGetProperty(device, kIOHIDProductIDKey as CFString) as? Int,
-                  vendor != 0
-            else { continue }
-            identifiers.insert(String(format: "%04x:%04x", vendor, product))
+    /// The folder holding the runtime's 64-bit `winebus.so`, whose own
+    /// directory SDL is looked up in first. Every runtime BEER installs keeps
+    /// it at the same place under its Wine root.
+    static func winebusDirectory(wineRoot: URL) -> URL? {
+        let directory = wineRoot.appendingPathComponent("lib/wine/x86_64-unix", isDirectory: true)
+        let winebus = directory.appendingPathComponent("winebus.so")
+        return FileManager.default.fileExists(atPath: winebus.path) ? directory : nil
+    }
+
+    /// Put `library` beside the runtime's `winebus.so`, unless an identical
+    /// copy is already there.
+    static func installSDL(_ library: URL, into winebusDirectory: URL) throws {
+        let destination = winebusDirectory.appendingPathComponent(sdlLibraryName)
+        if FileManager.default.contentsEqual(atPath: library.path, andPath: destination.path) { return }
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
         }
-        return identifiers.sorted()
+        try FileManager.default.copyItem(at: library, to: destination)
     }
 }

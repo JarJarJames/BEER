@@ -1,7 +1,7 @@
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
+using CloudSync.Achievements;
 using SteamKit2;
+
+namespace CloudSync.Tests.Achievements;
 
 // Pure-logic tests: schema parsing and unlock-bit math, no SteamKit2 session,
 // no network, no Steam account. Fixtures are built with KeyValue's own binary

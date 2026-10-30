@@ -10,9 +10,9 @@ struct DisplayModeRow: View {
         let resolutionMode = liveBottle.effectiveDisplayResolutionMode
 
         VStack(alignment: .leading, spacing: 6) {
-            SettingsRow(title: "Resolution") {
+            SettingsRow(title: DisplayModeStrings.resolutionTitle) {
 
-                Picker("Resolution", selection: Binding(
+                Picker(DisplayModeStrings.resolutionTitle, selection: Binding(
                     get: {
                         bottles.bottles.first(where: { $0.id == bottleID })?.effectiveDisplayResolutionMode ?? resolutionMode
                     },
@@ -34,8 +34,31 @@ struct DisplayModeRow: View {
             }
 
             Text(resolutionMode == .highResolution
-                ? "Exposes Retina resolutions to the game (up to twice the width and height) and treats it as DPI-aware. Sharper, but substantially more demanding; some games may not handle high-DPI mode correctly."
-                : "Uses macOS point dimensions for better performance and compatibility. On Retina displays this limits games to half the high-resolution width and height.")
+                ? DisplayModeStrings.highResolutionCaption
+                : DisplayModeStrings.standardCaption)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.leading, SettingsRow<EmptyView>.captionIndent)
+                .fixedSize(horizontal: false, vertical: true)
+
+            SettingsRow(title: DisplayModeStrings.captureTitle) {
+                Toggle(DisplayModeStrings.captureToggle, isOn: Binding(
+                    get: {
+                        bottles.bottles.first(where: { $0.id == bottleID })?.effectiveCaptureDisplayInFullscreen
+                            ?? bottle.effectiveCaptureDisplayInFullscreen
+                    },
+                    set: { newValue in
+                        bottles.scheduleMutation(bottleID: bottleID) { $0.captureDisplayInFullscreen = newValue }
+                    }
+                ))
+                .toggleStyle(.switch)
+                .controlSize(.small)
+                .labelsHidden()
+
+                Spacer()
+            }
+
+            Text(DisplayModeStrings.captureCaption)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .padding(.leading, SettingsRow<EmptyView>.captionIndent)

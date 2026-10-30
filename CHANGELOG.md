@@ -2,6 +2,78 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.6.0 — 2026-10-30
+
+### Added
+- **Dependencies** in a game's Advanced settings: one-click install of the
+  Visual C++ 2015–2026 runtime (x86 + x64) and the DirectX June 2010 runtime
+  into that game's bottle. Files come only from Microsoft and are checked
+  against a pinned SHA-256 before they run. Runtimes already in the bottle,
+  including ones installed with winetricks, show as installed.
+- **Steam's redistributable install scripts now run before launch.** Games
+  list shared redistributables (Visual C++, DirectX) that Steam installs on
+  first launch. BEER downloaded them into `_CommonRedist/` but never ran
+  them, so a game like Kenshi exited at startup missing the VC++ 2010
+  runtime. Each script entry now runs once per bottle and is recorded in
+  `beer-steam-redist.log` in the prefix. A failure is logged and retried
+  next launch, and the game still launches. .NET Framework installers are
+  skipped because they hang under Wine.
+- **Capture Display** toggle under Resolution in a game's settings. When on,
+  a fullscreen game captures the display, so the Dock and menu bar can't
+  appear over it and bring back a hidden cursor at the screen edges. Off by
+  default, so existing games behave as before.
+
+### Changed
+- The Steam emulator row's **Test: unlock next achievement** and **Test:
+  reset local unlocks** tools are now only in development builds. A test
+  unlock goes through the same path as a real one, so it would reach the
+  real Steam account; release builds no longer offer it.
+- **Controllers go through SDL, and any mix works at once.** Xbox,
+  PlayStation (DualShock 4, DualSense) and Steam controllers now all reach
+  games together, so splitscreen works with whatever pads you have. Before,
+  Wine never presented a PlayStation pad as an XInput controller, so games
+  like Dark Souls Remastered didn't see one. BEER now has Wine read every pad
+  through SDL, using BEER's own SDL build: GPTK's copy hands Xbox One/Series
+  pads to Apple's GameController framework, which doesn't deliver them inside
+  Wine. BEER's SDL is placed beside Wine's controller driver in the runtime;
+  no runtime or game file is replaced. The Steam Controller Fix setting is
+  gone, because SDL maps the Steam Controller's D-pad and buttons correctly
+  itself.
+- README rewritten around the architecture, cloud sync and security model,
+  including a plain description of how and why the Steam emulator is used.
+- Errors that were silently ignored in cloud sync, sign-in, downloads,
+  achievements and play sessions now go to the macOS unified log. Filter
+  Console.app on `io.github.jarjarjames.beer`. Paths and account details are
+  redacted in the log.
+- The CloudSync helper was restructured into one class per command, with
+  offline tests. Its commands and output are unchanged. CI now builds and
+  tests the app and the helper on every pull request.
+
+### Fixed
+- **A cloud sync no longer runs if its save backup fails.** The backup
+  step's error was being ignored, so a sync on a full or unwritable disk
+  carried on and could overwrite local saves with no copy to go back to.
+  Now the sync stops before writing anything, says your saves are
+  untouched, and records why in `last-sync.log`. A game still launches
+  with its local saves if the pre-play pull stops this way.
+- **DepotDownloader's temporary credential cache can no longer be lost
+  track of.** If deleting it failed, BEER still erased its record of where
+  the cache was, so the crash-recovery cleanup could never find it again.
+  The record now stays until the cache is really gone.
+- "Back up & clear local saves" reports a folder it couldn't delete instead
+  of saying the saves were cleared.
+- **BEER no longer freezes when a game floods its log.** The in-app log
+  kept every line in memory and copied the whole list on each new one, so a
+  game run with a verbose `WINEDEBUG` channel could lock up the app. It now
+  keeps the most recent 2,000 lines; `beer.log` in the bottle still has
+  everything.
+
+### Security
+- Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam
+  credentials (a Web API key before 0.2.1, then the refresh token) in
+  plaintext files. Current builds keep the token in the Keychain. See
+  `SECURITY.md` for what to do if you used an old build.
+
 ## 0.5.1 — 2026-10-07
 
 Non-Steam games, in testing.

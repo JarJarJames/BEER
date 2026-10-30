@@ -20,6 +20,21 @@ dotnet build -c Release
 `CloudSyncClient.locateBinary()` (Swift) searches: App Support → next to the app
 executable → the repo dev build.
 
+## Layout
+
+| Path | Contents |
+|---|---|
+| `Program.cs` | Entry point: parse args, log on once, dispatch, JSON error envelope |
+| `Cli/` | `CliArgs` (argument parsing) and `JsonOutput` (the one stdout writer) |
+| `Steam/` | `SteamSession` (logon, retry, callback pump), `LogonFailedException`, `UserStatsHandler` |
+| `Commands/` | One class per command below; `Presence/` holds the long-lived presence session |
+| `Transfers/` | `CloudTransfers` (single-file download/upload) and `CloudFileUnwrapper` |
+| `Achievements/` | Stats-schema parsing and unlock-bit math |
+
+Rules for adding files are in `PROJECT_STRUCTURE.md` under "C# helper". Tests are in
+`../CloudSync.Tests` (`dotnet test ../CloudSync.Tests`), and CI also runs
+`dotnet format --verify-no-changes` against `.editorconfig`.
+
 ## Commands
 Output is one JSON object per line on **stdout**; logs go to **stderr**. Exit 0 = ok.
 Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv).

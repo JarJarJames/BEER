@@ -30,6 +30,10 @@ final class CloudSyncEngine: ObservableObject {
 
     let client = CloudSyncClient()
 
+    /// Where backups and `last-sync.log` go for an app. Tests point this at a
+    /// temporary folder.
+    var backupsDirectory: (Int) -> URL = AppPaths.cloudSaveBackupsDirectory(forAppID:)
+
     /// Save directories learned from the last successful sync, per appID. Kept
     /// so `localSaveFingerprint` can tell whether a play session wrote anything
     /// without spending a Steam logon to find out.
@@ -71,11 +75,14 @@ final class CloudSyncEngine: ObservableObject {
         })
 
         phase = "Backing up local saves…"
-        let backup = try snapshotBackup(appID: appID, dirs: trackedDirs, label: "before-clear")
+        let backup = try backUpBeforeWriting(appID: appID, dirs: trackedDirs, label: "before-clear")
 
         phase = "Clearing local saves…"
-        for dir in trackedDirs where FileManager.default.fileExists(atPath: dir.path) {
-            try? FileManager.default.removeItem(at: dir)
+        // The backup above already holds a copy, so a failure here is safe to
+        // report. Swallowing it would claim the saves were cleared when they
+        // weren't.
+        for dir in trackedDirs {
+            try FileManager.default.removeItemIfPresent(at: dir)
         }
         phase = "Local saves cleared. Backup saved."
         lastSyncAt = Date()
@@ -103,7 +110,7 @@ final class CloudSyncEngine: ObservableObject {
             // check "did the last push actually go through") pointing at
             // whatever the previous SUCCESSFUL sync said, which reads as if
             // nothing had gone wrong.
-            writeAbortedSyncLog(appID: appID,
+            writeAbortedSyncLog(appID: appID, stage: "listing cloud files",
                                  reason: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             throw error
         }
@@ -115,7 +122,7 @@ final class CloudSyncEngine: ObservableObject {
         if !trackedDirs.isEmpty {
             knownSaveDirs[appID] = trackedDirs
             phase = "Backing up local saves…"
-            report.backupPath = try? snapshotBackup(appID: appID, dirs: trackedDirs, label: doPush ? "before-sync" : "before-pull")
+            report.backupPath = try backUpBeforeWriting(appID: appID, dirs: trackedDirs, label: doPush ? "before-sync" : "before-pull")
         }
 
         // Build the work lists in Swift (cheap, local), then hand the whole set

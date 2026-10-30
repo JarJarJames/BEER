@@ -5,6 +5,7 @@ set -euo pipefail
 #   • compiles the SwiftUI app in release
 #   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
 #     the .app so a fresh machine needs no extra setup
+#   • builds the controller fix (needs mingw-w64) and bundles both halves
 #   • ad-hoc code-signs the bundle so it launches
 #   • zips it for download (.build/BEER.zip)
 #
@@ -39,6 +40,11 @@ dotnet publish "$ROOT_DIR/Tools/CloudSync/CloudSync.csproj" \
 cp "$ROOT_DIR/Tools/CloudSync/publish/CloudSync" "$MACOS/CloudSync"
 chmod +x "$MACOS/CloudSync"
 
+echo "==> Building SDL2 for Wine's controller driver…"
+# Data the app copies into runtimes, so it lives in Resources.
+# ControllerSupport.sdlLibraryURL looks there first.
+"$ROOT_DIR/scripts/build_sdl.sh" "$RESOURCES" >/dev/null
+
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -68,9 +74,14 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Strip extended attributes (quarantine, Finder info) that make codesign
-# reject the bundle with "resource fork … not allowed".
-xattr -cr "$APP_DIR"
+# Sign and zip a copy outside the repo, without extended attributes
+# (quarantine, Finder info), which make codesign reject the bundle with
+# "resource fork … not allowed". Stripping them in place isn't enough when the
+# repo sits in an iCloud-synced folder: File Provider puts Finder info straight
+# back on the bundle.
+STAGE="$(mktemp -d -t beer-app)"
+trap 'rm -rf "$STAGE"' EXIT
+ditto --noextattr --norsrc "$APP_DIR" "$STAGE/BEER.app"
 
 # Deliberately ad-hoc, not the local dev signing identity: "BEER Local Dev"
 # (scripts/setup_local_codesign_identity.sh) is trusted only in the keychain
@@ -82,12 +93,14 @@ xattr -cr "$APP_DIR"
 # (CloudSyncClient.locateBinary) covers the bundled CloudSync helper
 # specifically, which is the part that used to SIGKILL silently.
 echo "==> Ad-hoc code-signing…"
-codesign --force --deep --sign - "$APP_DIR"
+codesign --force --deep --sign - "$STAGE/BEER.app"
 
 echo "==> Zipping for distribution…"
 ZIP="$ROOT_DIR/.build/BEER.zip"
 rm -f "$ZIP"
-ditto -c -k --keepParent "$APP_DIR" "$ZIP"
+ditto -c -k --keepParent "$STAGE/BEER.app" "$ZIP"
+rm -rf "$APP_DIR"
+ditto "$STAGE/BEER.app" "$APP_DIR"
 
 echo ""
 echo "Built:  $APP_DIR"

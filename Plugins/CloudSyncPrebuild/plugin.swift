@@ -10,7 +10,7 @@ import Foundation
 /// only re-invokes a `.prebuildCommand` when the target's *set* of source
 /// files changes (a file added/removed), not when an existing file's
 /// contents change — which is exactly the case every time someone edits
-/// Program.cs. Declaring explicit `inputFiles` on a `.buildCommand` gets
+/// one of the helper's .cs files. Declaring explicit `inputFiles` on a `.buildCommand` gets
 /// correct, ordinary incremental tracking: llbuild reruns it exactly when
 /// one of those files' contents/mtimes change.
 @main

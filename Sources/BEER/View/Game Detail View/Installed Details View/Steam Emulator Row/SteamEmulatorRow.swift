@@ -56,6 +56,9 @@ struct SteamEmulatorRow: View {
                     } label: {
                         Label("Reapply (after GBE_Fork upgrade)", systemImage: "arrow.clockwise")
                     }
+                    #if DEBUG
+                    // Development only: a test unlock flows through the real
+                    // Steam sync path, so it must never ship in a release.
                     Button {
                         model.triggerTestAchievementUnlock(for: bottle)
                     } label: {
@@ -66,6 +69,7 @@ struct SteamEmulatorRow: View {
                     } label: {
                         Label("Test: reset local unlocks", systemImage: "arrow.counterclockwise")
                     }
+                    #endif
                     Button(role: .destructive) {
                         model.restoreOriginalDLLs(for: bottle)
                     } label: {

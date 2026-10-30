@@ -31,14 +31,14 @@ final class SteamAuthStore: ObservableObject {
     func load() {
         // Preferred: the Keychain under the current (BEER) service.
         if let data = Keychain.get(account: Self.keychainAccount),
-           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+           let payload = Self.decodeAccount(data, from: "the Keychain") {
             account = payload
             return
         }
         // Legacy 1: a Keychain item under the old "GameNativeMac" service —
         // re-store it under the new service and drop the old entry.
         if let data = Keychain.get(account: Self.keychainAccount, service: Keychain.legacyService),
-           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+           let payload = Self.decodeAccount(data, from: "the legacy Keychain item") {
             account = payload
             persist()
             Keychain.delete(account: Self.keychainAccount, service: Keychain.legacyService)
@@ -47,10 +47,10 @@ final class SteamAuthStore: ObservableObject {
         // Legacy 2: a plaintext steam-cloud-auth.json from even older builds —
         // migrate it into the Keychain, then delete the cleartext copy.
         if let data = try? Data(contentsOf: AppPaths.steamCloudAuthStateURL),
-           let payload = try? JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data) {
+           let payload = Self.decodeAccount(data, from: "the legacy plaintext file") {
             account = payload
             persist()
-            try? FileManager.default.removeItem(at: AppPaths.steamCloudAuthStateURL)
+            Self.removeLegacyPlaintextFile()
         }
     }
 
@@ -59,7 +59,28 @@ final class SteamAuthStore: ObservableObject {
         sessionExpired = false
         Keychain.delete(account: Self.keychainAccount)
         // Remove any leftover legacy plaintext file too.
-        try? FileManager.default.removeItem(at: AppPaths.steamCloudAuthStateURL)
+        Self.removeLegacyPlaintextFile()
+    }
+
+    /// A stored account that won't decode signs the user out with no other
+    /// symptom, so say why in the log. The data itself is never logged.
+    private static func decodeAccount(_ data: Data, from source: StaticString) -> SteamCloudAccount? {
+        do {
+            return try JSONDecoder.gamenative.decode(SteamCloudAccount.self, from: data)
+        } catch {
+            Log.auth.error("Stored Steam account in \(String(describing: source), privacy: .public) didn't decode, so you'll need to sign in again: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
+    /// The pre-0.3.1 file held the refresh token in plaintext. If it can't be
+    /// deleted, that has to be visible.
+    private static func removeLegacyPlaintextFile() {
+        do {
+            try FileManager.default.removeItemIfPresent(at: AppPaths.steamCloudAuthStateURL)
+        } catch {
+            Log.auth.fault("Couldn't delete the legacy plaintext Steam token file: \(error.localizedDescription)")
+        }
     }
 
     /// Inspect an error thrown by a cloud operation; if it's an expired/revoked
@@ -71,7 +92,9 @@ final class SteamAuthStore: ObservableObject {
     }
 
     private func persist() {
-        guard let account, let data = try? JSONEncoder.gamenative.encode(account) else { return }
+        guard let account,
+              let data = attempt("encode the Steam account", log: Log.auth, { try JSONEncoder.gamenative.encode(account) })
+        else { return }
         do {
             // Deliberately no plaintext fallback: if the Keychain write fails,
             // the token stays in memory for this session and the user re-auths

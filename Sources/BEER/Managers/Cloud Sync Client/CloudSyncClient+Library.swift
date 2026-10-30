@@ -27,7 +27,7 @@ extension CloudSyncClient {
 
     /// Every DLC Steam lists for `appID`, each flagged with whether this
     /// account owns it. Steam has no owned-DLC endpoint, so the helper derives
-    /// ownership from the account's package licences (see `Dlc` in Program.cs).
+    /// ownership from the account's package licences (see `DlcCommand` in Tools/CloudSync/Commands).
     func dlc(appID: Int, account: String, refreshToken: String) async throws -> [DLCInfo] {
         let raw = try await runOnceArray(
             "dlc", args: ["dlc", "--appid", String(appID)],

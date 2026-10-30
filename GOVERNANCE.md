@@ -4,7 +4,7 @@ How decisions get made and how changes land in BEER.
 
 ## Roles
 
-- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames), on behalf of Widukind Technologies LLC. Has final say
+- **Maintainer** — [@JarJarJames](https://github.com/JarJarJames), on behalf of Saint Widukind Technologies LLC. Has final say
   on scope and direction, and is currently the **only** person who can approve and
   merge pull requests into `master`. Reviews contributions but is stepping back
   from day-to-day development (see the README "Project status").
@@ -40,9 +40,18 @@ original author in the loop.
 ## Releases
 
 - Versions are tagged `vX.Y.Z` (loose semantic versioning).
-- A release is built with `./scripts/build_app.sh <version>` (compiles, bundles
-  the CloudSync helper, ad-hoc signs, zips) and published via
-  `gh release create` with the `BEER.zip` attached.
+- **Every stable release has at least one nightly first.** A nightly is built
+  from `dev`, tagged `vX.Y.Z-nightly.N` (N counts up from 1 for each nightly
+  of that version), and published as a GitHub **pre-release** that is not
+  marked latest. Its notes open with a line saying it's a nightly and link the
+  current stable release.
+- **A stable release** happens after the nightly has been tested: merge `dev`
+  into `master` with a merge commit (not a squash), move the `## Unreleased`
+  changelog heading to `## X.Y.Z — <date>`, and tag `vX.Y.Z` on `master`.
+- Both kinds are built with `./scripts/build_app.sh <version>` (compiles,
+  bundles the CloudSync helper, ad-hoc signs, zips) and published via
+  `gh release create` with the `BEER.zip` attached. Add `--prerelease
+  --latest=false` for a nightly. Put the zip's SHA-256 in the notes.
 - Builds are not notarized; release notes must include the
   `xattr -dr com.apple.quarantine /Applications/BEER.app` step.
 
