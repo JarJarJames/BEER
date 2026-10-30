@@ -36,6 +36,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   touches that pad, so a second, real controller passes through unchanged.
   It also skips 32-bit games, which can't load the shim. Each launch logs
   what it decided and why. Release builds now bundle the fix.
+- **PS4 and PS5 controllers work in XInput games.** Wine never presents a
+  DualShock 4 or DualSense as an XInput pad, so games like Dark Souls
+  Remastered saw no controller. When one is connected, BEER now has Wine read
+  every pad through its SDL driver for that launch, which supports them
+  properly. Nothing is added to or changed in the game's folder.
 - README rewritten around the architecture, cloud sync and security model,
   including a plain description of how and why the Steam emulator is used.
 - Errors that were silently ignored in cloud sync, sign-in, downloads,

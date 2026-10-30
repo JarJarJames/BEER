@@ -74,6 +74,13 @@ extension BottleStore {
         // launch uses it, so a stale copy is never left loading on its own.
         ControllerSupport.removeShim(forExecutable: executable)
 
+        // On the SDL route SDL maps the Steam pad itself, so the shim would
+        // correct a pad that's already right (and flip its sticks back).
+        if sdlControllerBottleIDs.contains(bottle.id) {
+            appendLog("Controller fix: not needed; SDL is reading the pads this launch.", bottleID: bottle.id)
+            return nil
+        }
+
         guard ControllerSupport.fixIsInstalled else {
             appendLog("Controller fix: \(ControllerSupport.FixError.artifactsMissing.localizedDescription)", bottleID: bottle.id)
             return nil
@@ -162,24 +169,36 @@ extension BottleStore {
     }
 
     /// Register the Mac's connected gamepads with Wine's HID bus driver, which
-    /// otherwise drops them and leaves every game reporting no controller. See
-    /// `ControllerSupport` for why this is needed at all.
+    /// otherwise drops them and leaves every game reporting no controller, and
+    /// pick which of Wine's buses reads them. See `ControllerSupport` and
+    /// `SDLRoutedGamepads` for why each is needed.
     ///
-    /// The list is rewritten on every launch so it tracks whatever is plugged in
-    /// now, and runs *before* `configureDisplayMode` so the `wineboot -k` at the
-    /// end of that call restarts the bus driver onto the new value.
+    /// The settings are rewritten on every launch so they track whatever is
+    /// plugged in now, and this runs *before* `configureDisplayMode` so the
+    /// `wineboot -k` at the end of that call restarts the bus driver onto them.
     func configureControllers(_ bottle: Bottle) async {
-        guard let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }),
-              !identifiers.isEmpty else { return }
+        let identifiers = await withTimeout(seconds: 3, { ControllerSupport.connectedDeviceIdentifiers() }) ?? []
+        let sdlRoute = ControllerSupport.usesSDLRoute(identifiers)
+        if sdlRoute {
+            sdlControllerBottleIDs.insert(bottle.id)
+            appendLog("Controllers: PlayStation pad connected; Wine reads every pad through SDL this launch.", bottleID: bottle.id)
+        } else {
+            sdlControllerBottleIDs.remove(bottle.id)
+        }
+
+        let registryFile = AppPaths.prefixURL(for: bottle).appendingPathComponent("drive_c/beer-winebus.reg")
+        do {
+            try ControllerSupport.winebusRegistry(identifiers: identifiers, sdlRoute: sdlRoute)
+                .write(to: registryFile, atomically: true, encoding: .utf8)
+        } catch {
+            appendLog("Controllers: couldn't write Wine's controller settings: \(error.localizedDescription)", bottleID: bottle.id, isError: true)
+            return
+        }
 
         await runBottleCommand(
             bottle,
             operation: "Configuring controllers",
-            mode: .wine(arguments: [
-                "reg", "add", #"HKLM\System\CurrentControlSet\Services\winebus"#,
-                "/v", "EnableHidraw", "/t", "REG_SZ",
-                "/d", identifiers.joined(separator: ","), "/f"
-            ])
+            mode: .wine(arguments: ["reg", "import", #"C:\beer-winebus.reg"#])
         )
     }
 

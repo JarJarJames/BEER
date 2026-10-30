@@ -13,6 +13,10 @@ final class BottleStore: ObservableObject {
     /// Bottles whose running game has the controller fix installed.
     var controllerFixBottleIDs: Set<Bottle.ID> = []
 
+    /// Bottles whose current launch reads pads through Wine's SDL bus; see
+    /// `SDLRoutedGamepads`.
+    var sdlControllerBottleIDs: Set<Bottle.ID> = []
+
     @Published var lastError: String?
 
     func load() async {

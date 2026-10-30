@@ -22,6 +22,30 @@ enum ControllerSupport {
         Set(connectedGamepads().map(\.identifier)).sorted()
     }
 
+    /// Whether this launch reads pads through Wine's SDL bus instead of its
+    /// raw HID bus, because a pad the raw bus can't give XInput is connected.
+    /// See `SDLRoutedGamepads`.
+    static func usesSDLRoute(_ identifiers: [String]) -> Bool {
+        identifiers.contains(where: SDLRoutedGamepads.identifiers.contains)
+    }
+
+    /// SDL skips Steam's virtual pads unless the app runs under Steam, so on
+    /// the SDL route a Steam Controller would vanish without this.
+    static let allowSteamVirtualGamepadVariable = "SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD"
+
+    /// The `winebus` settings for a launch, as a file for `reg import`. Both
+    /// values are written every time so a previous launch's route never lingers.
+    static func winebusRegistry(identifiers: [String], sdlRoute: Bool) -> String {
+        [
+            "REGEDIT4",
+            "",
+            #"[HKEY_LOCAL_MACHINE\System\CurrentControlSet\Services\winebus]"#,
+            #""EnableHidraw"="\#(identifiers.joined(separator: ","))""#,
+            #""DisableHidraw"=dword:0000000\#(sdlRoute ? 1 : 0)"#,
+            ""
+        ].joined(separator: "\r\n")
+    }
+
     /// Every gamepad/joystick macOS currently exposes.
     static func connectedGamepads() -> [Gamepad] {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))

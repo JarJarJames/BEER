@@ -64,6 +64,9 @@ extension BottleStore {
         )
         env["WINEDEBUG"] = env["WINEDEBUG"] ?? "-all"
         env["WINEESYNC"] = env["WINEESYNC"] ?? "1"
+        if sdlControllerBottleIDs.contains(bottle.id) {
+            env[ControllerSupport.allowSteamVirtualGamepadVariable] = "1"
+        }
         env["PATH"] = "\(runtimeDirectory):\(inheritedPath)"
 
         let libraryPaths = runtimeLibraryDirectories(for: bottle)
