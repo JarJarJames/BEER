@@ -74,9 +74,14 @@ cat > "$CONTENTS/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Strip extended attributes (quarantine, Finder info) that make codesign
-# reject the bundle with "resource fork … not allowed".
-xattr -cr "$APP_DIR"
+# Sign and zip a copy outside the repo, without extended attributes
+# (quarantine, Finder info), which make codesign reject the bundle with
+# "resource fork … not allowed". Stripping them in place isn't enough when the
+# repo sits in an iCloud-synced folder: File Provider puts Finder info straight
+# back on the bundle.
+STAGE="$(mktemp -d -t beer-app)"
+trap 'rm -rf "$STAGE"' EXIT
+ditto --noextattr --norsrc "$APP_DIR" "$STAGE/BEER.app"
 
 # Deliberately ad-hoc, not the local dev signing identity: "BEER Local Dev"
 # (scripts/setup_local_codesign_identity.sh) is trusted only in the keychain
@@ -88,12 +93,14 @@ xattr -cr "$APP_DIR"
 # (CloudSyncClient.locateBinary) covers the bundled CloudSync helper
 # specifically, which is the part that used to SIGKILL silently.
 echo "==> Ad-hoc code-signing…"
-codesign --force --deep --sign - "$APP_DIR"
+codesign --force --deep --sign - "$STAGE/BEER.app"
 
 echo "==> Zipping for distribution…"
 ZIP="$ROOT_DIR/.build/BEER.zip"
 rm -f "$ZIP"
-ditto -c -k --keepParent "$APP_DIR" "$ZIP"
+ditto -c -k --keepParent "$STAGE/BEER.app" "$ZIP"
+rm -rf "$APP_DIR"
+ditto "$STAGE/BEER.app" "$APP_DIR"
 
 echo ""
 echo "Built:  $APP_DIR"
