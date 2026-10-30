@@ -28,6 +28,17 @@ Notable changes to BEER. Versions follow the GitHub releases.
   reset local unlocks** tools are now only in development builds. A test
   unlock goes through the same path as a real one, so it would reach the
   real Steam account; release builds no longer offer it.
+- **Controllers go through SDL, and any mix works at once.** Xbox,
+  PlayStation (DualShock 4, DualSense) and Steam controllers now all reach
+  games together, so splitscreen works with whatever pads you have. Before,
+  Wine never presented a PlayStation pad as an XInput controller, so games
+  like Dark Souls Remastered didn't see one. BEER now has Wine read every pad
+  through SDL, using BEER's own SDL build: GPTK's copy hands Xbox One/Series
+  pads to Apple's GameController framework, which doesn't deliver them inside
+  Wine. BEER's SDL is placed beside Wine's controller driver in the runtime;
+  no runtime or game file is replaced. The Steam Controller Fix setting is
+  gone, because SDL maps the Steam Controller's D-pad and buttons correctly
+  itself.
 - README rewritten around the architecture, cloud sync and security model,
   including a plain description of how and why the Steam emulator is used.
 - Errors that were silently ignored in cloud sync, sign-in, downloads,
@@ -51,6 +62,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   The record now stays until the cache is really gone.
 - "Back up & clear local saves" reports a folder it couldn't delete instead
   of saying the saves were cleared.
+- **BEER no longer freezes when a game floods its log.** The in-app log
+  kept every line in memory and copied the whole list on each new one, so a
+  game run with a verbose `WINEDEBUG` channel could lock up the app. It now
+  keeps the most recent 2,000 lines; `beer.log` in the bottle still has
+  everything.
 
 ### Security
 - Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam

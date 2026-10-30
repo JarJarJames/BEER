@@ -54,7 +54,7 @@ Managers/Bottle Store/
 └── BottleStore+Logging.swift
 ```
 
-`CloudSyncClient`, `CloudSyncEngine`, `ControllerSupport` (in `Managers/`) and `GameDetailViewModel` (in `ViewModel/`) are split the same way. Stored properties can't live in extensions, so they stay in the main file; members the extensions share are internal, not `private`.
+`CloudSyncClient`, `CloudSyncEngine` (in `Managers/`) and `GameDetailViewModel` (in `ViewModel/`) are split the same way. Stored properties can't live in extensions, so they stay in the main file; members the extensions share are internal, not `private`.
 
 ## C# helper (`Tools/CloudSync/`)
 
@@ -100,8 +100,8 @@ View/
 │   ├── Game Hero View/ -> Game Action Row/, Steam Hero Artwork/, Steam Library Logo/
 │   ├── Download Progress View/
 │   ├── Installed Details View/        One folder per settings row
-│   │   ├── Runtime Row/, Graphics Row/, Display Mode Row/, Controller Fix Row/,
-│   │   │   Launch Arguments Row/, Steam Emulator Row/, DLC Row/, Steam Cloud Row/
+│   │   ├── Runtime Row/, Graphics Row/, Display Mode Row/, Launch Arguments Row/,
+│   │   │   Steam Emulator Row/, DLC Row/, Steam Cloud Row/
 │   │   └── Advanced Settings View/ -> Environment Row/, Dependencies Row/, Wine Log View/, Labeled Value/
 │   ├── Settings Row/                  Shared by every row above
 │   ├── DLC Manager View/ -> DLC Manager Row/, DLC Manager Footer/, ...

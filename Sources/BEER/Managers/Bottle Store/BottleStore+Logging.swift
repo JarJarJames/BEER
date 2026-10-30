@@ -52,7 +52,9 @@ extension BottleStore {
             .joined(separator: "\n")
         let trimmed = filtered.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
-        logs[bottleID, default: []].append(BottleLogEntry(date: Date(), message: trimmed, isError: isError))
+        var entries = logs[bottleID, default: []]
+        entries.append(BottleLogEntry(date: Date(), message: trimmed, isError: isError))
+        logs[bottleID] = Array(entries.suffix(BottleLogLimits.inMemoryEntries))
         writeLogLine(trimmed, bottleID: bottleID)
     }
 

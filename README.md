@@ -38,8 +38,8 @@ get reviewed as time allows.
 - **Per-game runtime control.** Choose GPTK or Wine runtimes, DXVK/DXMT
   translators, Standard or High Resolution display mode, a Windows version,
   launch arguments and environment variables for each game.
-- **Controllers.** Wine gets the gamepads macOS reports. An optional per-game fix
-  restores the D-pad and buttons on Steam Input's virtual pad.
+- **Controllers.** Xbox, PlayStation and Steam controllers work in games, any
+  mix at once. Wine reads them through SDL, using BEER's own SDL build.
 
 ## Architecture
 
