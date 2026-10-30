@@ -59,6 +59,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   The record now stays until the cache is really gone.
 - "Back up & clear local saves" reports a folder it couldn't delete instead
   of saying the saves were cleared.
+- **BEER no longer freezes when a game floods its log.** The in-app log
+  kept every line in memory and copied the whole list on each new one, so a
+  game run with a verbose `WINEDEBUG` channel could lock up the app. It now
+  keeps the most recent 2,000 lines; `beer.log` in the bottle still has
+  everything.
 
 ### Security
 - Releases before 0.5.0 were withdrawn. Builds before 0.3.1 stored Steam
