@@ -8,14 +8,27 @@ import SwiftUI
 /// closes, which covers even a force quit. This catches the remainder — a
 /// helper wedged on a dead socket, say.
 enum PlaySessionRegistry {
-    private struct Record: Codable { let pid: Int32 }
+    struct Record: Codable {
+        let pid: Int32
+        /// The BEER that started the helper. Nil in records written before
+        /// this was tracked, which can only be from an earlier run.
+        var owner: Int32?
+    }
 
     static func record(pid: Int32) {
         // Without the record, a helper BEER loses track of can't be swept.
         attempt("record the presence helper's PID", log: Log.session) {
             try AppPaths.ensureBaseDirectories()
-            try JSONEncoder().encode(Record(pid: pid)).write(to: AppPaths.playSessionStateURL, options: .atomic)
+            let record = Record(pid: pid, owner: getpid())
+            try JSONEncoder().encode(record).write(to: AppPaths.playSessionStateURL, options: .atomic)
         }
+    }
+
+    /// A helper this BEER started is live, not left behind. The sweep runs
+    /// alongside sign-in at launch, so it can find this run's own record —
+    /// and killing that helper silently ended play-time tracking.
+    static func isOrphan(_ record: Record, currentPID: Int32 = getpid()) -> Bool {
+        record.owner != currentPID
     }
 
     static func clear() {
@@ -30,7 +43,8 @@ enum PlaySessionRegistry {
     /// status behind.
     static func sweepOrphans() async {
         guard let data = try? Data(contentsOf: AppPaths.playSessionStateURL),
-              let record = try? JSONDecoder().decode(Record.self, from: data) else { return }
+              let record = try? JSONDecoder().decode(Record.self, from: data),
+              isOrphan(record) else { return }
         clear()
 
         guard let result = try? await ShellRunner.run(
