@@ -18,12 +18,15 @@ extension GameDetailViewModel {
                 }
             }
             // A non-Steam game has no cloud, presence, or achievements to sync.
+            // It still shows on Discord, which doesn't need Steam.
             guard !game.effectiveIsNonSteam else {
+                DiscordPresence.shared.beginPlaying(game)
                 await bottles.launchGameExecutable(
                     bottle,
                     executable: exe,
                     arguments: bottle.effectiveGameLaunchArguments
                 )
+                DiscordPresence.shared.endPlaying(appID: game.appID)
                 return
             }
 
@@ -63,6 +66,7 @@ extension GameDetailViewModel {
             // Steam resolves games-played last-writer-wins across an account's
             // logons, so a second session opened just for this would fight it.
             presence.beginPlaying(appID: game.appID)
+            DiscordPresence.shared.beginPlaying(game)
 
             // Watch for local achievement unlocks (from the Goldberg/gbe_fork
             // shim) while the game runs, and sync any to the real account.
@@ -90,6 +94,7 @@ extension GameDetailViewModel {
             // `launchGameExecutable` returns once the whole Wine session is
             // idle, so by here play is genuinely over. Stopping hands back the
             // new total, re-read on the session we already hold.
+            DiscordPresence.shared.endPlaying(appID: game.appID)
             if let minutes = await presence.stopPlaying(appID: game.appID) {
                 library.recordPlaytime(appID: game.appID, minutes: minutes)
             }

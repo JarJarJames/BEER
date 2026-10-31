@@ -2,6 +2,14 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Added
+- **Discord Rich Presence.** While a game runs, your Discord profile shows
+  "[Game] with BEER" with the game's cover art, a BEER badge, an elapsed
+  timer and a "Get BEER" button. It needs only the Discord desktop app
+  running, not a Discord login, and the card clears when the game exits.
+
 ## 0.6.0 — 2026-10-30
 
 ### Added
