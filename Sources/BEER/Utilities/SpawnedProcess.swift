@@ -21,6 +21,13 @@ final class SpawnedProcess: @unchecked Sendable {
     var processIdentifier: Int32 { process.processIdentifier }
     var isRunning: Bool { process.isRunning }
 
+    /// How the process ended, for logs. Only meaningful once it has.
+    var exitDescription: String {
+        process.terminationReason == .uncaughtSignal
+            ? "killed by signal \(process.terminationStatus)"
+            : "exited with status \(process.terminationStatus)"
+    }
+
     /// Send one newline-terminated command to the child's stdin.
     /// Silently ignored once the child is gone — a command racing teardown is
     /// expected, not an error worth propagating to a caller.

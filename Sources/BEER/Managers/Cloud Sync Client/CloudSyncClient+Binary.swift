@@ -56,8 +56,11 @@ extension CloudSyncClient {
     /// than hardcoding the full path.
     static func locatePluginPublishedBinary(under cwd: URL) -> URL? {
         let outputsRoot = cwd.appendingPathComponent(".build/plugins/outputs")
+        // No `.skipsHiddenFiles`: the root sits inside the hidden `.build`,
+        // and with that option the enumerator yields nothing at all — every
+        // `swift run` silently fell back to the older App Support install.
         guard let enumerator = FileManager.default.enumerator(
-            at: outputsRoot, includingPropertiesForKeys: nil, options: [.skipsHiddenFiles]
+            at: outputsRoot, includingPropertiesForKeys: nil
         ) else { return nil }
 
         for case let url as URL in enumerator where url.lastPathComponent == "CloudSync" {

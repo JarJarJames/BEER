@@ -16,4 +16,5 @@ enum Log {
     static let install = Logger(subsystem: subsystem, category: "install")
     static let session = Logger(subsystem: subsystem, category: "play-session")
     static let achievements = Logger(subsystem: subsystem, category: "achievements")
+    static let discord = Logger(subsystem: subsystem, category: "discord")
 }

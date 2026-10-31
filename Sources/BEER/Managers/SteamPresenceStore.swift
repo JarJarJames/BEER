@@ -124,6 +124,12 @@ final class SteamPresenceStore: ObservableObject {
                 // which against a rejected token would hammer Steam's logon
                 // rate limit.
                 if !process.isRunning {
+                    PlaySessionLog.append("helper \(process.exitDescription)")
+                    // Unless the helper said why, the account bar would keep
+                    // looking fine while games go unannounced and uncounted.
+                    if self.lastError == nil {
+                        self.lastError = "Lost the Steam session, so play time isn't being counted. Restart BEER to reconnect."
+                    }
                     self.process = nil
                     self.isConnected = false
                     self.persona = nil
