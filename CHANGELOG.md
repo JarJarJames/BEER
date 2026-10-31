@@ -2,7 +2,7 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.6.1 — 2026-10-31
 
 ### Added
 - **Discord Rich Presence.** While a game runs, your Discord profile shows
