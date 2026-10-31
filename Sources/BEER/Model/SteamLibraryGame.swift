@@ -53,6 +53,13 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
         return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_hero.jpg")
     }
 
+    /// Steam's portrait Library cover. Its art is centered, so it survives
+    /// being cropped to a square where the wide header would lose its logo.
+    var libraryCapsuleImage: URL? {
+        if effectiveIsNonSteam { return customImageURL }
+        return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_600x900.jpg")
+    }
+
     /// Transparent title treatment Steam layers over its Library hero art.
     var libraryLogoImage: URL? {
         if effectiveIsNonSteam { return nil }
