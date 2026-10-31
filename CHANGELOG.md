@@ -10,6 +10,12 @@ Notable changes to BEER. Versions follow the GitHub releases.
   timer and a "Get BEER" button. It needs only the Discord desktop app
   running, not a Discord login, and the card clears when the game exits.
 
+### Fixed
+- **Steam play time and "now playing" sometimes never recorded.** A cleanup
+  step at launch could kill the Steam session BEER had just started, so
+  games went unannounced and uncounted. BEER now shows when the session
+  is lost instead of failing silently.
+
 ## 0.6.0 — 2026-10-30
 
 ### Added
