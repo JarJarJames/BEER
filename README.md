@@ -2,19 +2,37 @@
 
 [![CI](https://github.com/JarJarJames/BEER/actions/workflows/ci.yml/badge.svg?branch=dev)](https://github.com/JarJarJames/BEER/actions/workflows/ci.yml)
 
-BEER is a native macOS Steam library client for Apple Silicon. You sign in with
-the Steam Mobile App. BEER downloads the games your account owns, gives each one
-its own Wine bottle on Apple's Game Porting Toolkit, and syncs saves both ways
-with Steam Cloud. I built it to play **Kingdom Come: Deliverance** and
-**Kingdom Come: Deliverance II** on my MacBook and continue from the saves I left
-on my Windows PC. Both games now run on my Mac with their saves synced.
-Most of the work went into the parts that touch Steam: one Swift app driving
-a small SteamKit2 helper over a JSON CLI, a save sync that backs up before
-every write, and a logon strategy that stays clear of Steam's rate limits.
+**Play your Windows Steam games on an Apple Silicon Mac, with your saves synced
+to Steam Cloud.** BEER is a free, open-source Mac app. Sign in with the Steam
+Mobile App, pick a game from your library, and BEER downloads it and runs it on
+Apple's Game Porting Toolkit. You don't need the Steam client, CrossOver or a
+Windows PC.
+
+**[⬇ Download the latest release](https://github.com/JarJarJames/BEER/releases/latest)**
+· Apple Silicon (M1+) and macOS 14+
 
 ![BEER's game page for Kingdom Come: Deliverance II, showing its runtime, Steam emulator, DLC and Steam Cloud settings](docs/screenshot.png)
 
-> **Apple Silicon (M1+) and macOS 14+.** Intel Macs aren't supported.
+## Quick start
+
+1. Download `BEER.zip` from [Releases](https://github.com/JarJarJames/BEER/releases/latest),
+   unzip it, and move `BEER.app` to `/Applications`. The build isn't notarized,
+   so run this once:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/BEER.app
+   ```
+
+2. Open BEER and scan the QR code with the Steam Mobile App. BEER never asks for
+   your password.
+3. Pick a game and click Install. The first install also downloads Apple's Game
+   Porting Toolkit runtime, which is large. Then click Play.
+
+I built BEER to play **Kingdom Come: Deliverance** and **Kingdom Come:
+Deliverance II** on my MacBook and continue from the saves I left on my Windows
+PC. Both run on my Mac with their saves synced. If another game works (or
+doesn't), please [open an issue](https://github.com/JarJarJames/BEER/issues) so
+it can be listed.
 
 **Status:** I use it every day and maintain it myself. Issues and pull requests
 get reviewed as time allows.
@@ -42,6 +60,10 @@ get reviewed as time allows.
   mix at once. Wine reads them through SDL, using BEER's own SDL build.
 
 ## Architecture
+
+Most of the work went into the parts that touch Steam: one Swift app driving
+a small SteamKit2 helper over a JSON CLI, a save sync that backs up before
+every write, and a logon strategy that stays clear of Steam's rate limits.
 
 ```mermaid
 flowchart LR
@@ -162,21 +184,7 @@ check. Anything that touches account state gets an offline test alongside it.
   bar or green fullscreen button.
 - Anti-cheat and Steamworks multiplayer titles aren't supported.
 - Adding a non-Steam game (a folder already on disk) is new and still rough.
-- Builds are ad-hoc signed, not notarized (see Install).
-
-## Install
-
-Download `BEER.zip` from [Releases](https://github.com/JarJarJames/BEER/releases),
-unzip it, and move `BEER.app` to `/Applications`. The build isn't notarized, so
-run this once:
-
-```bash
-xattr -dr com.apple.quarantine /Applications/BEER.app
-```
-
-On first run, BEER installs DepotDownloader and walks you through QR sign-in.
-The first time you install a game, it also downloads Apple's Game Porting
-Toolkit runtime, which is large.
+- Builds are ad-hoc signed, not notarized (see Quick start).
 
 ## Build from source
 
