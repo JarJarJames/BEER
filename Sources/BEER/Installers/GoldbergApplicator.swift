@@ -30,7 +30,8 @@ enum GoldbergApplicator {
     static let appConfigFile = "configs.app.ini"
     static let achievementsFile = "achievements.json"
     static let statsFile = "stats.json"
-    static let managedFiles: Set<String> = [appIDFile, userConfigFile, appConfigFile, achievementsFile, statsFile]
+    static let interfacesFile = "steam_interfaces.txt"
+    static let managedFiles: Set<String> = [appIDFile, userConfigFile, appConfigFile, achievementsFile, statsFile, interfacesFile]
 
     /// Walk the install dir and replace every steam_api*.dll with the matching
     /// GBE_Fork stub. Idempotent: re-running is safe and only patches DLLs we
@@ -61,17 +62,19 @@ enum GoldbergApplicator {
             let stubData = isWide ? stub64Data : stub32Data
             let stubURL = isWide ? stub64 : stub32
 
+            let backupURL = dll.appendingPathExtension("original")
+
             // Idempotency check: byte-identical to the stub → already patched.
             if let existing = try? Data(contentsOf: dll), existing == stubData {
                 report.alreadyPatched += 1
                 // Still write the steam_settings folder in case it's missing.
                 let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, achievements: achievements, fileManager: fm)
+                try writeInterfaces(in: settings, from: backupURL)
                 report.settingsDirs.append(settings)
                 continue
             }
 
             // Back up the original (only if we haven't already).
-            let backupURL = dll.appendingPathExtension("original")
             if !fm.fileExists(atPath: backupURL.path) {
                 try fm.copyItem(at: dll, to: backupURL)
                 report.backedUp.append(backupURL)
@@ -86,6 +89,7 @@ enum GoldbergApplicator {
 
             // Write steam_settings/steam_appid.txt beside it.
             let settings = try writeSteamSettings(beside: dll, appID: appID, account: account, steamID64: steamID64, dlc: dlc, achievements: achievements, fileManager: fm)
+            try writeInterfaces(in: settings, from: backupURL)
             report.settingsDirs.append(settings)
         }
 
@@ -96,6 +100,7 @@ enum GoldbergApplicator {
     /// delete any steam_settings dirs that contain only files we created.
     static func restore(installDir: URL) throws -> Int {
         let fm = FileManager.default
+        try ColdClientApplicator.remove(installDir: installDir)
         guard let enumerator = fm.enumerator(at: installDir, includingPropertiesForKeys: [.isRegularFileKey]) else {
             return 0
         }
@@ -232,6 +237,14 @@ enum GoldbergApplicator {
 
     private static func writeSteamSettings(beside dll: URL, appID: Int, account: String?, steamID64: String?, dlc: [InstalledDLC], achievements: [CloudSyncClient.AchievementInfo], fileManager fm: FileManager) throws -> URL {
         let settingsDir = dll.deletingLastPathComponent().appendingPathComponent("steam_settings", isDirectory: true)
+        try writeSteamSettings(in: settingsDir, appID: appID, account: account, steamID64: steamID64, dlc: dlc, achievements: achievements, fileManager: fm)
+        return settingsDir
+    }
+
+    /// The settings every emulator copy needs: app ID, the user's real
+    /// identity, DLC, and the achievement schema. Also used by
+    /// ColdClientApplicator for games with no steam_api.dll to put them beside.
+    static func writeSteamSettings(in settingsDir: URL, appID: Int, account: String?, steamID64: String?, dlc: [InstalledDLC], achievements: [CloudSyncClient.AchievementInfo] = [], fileManager fm: FileManager = .default) throws {
         try fm.createDirectory(at: settingsDir, withIntermediateDirectories: true)
         let appidFile = settingsDir.appendingPathComponent(appIDFile, isDirectory: false)
         try String(appID).write(to: appidFile, atomically: true, encoding: .utf8)
@@ -251,7 +264,17 @@ enum GoldbergApplicator {
         if !achievements.isEmpty {
             try writeAchievementsSchema(in: settingsDir, achievements: achievements, fileManager: fm)
         }
-        return settingsDir
+    }
+
+    /// `steam_interfaces.txt` from the game's original DLL. Skipped when the
+    /// original is unreadable or names nothing: an empty file would tell the
+    /// emulator the game uses no interfaces at all.
+    private static func writeInterfaces(in settingsDir: URL, from originalDLL: URL) throws {
+        guard let data = try? Data(contentsOf: originalDLL) else { return }
+        let interfaces = SteamInterfacesScanner.interfaces(in: data)
+        guard !interfaces.isEmpty else { return }
+        try (interfaces.joined(separator: "\n") + "\n")
+            .write(to: settingsDir.appendingPathComponent(interfacesFile), atomically: true, encoding: .utf8)
     }
 
     // MARK: - Achievements

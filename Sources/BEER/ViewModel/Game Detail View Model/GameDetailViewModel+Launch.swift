@@ -1,9 +1,23 @@
 import Foundation
 
 extension GameDetailViewModel {
-    func launch(_ bottle: Bottle) {
-        guard let exe = bottle.gameLaunchExecutable else { return }
+    func launch(_ installedBottle: Bottle) {
+        guard installedBottle.gameLaunchExecutable != nil else { return }
         Task { [self] in
+            if !game.effectiveIsNonSteam {
+                await adoptSteamLaunchConfigIfNeeded(installedBottle)
+            }
+            let bottle = bottles.live(installedBottle)
+            guard let gameExe = bottle.gameLaunchExecutable else { return }
+            let exe: String
+            do {
+                exe = try steamClientLoaderExecutable(for: gameExe, in: bottle)
+            } catch {
+                cloudSyncIsError = true
+                cloudSyncMessage = "Couldn't launch: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
+                return
+            }
+
             // Ensure the selected graphics translator (DXVK/DXMT) is downloaded
             // and its DLLs are in the prefix before launch. No-op for D3DMetal /
             // WineD3D / automatic.

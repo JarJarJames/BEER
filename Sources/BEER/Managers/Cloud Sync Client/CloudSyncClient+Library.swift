@@ -44,3 +44,14 @@ extension CloudSyncClient {
         }
     }
 }
+
+extension CloudSyncClient {
+    /// The Windows launch options Steam lists for `appID`, best first — what
+    /// Steam's own Play button would run (see `LaunchConfigPicker` in Tools/CloudSync/Launch).
+    func launchEntries(appID: Int, account: String, refreshToken: String) async throws -> [LaunchEntry] {
+        try await runOnceArray(
+            "launch", args: ["launchinfo", "--appid", String(appID)],
+            account: account, refreshToken: refreshToken
+        ).compactMap(LaunchEntry.init(json:))
+    }
+}

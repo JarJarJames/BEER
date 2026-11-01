@@ -5,6 +5,7 @@ enum GoldbergPatchError: LocalizedError {
     case stubsMissing
     case unreadableInstallDir(String)
     case noSteamApiFound
+    case coldClientMissing(String)
 
     var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ enum GoldbergPatchError: LocalizedError {
             return "Could not read the game's install directory at \(path)."
         case .noSteamApiFound:
             return "No steam_api.dll / steam_api64.dll was found in the install. Either the game doesn't use Steamworks, or the depot download is incomplete."
+        case .coldClientMissing(let name):
+            return "This game uses Steam's DRM wrapper, and the Steam emulator's \(name) wasn't found. Reapply the emulator from this game's settings."
         }
     }
 }
