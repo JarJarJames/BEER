@@ -29,6 +29,17 @@ final class GoldbergInstaller: ObservableObject {
         findStub(named: "steam_api.dll")
     }
 
+    /// gbe_fork's steamclient build and its ColdClientLoader, for games
+    /// wrapped in SteamStub (see `ColdClientApplicator`).
+    var coldClientDirectory: URL? {
+        findStub(named: "steamclient_loader_x64.exe")?.deletingLastPathComponent()
+    }
+
+    /// gbe_fork's stand-in for the Steam2-era `Steam.dll`.
+    var oldSteamLibraryURL: URL? {
+        findStub(named: "Steam.dll")
+    }
+
     func refresh() {
         let ok = steamApi64URL != nil && steamApi32URL != nil
         isInstalled = ok

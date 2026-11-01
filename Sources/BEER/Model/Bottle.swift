@@ -37,6 +37,15 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// launch config. Installs from older builds only had a guess, so they are
     /// checked once on next launch. Optional so older bottle metadata decodes.
     var steamLaunchConfigChecked: Bool? = nil
+    /// Steam client loader settings (see `SteamClientLoaderPlan`). Optional
+    /// so older bottle metadata still decodes.
+    var steamClientLoaderMode: SteamClientLoaderMode? = nil
+    var steamClientLoaderInjectsOverlay: Bool? = nil
+    var steamClientLoaderStaysOpen: Bool? = nil
+
+    var effectiveSteamClientLoaderMode: SteamClientLoaderMode { steamClientLoaderMode ?? .automatic }
+    var effectiveSteamClientLoaderInjectsOverlay: Bool { steamClientLoaderInjectsOverlay ?? false }
+    var effectiveSteamClientLoaderStaysOpen: Bool { steamClientLoaderStaysOpen ?? false }
     /// DLC the user has enabled for this game. Drives the `[app::dlcs]` block
     /// the Steam emulator reads, so the game is told it owns them. Optional so
     /// bottles written before the DLC manager still decode.
