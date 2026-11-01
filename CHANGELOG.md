@@ -2,7 +2,7 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.6.2 — 2026-11-01
 
 ### Fixed
 - **Some games opened a bundled tool instead of the game.** BEER guessed the
