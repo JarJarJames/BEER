@@ -2,6 +2,15 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Fixed
+- **Some games opened a bundled tool instead of the game.** BEER guessed the
+  .exe from its name and size, so The Binding of Isaac opened its Mod
+  Uploader. It now runs the .exe Steam's own Play button runs, and keeps the
+  guess only as a fallback. Games installed earlier are corrected on their
+  next launch.
+
 ## 0.6.1 — 2026-10-31
 
 ### Added

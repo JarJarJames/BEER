@@ -26,10 +26,11 @@ executable → the repo dev build.
 |---|---|
 | `Program.cs` | Entry point: parse args, log on once, dispatch, JSON error envelope |
 | `Cli/` | `CliArgs` (argument parsing) and `JsonOutput` (the one stdout writer) |
-| `Steam/` | `SteamSession` (logon, retry, callback pump), `LogonFailedException`, `UserStatsHandler` |
+| `Steam/` | `SteamSession` (logon, retry, callback pump), `LogonFailedException`, `UserStatsHandler`, `AppInfo` (PICS app info) |
 | `Commands/` | One class per command below; `Presence/` holds the long-lived presence session |
 | `Transfers/` | `CloudTransfers` (single-file download/upload) and `CloudFileUnwrapper` |
 | `Achievements/` | Stats-schema parsing and unlock-bit math |
+| `Launch/` | `LaunchConfigPicker`: which `config/launch` entries a Windows install can run |
 
 Rules for adding files are in `PROJECT_STRUCTURE.md` under "C# helper". Tests are in
 `../CloudSync.Tests` (`dotnet test ../CloudSync.Tests`), and CI also runs
@@ -43,6 +44,7 @@ Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv
 |---|---|---|
 | `auth` | QR sign-in; emits `{challenge_url}` (re-emits as it rotates) then `{authenticated, account, refresh_token}` | no (account only) |
 | `ownedgames --steamid ID` | owned games via `IPlayerService.GetOwnedGames` | no |
+| `launchinfo --appid N` | Windows launch options from the app's `config/launch` (`{launch:[{executable,arguments,workingdir,type,description}]}`), best first | no |
 | `enumerate --appid N` | list cloud files (`{files:[{filename,size,timestamp,sha,ugcid}]}`) | **no — safe to run** |
 | `download --appid N --file F --out PATH` | download one cloud file | local only |
 | `upload --appid N --file F --in PATH [--mtime T]` | upload one file (begin → PUT blocks → commit) | **writes cloud** |

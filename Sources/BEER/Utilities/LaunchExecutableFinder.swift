@@ -43,7 +43,7 @@ enum LaunchExecutableFinder {
             "unins", "redist", "vcredist", "vc_redist", "directx", "dxsetup", "dotnet", "dotnetfx",
             "crashreport", "crashpad", "crashhandler", "uninstall", "uninstaller",
             "_setup", "setup", "installer", "report", "updater", "patch", "easyanticheat",
-            "battleye", "anticheat"
+            "battleye", "anticheat", "uploader"
         ]
 
         var candidates: [Candidate] = []

@@ -68,6 +68,7 @@ The helper is a command-line program: one invocation runs one command and prints
 | `Commands/` | One class per CLI command (`DlcCommand`, `BatchCommand`, …), each with a `RunAsync` entry point. A command that outgrows one file gets a folder (`Presence/`) | Helpers more than one command needs (those go to the role folder that fits) |
 | `Transfers/` | Steam Cloud file download/upload and unwrapping (`CloudTransfers`, `CloudFileUnwrapper`) | Command parsing or output |
 | `Achievements/` | The stats-schema parser and the records it produces | Network calls |
+| `Launch/` | Choosing a launch entry from app info (`LaunchConfigPicker`) | Network calls |
 
 Tests live in `Tools/CloudSync.Tests/`, in folders that mirror the helper's (`Transfers/CloudFileUnwrapperTests.cs` tests `Transfers/CloudFileUnwrapper.cs`).
 
