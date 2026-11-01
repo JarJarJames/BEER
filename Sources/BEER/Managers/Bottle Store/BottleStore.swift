@@ -106,7 +106,8 @@ final class BottleStore: ObservableObject {
         gameName: String,
         launchExecutable: String,
         launchArguments: String?,
-        installDirectory: String? = nil
+        installDirectory: String? = nil,
+        steamLaunchConfigChecked: Bool = false
     ) async {
         guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
         bottles[index].steamAppID = appID
@@ -114,8 +115,25 @@ final class BottleStore: ObservableObject {
         bottles[index].gameLaunchExecutable = launchExecutable
         bottles[index].gameInstallDirectory = installDirectory
         bottles[index].gameInstallStatus = .installed
+        bottles[index].steamLaunchConfigChecked = steamLaunchConfigChecked
         if let launchArguments, !launchArguments.isEmpty {
             bottles[index].gameLaunchArguments = launchArguments
+        }
+        bottles[index].updatedAt = Date()
+        await save()
+    }
+
+    /// Point an existing install at what Steam's launch config lists, if it
+    /// listed something in the install, and remember it has been checked.
+    /// Arguments the user already set are kept.
+    func recordSteamLaunchConfig(_ bottle: Bottle, target: SteamLaunchResolver.Target?) async {
+        guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
+        bottles[index].steamLaunchConfigChecked = true
+        if let target {
+            bottles[index].gameLaunchExecutable = target.executable.path
+            if bottles[index].gameLaunchArguments == nil, !target.arguments.isEmpty {
+                bottles[index].gameLaunchArguments = target.arguments
+            }
         }
         bottles[index].updatedAt = Date()
         await save()

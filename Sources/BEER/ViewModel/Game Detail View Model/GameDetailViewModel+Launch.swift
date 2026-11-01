@@ -1,9 +1,15 @@
 import Foundation
 
 extension GameDetailViewModel {
-    func launch(_ bottle: Bottle) {
-        guard let exe = bottle.gameLaunchExecutable else { return }
+    func launch(_ installedBottle: Bottle) {
+        guard installedBottle.gameLaunchExecutable != nil else { return }
         Task { [self] in
+            if !game.effectiveIsNonSteam {
+                await adoptSteamLaunchConfigIfNeeded(installedBottle)
+            }
+            let bottle = bottles.live(installedBottle)
+            guard let exe = bottle.gameLaunchExecutable else { return }
+
             // Ensure the selected graphics translator (DXVK/DXMT) is downloaded
             // and its DLLs are in the prefix before launch. No-op for D3DMetal /
             // WineD3D / automatic.

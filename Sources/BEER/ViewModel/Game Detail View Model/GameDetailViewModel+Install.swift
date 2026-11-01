@@ -90,15 +90,36 @@ extension GameDetailViewModel {
                     downloads.append(appID: game.appID, log: "Goldberg installer warning: \(err)")
                 }
 
-                let launchExeHost = result.launchExecutableHostPath.path
+                // Run what Steam's Play button would run. The file-size guess
+                // is only the fallback: it picks Isaac's Mod Uploader, say.
+                var launchExe = result.launchExecutableHostPath
+                var steamArguments: String?
+                var launchConfigChecked = false
+                do {
+                    let entries = try await steamLaunchEntries()
+                    launchConfigChecked = true
+                    if let target = SteamLaunchResolver.resolve(entries, in: result.installDirectory) {
+                        launchExe = target.executable
+                        steamArguments = target.arguments
+                        downloads.append(appID: game.appID, log: "Launch executable from Steam: \(launchExe.lastPathComponent)")
+                    } else {
+                        downloads.append(appID: game.appID, log: "Steam lists no Windows launch option in this install; using \(launchExe.lastPathComponent).")
+                    }
+                } catch {
+                    let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+                    downloads.append(appID: game.appID, log: "Couldn't read Steam's launch options (\(msg)); using \(launchExe.lastPathComponent).")
+                }
+
                 if let refreshed = bottles.bottles.first(where: { $0.id == bottleID }) {
                     await bottles.recordGameInstall(
                         refreshed,
                         appID: game.appID,
                         gameName: game.name,
-                        launchExecutable: launchExeHost,
-                        launchArguments: nil,
-                        installDirectory: result.installDirectory.path
+                        launchExecutable: launchExe.path,
+                        // Arguments the user set before a reinstall win.
+                        launchArguments: refreshed.gameLaunchArguments == nil ? steamArguments : nil,
+                        installDirectory: result.installDirectory.path,
+                        steamLaunchConfigChecked: launchConfigChecked
                     )
                 }
                 downloads.complete(appID: game.appID)

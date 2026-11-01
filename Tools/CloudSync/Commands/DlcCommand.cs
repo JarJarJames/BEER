@@ -23,7 +23,7 @@ static class DlcCommand
         // after logon — kick it off first and collect it once the DLC ids are known.
         var ownedTask = OwnedAppIdsAsync(s, apps);
 
-        var baseInfo = await RequestAppInfoAsync(apps, new[] { appid });
+        var baseInfo = await AppInfo.RequestAsync(apps, new[] { appid });
         if (!baseInfo.TryGetValue(appid, out var baseApp) || baseApp is null)
             throw new Exception($"Steam returned no app info for {appid}");
 
@@ -50,7 +50,7 @@ static class DlcCommand
             if (tag != KeyValue.Invalid && uint.TryParse(tag.Value, out var id)) AddDlc(id);
         }
 
-        var dlcInfo = await RequestAppInfoAsync(apps, dlcIds);
+        var dlcInfo = await AppInfo.RequestAsync(apps, dlcIds);
         var owned = await ownedTask;
 
         var result = new List<object>();
@@ -101,33 +101,6 @@ static class DlcCommand
                         owned.Add(child.AsUnsignedInteger());
         }
         return owned;
-    }
-
-    /// PICS product info for a set of apps, keyed by appid. Access tokens are
-    /// fetched first because most non-public app info is gated behind one.
-    static async Task<Dictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>> RequestAppInfoAsync(
-        SteamApps apps, IEnumerable<uint> appIds)
-    {
-        var ids = appIds.Distinct().ToList();
-        var found = new Dictionary<uint, SteamApps.PICSProductInfoCallback.PICSProductInfo>();
-        if (ids.Count == 0) return found;
-
-        var tokens = await apps.PICSGetAccessTokens(ids, new List<uint>());
-        var requests = ids.Select(id =>
-        {
-            var req = new SteamKit2.SteamApps.PICSRequest(id);
-            if (tokens.AppTokens.TryGetValue(id, out var token)) req.AccessToken = token;
-            return req;
-        }).ToList();
-
-        foreach (var chunk in requests.Chunk(200))
-        {
-            var info = await apps.PICSGetProductInfo(chunk.ToList(), new List<SteamKit2.SteamApps.PICSRequest>());
-            foreach (var result in info.Results ?? Enumerable.Empty<SteamApps.PICSProductInfoCallback>())
-                foreach (var app in result.Apps.Values)
-                    found[app.ID] = app;
-        }
-        return found;
     }
 
     /// True when the app owns at least one depot with a manifest that a Windows

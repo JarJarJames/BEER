@@ -33,6 +33,10 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
     /// when reapplying or restoring on an already-installed game.
     var gameInstallDirectory: String? = nil
+    /// Whether `gameLaunchExecutable` has been checked against Steam's own
+    /// launch config. Installs from older builds only had a guess, so they are
+    /// checked once on next launch. Optional so older bottle metadata decodes.
+    var steamLaunchConfigChecked: Bool? = nil
     /// DLC the user has enabled for this game. Drives the `[app::dlcs]` block
     /// the Steam emulator reads, so the game is told it owns them. Optional so
     /// bottles written before the DLC manager still decode.
