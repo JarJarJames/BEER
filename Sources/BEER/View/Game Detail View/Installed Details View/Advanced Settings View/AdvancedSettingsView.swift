@@ -46,6 +46,10 @@ struct AdvancedSettingsView: View {
 
             DependenciesRow(bottle: liveBottle)
 
+            if liveBottle.steamAppID != nil {
+                SteamClientLoaderRow(bottle: liveBottle)
+            }
+
             Divider()
 
             if let exe = liveBottle.gameLaunchExecutable {

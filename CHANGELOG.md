@@ -10,6 +10,17 @@ Notable changes to BEER. Versions follow the GitHub releases.
   Uploader. It now runs the .exe Steam's own Play button runs, and keeps the
   guess only as a fallback. Games installed earlier are corrected on their
   next launch.
+- **Games wrapped in Steam's DRM quit on launch.** Some executables, The
+  Binding of Isaac's among them, check for a running Steam client before the
+  game starts. BEER now launches those through the Steam emulator's loader,
+  which answers that check.
+- **Older Steam games.** The Steam emulator is now told which Steam
+  interface versions each game was built against, read from the game's own
+  `steam_api.dll`. Steam2-era games built on `Steam.dll`, and games that load
+  Steam's client library without a `steam_api.dll`, now start through the
+  loader too. Advanced Settings has a per-game Steam client loader setting
+  (Automatic, Always, Off), plus two options for the rare games that need
+  them.
 
 ## 0.6.1 — 2026-10-31
 
