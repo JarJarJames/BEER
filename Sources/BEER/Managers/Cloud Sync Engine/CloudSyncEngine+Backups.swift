@@ -45,7 +45,7 @@ extension CloudSyncEngine {
     /// Snapshot `dirs` before anything is written. A sync that can't make this
     /// copy must not run: it is the only way back from a bad overwrite. The
     /// failure is logged and rethrown as `CloudSyncError.backupFailed`.
-    func backUpBeforeWriting(appID: Int, dirs: Set<URL>, label: String) throws -> URL {
+    func backUpBeforeWriting(appID: Int, dirs: Set<URL>, label: String) throws -> URL? {
         do {
             return try snapshotBackup(appID: appID, dirs: dirs, label: label)
         } catch {
@@ -56,29 +56,67 @@ extension CloudSyncEngine {
         }
     }
 
-    /// Copy every regular file under `dirs` into a fresh timestamped backup
-    /// folder, preserving the path tail after the user home so a restore is
-    /// obvious. Returns the backup root.
-    func snapshotBackup(appID: Int, dirs: Set<URL>, label: String) throws -> URL {
+    /// Copy every file under `dirs` into a fresh timestamped backup folder,
+    /// preserving the path tail after the user home so a restore is obvious.
+    /// Returns the snapshot holding the current saves: the newest existing one
+    /// when nothing changed since it was taken, otherwise a new one. Nil when
+    /// there are no saves to copy.
+    func snapshotBackup(appID: Int, dirs: Set<URL>, label: String) throws -> URL? {
         let fm = FileManager.default
+        let appDir = backupsDirectory(appID)
+        // Even with nothing to copy, an unwritable backup folder means a full
+        // or broken disk, and the sync must stop.
+        try fm.createDirectory(at: appDir, withIntermediateDirectories: true)
+
+        let presentDirs = dirs.filter { fm.fileExists(atPath: $0.path) }
+        guard let files = CloudSaveBackupRetention.fingerprint(of: presentDirs) else { return nil }
+        let fingerprint = SHA256Digest.hexDigest(Data(files.utf8))
+        // A before-clear snapshot always gets its own copy: retention never
+        // removes it, and the saves it holds are about to be deleted.
+        if label != CloudSaveBackupLimits.neverPrunedLabel,
+           let newest = CloudSaveBackupRetention.snapshots(in: appDir).first,
+           storedFingerprint(of: newest) == fingerprint {
+            return newest
+        }
+
         let stamp = Self.timestampFormatter.string(from: Date())
-        let root = backupsDirectory(appID)
-            .appendingPathComponent("\(stamp)-\(label)", isDirectory: true)
-        var copiedAnything = false
-        for dir in dirs where fm.fileExists(atPath: dir.path) {
-            // Mirror the directory under the backup root using its last two
-            // path components (enough to disambiguate save folders).
-            let tail = dir.pathComponents.suffix(3).joined(separator: "/")
-            let dest = root.appendingPathComponent(tail, isDirectory: true)
-            try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
-            if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
-            try fm.copyItem(at: dir, to: dest)
-            copiedAnything = true
+        let root = appDir.appendingPathComponent("\(stamp)-\(label)", isDirectory: true)
+        do {
+            for dir in presentDirs {
+                // Mirror the directory under the backup root using its last
+                // three path components (enough to disambiguate save folders).
+                let tail = dir.pathComponents.suffix(3).joined(separator: "/")
+                let dest = root.appendingPathComponent(tail, isDirectory: true)
+                try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
+                if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
+                try fm.copyItem(at: dir, to: dest)
+            }
+            // Written last, so only a complete copy can stand in for a later one.
+            try fingerprint.write(to: root.appendingPathComponent(CloudSaveBackupLimits.fingerprintFileName),
+                                  atomically: true, encoding: .utf8)
+        } catch {
+            try? fm.removeItem(at: root)
+            throw error
         }
-        if !copiedAnything {
-            try fm.createDirectory(at: root, withIntermediateDirectories: true)
-        }
+        pruneBackups(appID: appID, keeping: root)
         return root
+    }
+
+    private func storedFingerprint(of snapshot: URL) -> String? {
+        try? String(contentsOf: snapshot.appendingPathComponent(CloudSaveBackupLimits.fingerprintFileName), encoding: .utf8)
+    }
+
+    /// Apply retention after a new snapshot.
+    func pruneBackups(appID: Int, keeping snapshot: URL) {
+        let appDir = backupsDirectory(appID)
+        let freed = CloudSaveBackupRetention.prune(appDirectory: appDir, keep: snapshotsToKeep, protecting: snapshot)
+        if freed > 0 {
+            Log.cloudSync.info("Pruned \(freed, privacy: .public) bytes of old save backups for app \(appID, privacy: .public)")
+        }
+        let total = CloudSaveBackupRetention.byteCount(of: appDir)
+        if total > CloudSaveBackupLimits.warnAboveBytes {
+            Log.cloudSync.warning("Save backups for app \(appID, privacy: .public) use \(total, privacy: .public) bytes, over the \(CloudSaveBackupLimits.warnAboveBytes, privacy: .public)-byte warning threshold")
+        }
     }
 
     static let timestampFormatter: DateFormatter = {

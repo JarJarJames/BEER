@@ -39,6 +39,9 @@ struct BEERApp: App {
                     // If a previous run died mid-game, stop any helper still
                     // telling Steam we're playing.
                     await PlaySessionRegistry.sweepOrphans()
+                    // Older builds kept every save backup forever; offer once
+                    // to apply the retention limit to what's already there.
+                    await CloudSaveBackupCleanup.offerIfNeeded()
                     // Retry any achievement unlocks that couldn't reach Steam
                     // last time (offline, expired session, etc).
                     if let account = cloudAuth.account, !cloudAuth.sessionExpired {

@@ -11,22 +11,7 @@ extension CloudSyncEngine {
     /// taking the library refresh and the presence session down with it.
     func localSaveFingerprint(appID: Int) -> String? {
         guard let dirs = knownSaveDirs[appID], !dirs.isEmpty else { return nil }
-        let fm = FileManager.default
-        var parts: [String] = []
-        for dir in dirs.sorted(by: { $0.path < $1.path }) {
-            guard let walker = fm.enumerator(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            for case let url as URL in walker {
-                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-                let mtime = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
-                let size = values?.fileSize ?? 0
-                parts.append("\(url.path):\(mtime):\(size)")
-            }
-        }
-        return parts.isEmpty ? nil : parts.sorted().joined(separator: "|")
+        return CloudSaveBackupRetention.fingerprint(of: dirs)
     }
 
     func resolveWineUserHome(for bottle: Bottle) throws -> URL {
