@@ -6,7 +6,8 @@ using SteamKit2.Internal;
 
 namespace CloudSync.Commands;
 
-/// `enumerate`: lists every Steam Cloud file for an app. One logon, read-only.
+/// `enumerate`: lists every Steam Cloud file for an app, plus the folders the
+/// game saves into (see `UfsSaveFiles`). One logon, read-only.
 static class EnumerateCommand
 {
     public static async Task RunAsync(SteamSession s, uint appid)
@@ -53,8 +54,13 @@ static class EnumerateCommand
             startIndex += (uint)body.files.Count;
             if (body.files.Count == 0 || startIndex >= body.total_files) break;
         }
+        var saveFiles = await UfsSaveFiles.FetchAsync(s, appid);
         Console.Error.WriteLine($"enumerate: {files.Count} files total, serializing…");
-        var json = JsonSerializer.Serialize(new Dictionary<string, object?> { ["files"] = files });
+        var json = JsonSerializer.Serialize(new Dictionary<string, object?>
+        {
+            ["files"] = files,
+            ["savefiles"] = saveFiles,
+        });
         Console.Error.WriteLine($"enumerate: serialized {json.Length} chars, writing…");
         JsonOutput.WriteLine(json);
         Console.Error.WriteLine("enumerate: emitted.");

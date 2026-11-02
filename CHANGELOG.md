@@ -11,6 +11,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   game (plus every backup taken before clearing local saves), skips the copy
   when the saves haven't changed, and no longer leaves empty backup folders.
   On first launch BEER offers to apply this to backups already on disk.
+- **Saves in a new folder never reached Steam Cloud.** BEER only looked for
+  new saves in folders that already had cloud files, so a game's first saves
+  made on the Mac, or a new save folder per playthrough, were never uploaded
+  and nothing said so. It now also checks the save folders Steam lists for
+  the game.
 
 ## 0.6.2 — 2026-11-01
 

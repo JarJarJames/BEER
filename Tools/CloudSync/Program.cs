@@ -20,7 +20,7 @@ namespace CloudSync;
 // stderr. Exit code 0 = ok, non-zero = failure (with {"error":...} on stdout).
 //
 // Commands:
-//   enumerate --appid N
+//   enumerate --appid N     (cloud files + ufs save-folder rules)
 //   dlc       --appid N
 //   launchinfo --appid N
 //   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
