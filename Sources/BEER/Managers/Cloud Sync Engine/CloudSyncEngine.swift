@@ -34,6 +34,10 @@ final class CloudSyncEngine: ObservableObject {
     /// temporary folder.
     var backupsDirectory: (Int) -> URL = AppPaths.cloudSaveBackupsDirectory(forAppID:)
 
+    /// How many snapshots per game survive pruning (`before-clear` ones are
+    /// always kept on top of these).
+    var snapshotsToKeep = CloudSaveBackupLimits.snapshotsPerGame
+
     /// Save directories learned from the last successful sync, per appID. Kept
     /// so `localSaveFingerprint` can tell whether a play session wrote anything
     /// without spending a Steam logon to find out.
@@ -56,9 +60,10 @@ final class CloudSyncEngine: ObservableObject {
 
     /// Back up, then remove, the local saves for this game — the "start clean
     /// from cloud" / "don't let me mess up my saves" escape hatch. Never a true
-    /// delete: everything is copied to a timestamped backup first.
+    /// delete: everything is copied to a timestamped backup first. Returns
+    /// that backup, or nil when there were no local saves to copy.
     @discardableResult
-    func backupAndClearLocalSaves(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> URL {
+    func backupAndClearLocalSaves(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> URL? {
         guard let account = auth.account else { throw CloudSyncError.notSignedIn }
         isSyncing = true
         defer { isSyncing = false }

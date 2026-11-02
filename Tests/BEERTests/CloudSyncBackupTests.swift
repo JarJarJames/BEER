@@ -33,7 +33,7 @@ final class CloudSyncBackupTests: XCTestCase {
     }
 
     func testBackupCopiesSavesIntoATimestampedFolder() throws {
-        let backup = try engine().backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-pull")
+        let backup = try XCTUnwrap(engine().backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-pull"))
 
         XCTAssertTrue(backup.lastPathComponent.hasSuffix("-before-pull"))
         // Backups keep the last three path components of each save folder.
@@ -67,5 +67,69 @@ final class CloudSyncBackupTests: XCTestCase {
         let missing = root.appendingPathComponent("not-created-yet", isDirectory: true)
 
         XCTAssertThrowsError(try engine().backUpBeforeWriting(appID: appID, dirs: [missing], label: "before-pull"))
+    }
+
+    func testNoLocalSavesLeavesNoEmptySnapshot() throws {
+        let missing = root.appendingPathComponent("not-created-yet", isDirectory: true)
+
+        XCTAssertNil(try engine().backUpBeforeWriting(appID: appID, dirs: [missing], label: "before-pull"))
+        XCTAssertEqual(snapshotNames(), [])
+    }
+
+    func testUnchangedSavesReuseTheNewestSnapshot() throws {
+        let engine = engine()
+        let first = try engine.backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-pull")
+        let second = try engine.backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-sync")
+
+        XCTAssertEqual(second?.lastPathComponent, first?.lastPathComponent)
+        XCTAssertEqual(snapshotNames().count, 1)
+    }
+
+    func testChangedSavesGetANewSnapshot() throws {
+        // A snapshot from an earlier sync, of saves that have since changed.
+        try makeSnapshot("2026-01-01_10-00-00-before-pull", fingerprint: "an older save set")
+
+        let backup = try XCTUnwrap(engine().backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-sync"))
+
+        XCTAssertNotEqual(backup.lastPathComponent, "2026-01-01_10-00-00-before-pull")
+        XCTAssertEqual(snapshotNames().count, 2)
+    }
+
+    func testBeforeClearAlwaysMakesItsOwnCopy() throws {
+        let engine = engine()
+        try XCTUnwrap(engine.backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-pull"))
+        // Same saves, but they're about to be deleted: reusing a prunable
+        // before-pull snapshot would leave them one prune away from gone.
+        let clear = try XCTUnwrap(engine.backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-clear"))
+
+        XCTAssertTrue(clear.lastPathComponent.hasSuffix("-before-clear"))
+    }
+
+    func testNewSnapshotPrunesOldOnes() throws {
+        for minute in 0..<4 {
+            try makeSnapshot("2026-01-01_10-0\(minute)-00-before-pull", fingerprint: "old \(minute)")
+        }
+        let engine = engine()
+        engine.snapshotsToKeep = 2
+
+        let backup = try XCTUnwrap(engine.backUpBeforeWriting(appID: appID, dirs: [saves], label: "before-sync"))
+
+        XCTAssertEqual(snapshotNames(), [backup.lastPathComponent, "2026-01-01_10-03-00-before-pull"])
+    }
+
+    // MARK: - Helpers
+
+    private var appBackups: URL { backups.appendingPathComponent(String(appID), isDirectory: true) }
+
+    private func makeSnapshot(_ name: String, fingerprint: String) throws {
+        let dir = appBackups.appendingPathComponent(name, isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try Data("save".utf8).write(to: dir.appendingPathComponent("quicksave.whs"))
+        try fingerprint.write(to: dir.appendingPathComponent(CloudSaveBackupLimits.fingerprintFileName),
+                              atomically: true, encoding: .utf8)
+    }
+
+    private func snapshotNames() -> [String] {
+        CloudSaveBackupRetention.snapshots(in: appBackups).map(\.lastPathComponent)
     }
 }

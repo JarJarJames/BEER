@@ -2,6 +2,16 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Fixed
+- **Cloud-save backups filled the disk.** BEER copied a game's whole save
+  folder before every sync and never removed old copies, so Kingdom Come
+  games alone reached hundreds of GB. It now keeps the newest 3 backups per
+  game (plus every backup taken before clearing local saves), skips the copy
+  when the saves haven't changed, and no longer leaves empty backup folders.
+  On first launch BEER offers to apply this to backups already on disk.
+
 ## 0.6.2 — 2026-11-01
 
 ### Fixed

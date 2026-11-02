@@ -51,7 +51,8 @@ extension GameDetailViewModel {
             do {
                 let backup = try await cloudSync.backupAndClearLocalSaves(bottle: bottle, appID: game.appID, auth: cloudAuth)
                 cloudSyncIsError = false
-                cloudSyncMessage = "Local saves cleared. Backed up to \(backup.lastPathComponent). Use “Pull from cloud” to restore from Steam."
+                let backedUp = backup.map { " Backed up to \($0.lastPathComponent)." } ?? ""
+                cloudSyncMessage = "Local saves cleared.\(backedUp) Use “Pull from cloud” to restore from Steam."
             } catch {
                 cloudAuth.noteCloudError(error)
                 cloudSyncIsError = true

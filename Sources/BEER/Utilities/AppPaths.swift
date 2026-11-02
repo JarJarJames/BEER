@@ -128,9 +128,11 @@ enum AppPaths {
     /// here before EVERY cloud pull/push and before any "clear local saves", so
     /// a long-played save can always be recovered — even if a bottle is wiped.
     static func cloudSaveBackupsDirectory(forAppID appID: Int) -> URL {
-        applicationSupport
-            .appendingPathComponent("CloudSaveBackups", isDirectory: true)
-            .appendingPathComponent(String(appID), isDirectory: true)
+        cloudSaveBackupsRoot.appendingPathComponent(String(appID), isDirectory: true)
+    }
+
+    static var cloudSaveBackupsRoot: URL {
+        applicationSupport.appendingPathComponent("CloudSaveBackups", isDirectory: true)
     }
 
     /// BEER's SDL2 build for Wine's controller driver, as
