@@ -33,7 +33,12 @@ extension CloudSyncEngine {
             let entries = (try? FileManager.default.contentsOfDirectory(
                 at: dir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]
             )) ?? []
-            for fileURL in entries where (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+            for entry in entries where (try? entry.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true {
+                // The listing hands back link-resolved paths: a bottle's
+                // Documents is a link to the Mac's own, so a save there comes
+                // back under /Users/…/Documents. Rebuild it under `dir`, where
+                // the cloud files' local paths point.
+                let fileURL = dir.appendingPathComponent(entry.lastPathComponent, isDirectory: false)
                 candidates[fileURL.path] = (fileURL, nil)
             }
         }

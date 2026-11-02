@@ -173,6 +173,31 @@ final class CloudSaveRuleTests: XCTestCase {
         XCTAssertEqual(plan.uploads.map(\.filename), ["%WinAppDataRoaming%/game/22202/profile.dat"])
     }
 
+    // A bottle's Documents is a link to the Mac's own, and listing a folder
+    // through it returns /Users/…/Documents paths. Those never matched the
+    // cloud files' local paths, so every file there failed with "couldn't
+    // infer cloud path", and without save rules nothing in Documents uploaded.
+    func testSavesBehindTheDocumentsLinkMatchTheirCloudFiles() throws {
+        let macDocuments = root.appendingPathComponent("Mac Documents", isDirectory: true)
+        let real = macDocuments.appendingPathComponent("NBGI/DARK SOULS REMASTERED/185239630", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        try FileManager.default.createSymbolicLink(at: home.appendingPathComponent("Documents"), withDestinationURL: macDocuments)
+        let existing = try write("DRAKS0005.sl2", in: real)
+        try write("DRAKS0006.sl2", in: real)
+        let cloudTime = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes([.modificationDate: cloudTime], ofItemAtPath: existing.path)
+
+        let plan = planUploads(
+            remote: [CloudRemoteFile(filename: "%WinMyDocuments%/NBGI/DARK SOULS REMASTERED/185239630/DRAKS0005.sl2",
+                                     size: 4, timestamp: cloudTime, sha: "")],
+            rules: []
+        )
+
+        XCTAssertTrue(plan.failures.isEmpty, "\(plan.failures)")
+        XCTAssertEqual(plan.skipped, 1, "the save already in the cloud is up to date")
+        XCTAssertEqual(plan.uploads.map(\.filename), ["%WinMyDocuments%/NBGI/DARK SOULS REMASTERED/185239630/DRAKS0006.sl2"])
+    }
+
     func testWithoutRulesANewFolderStaysUnseen() throws {
         try write("slot1.sav", in: try makeFolder("Saved Games/MyGame/saves"))
 
