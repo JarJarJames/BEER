@@ -28,7 +28,7 @@ final class CloudSyncEngine: ObservableObject {
 
     @Published var lastError: String? = nil
 
-    /// Tests swap in a client that runs a stand-in helper.
+    /// Tests swap in a client that runs `FakeSteam`.
     var client = CloudSyncClient()
 
     /// Where backups and `last-sync.log` go for an app. Tests point this at a

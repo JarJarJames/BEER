@@ -1,12 +1,13 @@
 import Foundation
 @testable import BEER
 
-/// Runs in place of the CloudSync helper so tests can drive a whole sync
-/// without Steam. It answers `enumerate` and `batch` from what the test sets
-/// here, writes the files it "downloads", and records every call it gets, so
-/// a test can check what reached Steam and in what order.
+/// A fake Steam for tests: a script that runs in place of the CloudSync helper,
+/// so tests can drive a whole sync or install check without Steam. It answers
+/// `enumerate`, `batch` and `installsize` from what the test sets here, writes
+/// the files it "downloads", and records every call it gets, so a test can
+/// check what reached Steam and in what order.
 @MainActor
-final class CloudSyncStandIn {
+final class FakeSteam {
     /// One run of the helper.
     struct Call {
         let command: String
@@ -68,17 +69,17 @@ final class CloudSyncStandIn {
             "signInExpired": signInExpired,
             "installSizes": Dictionary(uniqueKeysWithValues: installSizes.map { (String($0.key), $0.value) }),
         ]
-        // A test that can't set up its stand-in can't mean anything.
-        try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("standin.json"))
+        // A test that can't set up its fake Steam can't mean anything.
+        try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("fakesteam.json"))
     }
 
     private static let source = #"""
     #!/usr/bin/python3
-    # Stand-in for Tools/CloudSync, written by CloudSyncStandIn.swift.
+    # Fake Steam for tests: replaces Tools/CloudSync. Written by FakeSteam.swift.
     import json, os, sys
 
     here = os.path.dirname(os.path.abspath(__file__))
-    with open(os.path.join(here, "standin.json")) as f:
+    with open(os.path.join(here, "fakesteam.json")) as f:
         config = json.load(f)
     args = sys.argv[1:]
     cmd = args[0]
@@ -122,7 +123,7 @@ final class CloudSyncStandIn {
                 emit({"op": "upload", "filename": u["filename"], "ok": True})
         emit({"summary": True})
     else:
-        emit({"error": "the stand-in doesn't answer " + cmd})
+        emit({"error": "fake Steam doesn't answer " + cmd})
         sys.exit(1)
     """#
 }

@@ -3,7 +3,7 @@ import XCTest
 @testable import BEER
 
 // A restored backup meeting a real sync. The engine runs end to end against
-// a stand-in for the CloudSync helper (see CloudSyncStandIn), with a bottle
+// a fake Steam in place of the CloudSync helper (see FakeSteam), with a bottle
 // and backups in a temporary folder. The account below is made up and never
 // stored: nothing here reaches Steam or the Keychain.
 @MainActor
@@ -11,7 +11,7 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
     private var root: URL!
     private var home: URL!
     private var saves: URL!
-    private var standIn: CloudSyncStandIn!
+    private var fakeSteam: FakeSteam!
     private var engine: CloudSyncEngine!
     private var auth: SteamAuthStore!
     private let appID = 379430
@@ -35,14 +35,14 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
         try FileManager.default.createDirectory(at: saves, withIntermediateDirectories: true)
         try Data("chapter 3".utf8).write(to: saves.appendingPathComponent("quicksave.whs"))
 
-        standIn = try CloudSyncStandIn(in: root.appendingPathComponent("StandIn", isDirectory: true))
+        fakeSteam = try FakeSteam(in: root.appendingPathComponent("FakeSteam", isDirectory: true))
         let backups = root.appendingPathComponent("CloudSaveBackups", isDirectory: true)
         engine = CloudSyncEngine()
-        engine.client = standIn.client
+        engine.client = fakeSteam.client
         engine.backupsDirectory = { backups.appendingPathComponent(String($0), isDirectory: true) }
         engine.bottlePrefix = { _ in prefix }
         auth = SteamAuthStore()
-        auth.account = SteamCloudAccount(accountName: "stand-in", steamID64: "76561197960287930",
+        auth.account = SteamCloudAccount(accountName: "fake-steam", steamID64: "76561197960287930",
                                          refreshToken: "not-a-real-token", connectedAt: Date())
     }
 
@@ -58,7 +58,7 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
         let report = try await engine.sync(bottle: bottle, appID: appID, auth: auth)
 
         XCTAssertEqual(report.downloaded + report.uploaded, 0)
-        XCTAssertEqual(standIn.calls().map(\.command), ["enumerate"], "no batch when nothing changed")
+        XCTAssertEqual(fakeSteam.calls().map(\.command), ["enumerate"], "no batch when nothing changed")
     }
 
     // MARK: - A pending restore
@@ -75,7 +75,7 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
             XCTAssertEqual(conflict.differingCloudFiles.map(\.filename), [cloudName])
         }
 
-        XCTAssertEqual(standIn.calls().map(\.command), ["enumerate"], "nothing downloaded or uploaded")
+        XCTAssertEqual(fakeSteam.calls().map(\.command), ["enumerate"], "nothing downloaded or uploaded")
         XCTAssertEqual(try localSave(), "chapter 3")
         XCTAssertEqual(engine.saveBackups(appID: appID).count, backupsBefore, "stopped before even backing up")
         XCTAssertNotNil(engine.pendingRestore(appID: appID))
@@ -110,7 +110,7 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
 
         let report = try await engine.keepRestoredSaves(bottle: bottle, appID: appID, auth: auth)
 
-        let calls = standIn.calls()
+        let calls = fakeSteam.calls()
         XCTAssertEqual(calls.map(\.command), ["enumerate", "batch", "batch"])
         XCTAssertEqual(calls[1].downloads.map(\.filename), [cloudName], "Steam's copy first…")
         XCTAssertTrue(calls[1].uploads.isEmpty)
@@ -135,15 +135,15 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
     func testKeepingUploadsNothingWhenSteamsCopyCantBeSaved() async throws {
         try restoreBackupOfChapter3()
         steamHas("chapter 5")
-        standIn.contents = [:]
+        fakeSteam.contents = [:]
 
         do {
             _ = try await engine.keepRestoredSaves(bottle: bottle, appID: appID, auth: auth)
             XCTFail("keeping should have stopped when Steam's copy didn't download")
         } catch CloudSyncError.steamCopyFailed {}
 
-        XCTAssertEqual(standIn.calls().map(\.command), ["enumerate", "batch"])
-        XCTAssertTrue(standIn.calls().allSatisfy { $0.uploads.isEmpty }, "Steam Cloud is unchanged")
+        XCTAssertEqual(fakeSteam.calls().map(\.command), ["enumerate", "batch"])
+        XCTAssertTrue(fakeSteam.calls().allSatisfy { $0.uploads.isEmpty }, "Steam Cloud is unchanged")
         XCTAssertFalse(engine.saveBackups(appID: appID).contains { $0.label == CloudSaveBackupLimits.steamCloudCopyLabel },
                        "no half-made copy left behind")
         XCTAssertNotNil(engine.pendingRestore(appID: appID), "still waiting on the player")
@@ -152,14 +152,14 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
     func testKeepingWithAnExpiredSignInChangesNothing() async throws {
         try restoreBackupOfChapter3()
         steamHas("chapter 5")
-        standIn.signInExpired = true
+        fakeSteam.signInExpired = true
 
         do {
             _ = try await engine.keepRestoredSaves(bottle: bottle, appID: appID, auth: auth)
             XCTFail("an expired sign-in should have stopped it")
         } catch CloudSyncClientError.authExpired {}
 
-        XCTAssertEqual(standIn.calls().map(\.command), ["enumerate"])
+        XCTAssertEqual(fakeSteam.calls().map(\.command), ["enumerate"])
         XCTAssertNotNil(engine.pendingRestore(appID: appID))
         XCTAssertEqual(try localSave(), "chapter 3")
     }
@@ -167,7 +167,7 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
     func testARefusedUploadLeavesTheRestorePending() async throws {
         try restoreBackupOfChapter3()
         steamHas("chapter 5")
-        standIn.rejectedUploads = [cloudName]
+        fakeSteam.rejectedUploads = [cloudName]
 
         let report = try await engine.keepRestoredSaves(bottle: bottle, appID: appID, auth: auth)
 
@@ -218,9 +218,9 @@ final class CloudSaveRestoreSyncTests: XCTestCase {
 
     /// Steam holds `text` for the quicksave, uploaded later than anything here.
     private func steamHas(_ text: String) {
-        standIn.files = [CloudRemoteFile(filename: cloudName, size: text.utf8.count,
+        fakeSteam.files = [CloudRemoteFile(filename: cloudName, size: text.utf8.count,
                                          timestamp: Date().addingTimeInterval(3600), sha: sha1(of: text))]
-        standIn.contents = [cloudName: text]
+        fakeSteam.contents = [cloudName: text]
     }
 
     private func localSave() throws -> String {

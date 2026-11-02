@@ -34,8 +34,8 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placemen
   the app, `dotnet build Tools/CloudSync/CloudSync.csproj -c Release` for the
   helper. State honestly what you did and did not test.
 - **Test offline with fakes.** Anything touching Steam or machine state gets an
-  XCTest that fakes it: `Tests/BEERTests/Support/CloudSyncStandIn.swift` stands
-  in for the CloudSync helper (teach it new commands as needed), and lookups like
+  XCTest that fakes it: `Tests/BEERTests/Support/FakeSteam.swift` runs in
+  place of the CloudSync helper (teach it new commands as needed), and lookups like
   free disk space are made swappable so a test can fake them (see
   `InstallSpaceCheckTests`). The human then tests only what a fake can't cover.
 - **Shell out safely:** use `ShellRunner` with an argument array (`Process`),
