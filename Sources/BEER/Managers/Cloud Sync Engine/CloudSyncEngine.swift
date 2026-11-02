@@ -12,8 +12,8 @@ import Foundation
 //     copy is strictly newer; push only uploads when the local copy is strictly
 //     newer (or the file is new to the cloud). We never clobber the newer side.
 //   • A file is keyed by Steam's own cloud filename, so push echoes back the
-//     exact key Steam uses, and learns the path convention for brand-new local
-//     saves from sibling cloud files.
+//     exact key Steam uses. A brand-new local save takes its name from sibling
+//     cloud files, or from the game's save rules when its folder has none.
 
 @MainActor
 final class CloudSyncEngine: ObservableObject {
@@ -69,7 +69,9 @@ final class CloudSyncEngine: ObservableObject {
         defer { isSyncing = false }
 
         phase = "Listing cloud files…"
-        let remote = try await client.enumerate(appID: appID, account: account.accountName, refreshToken: account.refreshToken)
+        // Only folders with cloud files are cleared. Saves the cloud has never
+        // seen would survive only in the backup.
+        let remote = try await client.enumerate(appID: appID, account: account.accountName, refreshToken: account.refreshToken).files
         let userHome = try resolveWineUserHome(for: bottle)
         let installDir = bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
 
@@ -106,9 +108,9 @@ final class CloudSyncEngine: ObservableObject {
         var report = CloudSyncReport()
 
         phase = "Listing cloud files…"
-        let remote: [CloudRemoteFile]
+        let listing: CloudListing
         do {
-            remote = try await client.enumerate(appID: appID, account: acct, refreshToken: token)
+            listing = try await client.enumerate(appID: appID, account: acct, refreshToken: token)
         } catch {
             // Nothing was written to last-sync.log yet — without this, a sync
             // that fails this early leaves the log (and anyone reading it to
@@ -119,11 +121,15 @@ final class CloudSyncEngine: ObservableObject {
                                  reason: (error as? LocalizedError)?.errorDescription ?? error.localizedDescription)
             throw error
         }
+        let remote = listing.files
+        let saveRules = resolveSaveRules(listing.saveRules, userHome: userHome, installDir: installDir,
+                                         steamID64: account.steamID64)
 
         // Snapshot every locally-present tracked file BEFORE touching anything.
-        let trackedDirs = Set(remote.compactMap {
+        let cloudDirs = Set(remote.compactMap {
             mapToLocal($0.filename, userHome: userHome, installDir: installDir)?.deletingLastPathComponent()
         })
+        let trackedDirs = outermostFolders(cloudDirs.union(saveFoldersToTrack(saveRules)))
         if !trackedDirs.isEmpty {
             knownSaveDirs[appID] = trackedDirs
             phase = "Backing up local saves…"
@@ -161,50 +167,20 @@ final class CloudSyncEngine: ObservableObject {
         }
 
         // ---- PUSH: local → cloud, only when local is strictly newer / new ----
+        var notes: [String] = []
         if doPush {
-            let remoteByLocalPath = Dictionary(
-                remote.compactMap { rf -> (String, CloudRemoteFile)? in
-                    guard let local = mapToLocal(rf.filename, userHome: userHome, installDir: installDir) else { return nil }
-                    return (local.path, rf)
-                },
-                uniquingKeysWith: { a, _ in a }
-            )
-            // Learn the remote directory convention from existing cloud files:
-            // local-dir → remote-dir-prefix (filename minus its last component).
-            var remoteDirByLocalDir: [String: String] = [:]
-            for rf in remote {
-                guard let local = mapToLocal(rf.filename, userHome: userHome, installDir: installDir) else { continue }
-                remoteDirByLocalDir[local.deletingLastPathComponent().path] = remoteDir(of: rf.filename)
+            if listing.saveRules.isEmpty {
+                notes.append("Steam listed no save folders for this game, so only folders already in the cloud were checked for new saves.")
             }
-
-            for dir in trackedDirs {
-                guard let entries = try? FileManager.default.contentsOfDirectory(
-                    at: dir, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]
-                ) else { continue }
-                for fileURL in entries {
-                    guard (try? fileURL.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile == true else { continue }
-                    guard let localMTime = fileMTime(fileURL) else { continue }
-
-                    let remoteName: String
-                    if let existing = remoteByLocalPath[fileURL.path] {
-                        if localMTime <= existing.timestamp.addingTimeInterval(2) { report.skipped += 1; continue }
-                        if localFileMatchesRemote(fileURL, remote: existing) {
-                            report.skipped += 1; continue
-                        }
-                        remoteName = existing.filename
-                    } else if let prefix = remoteDirByLocalDir[dir.path] {
-                        remoteName = prefix.isEmpty ? fileURL.lastPathComponent : "\(prefix)/\(fileURL.lastPathComponent)"
-                    } else {
-                        report.failures.append((fileURL.lastPathComponent, "couldn't infer cloud path"))
-                        continue
-                    }
-                    uploads.append(.init(filename: remoteName, local: fileURL, mtime: localMTime))
-                }
-            }
+            let plan = planUploads(remote: remote, cloudDirs: cloudDirs,
+                                   ruleMatches: saveRules.flatMap(matches(of:)),
+                                   userHome: userHome, installDir: installDir)
+            uploads = plan.uploads
+            report.skipped += plan.skipped
+            report.failures += plan.failures
         }
 
         // ---- Execute the whole batch in one Steam session ----
-        var helperNotes: [String] = []
         if !downloads.isEmpty || !uploads.isEmpty {
             let total = downloads.count + uploads.count
             phase = "Syncing \(total) file\(total == 1 ? "" : "s")…"
@@ -215,7 +191,7 @@ final class CloudSyncEngine: ObservableObject {
                     Task { @MainActor in self?.phase = "Syncing \(done)/\(total)…" }
                 }
             )
-            helperNotes = batch.notes
+            notes += batch.notes
             for op in batch.ops {
                 if let err = op.error {
                     report.failures.append((op.filename, err))
@@ -229,7 +205,7 @@ final class CloudSyncEngine: ObservableObject {
 
         lastSyncAt = Date()
         lastReport = report
-        writeFailureLog(appID: appID, report: report, helperNotes: helperNotes)
+        writeFailureLog(appID: appID, report: report, helperNotes: notes)
         phase = summary(report, doPull: doPull, doPush: doPush)
         return report
     }

@@ -45,7 +45,7 @@ Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv
 | `auth` | QR sign-in; emits `{challenge_url}` (re-emits as it rotates) then `{authenticated, account, refresh_token}` | no (account only) |
 | `ownedgames --steamid ID` | owned games via `IPlayerService.GetOwnedGames` | no |
 | `launchinfo --appid N` | Windows launch options from the app's `config/launch` (`{launch:[{executable,arguments,workingdir,type,description}]}`), best first | no |
-| `enumerate --appid N` | list cloud files (`{files:[{filename,size,timestamp,sha,ugcid}]}`) | **no — safe to run** |
+| `enumerate --appid N` | list cloud files and save-folder rules (`{files:[{filename,size,timestamp,sha,ugcid}], savefiles:[{root,path,pattern,recursive,platforms}]}`) | **no — safe to run** |
 | `download --appid N --file F --out PATH` | download one cloud file | local only |
 | `upload --appid N --file F --in PATH [--mtime T]` | upload one file (begin → PUT blocks → commit) | **writes cloud** |
 | `batch --appid N --jobs JSON` | many downloads+uploads in ONE logon | local + cloud |
