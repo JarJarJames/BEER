@@ -24,7 +24,9 @@ final class InstallSpaceCheckTests: XCTestCase {
     }
 
     private func check(freeBytes: Int64?) -> InstallSpaceCheck {
-        InstallSpaceCheck(client: standIn.client, freeSpace: { _ in freeBytes.map { ($0, "Macintosh HD") } })
+        InstallSpaceCheck(client: standIn.client, freeSpace: { _ in
+            freeBytes.map { VolumeSpace(availableBytes: $0, name: "Macintosh HD") }
+        })
     }
 
     func testRefusesAGameTheDiskCantHold() async {
@@ -81,6 +83,23 @@ final class InstallSpaceCheckTests: XCTestCase {
         standIn.installSizes = [1: 100 * gb]
         let result = await check(freeBytes: nil).run(appIDs: [1], account: account, destination: root)
         XCTAssertEqual(result, .fits)
+    }
+
+    // MARK: - Install sheet
+
+    func testReportCarriesTheNumbersTheSheetShows() async {
+        standIn.installSizes = [1: 35 * gb]
+        let report = await check(freeBytes: 266 * gb).report(appIDs: [1], account: account, destination: root)
+        XCTAssertEqual(report, InstallSpaceReport(
+            installBytes: 35 * gb, volume: VolumeSpace(availableBytes: 266 * gb, name: "Macintosh HD"), verdict: .fits))
+    }
+
+    func testReportStillShowsFreeSpaceWhenTheSizeIsUnknown() async {
+        standIn.installSizes = [:]
+        let report = await check(freeBytes: 266 * gb).report(appIDs: [1], account: account, destination: root)
+        XCTAssertNil(report.installBytes)
+        XCTAssertEqual(report.volume, VolumeSpace(availableBytes: 266 * gb, name: "Macintosh HD"))
+        XCTAssertEqual(report.verdict, .unchecked(DiskSpaceStrings.unknownSize))
     }
 
     // MARK: - DLC

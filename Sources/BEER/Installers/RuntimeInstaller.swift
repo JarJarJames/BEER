@@ -81,7 +81,7 @@ final class RuntimeInstaller: ObservableObject {
             if release.size > 0, let volume = DiskSpaceCheck.freeSpace(at: installDirectory),
                let shortfall = DiskSpaceCheck.shortfall(
                    installBytes: release.size * (1 + DiskSpaceLimits.runtimeExtractionFactor),
-                   availableBytes: volume.bytes, volumeName: volume.name
+                   availableBytes: volume.availableBytes, volumeName: volume.name
                ) {
                 throw RuntimeInstallerError.notEnoughSpace(shortfall)
             }

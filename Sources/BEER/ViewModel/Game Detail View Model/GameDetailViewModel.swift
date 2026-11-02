@@ -41,6 +41,9 @@ final class GameDetailViewModel: ObservableObject {
     @Published var confirmRemoveNonSteamGame: Bool = false
     /// Set when an install was refused because the disk can't hold it.
     @Published var diskSpaceShortfall: DiskSpaceShortfall?
+    @Published var isShowingInstallSheet: Bool = false
+    /// The install sheet's size and free space; nil while they're looked up.
+    @Published var installSpaceReport: InstallSpaceReport?
     var installSpaceCheck = InstallSpaceCheck()
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false

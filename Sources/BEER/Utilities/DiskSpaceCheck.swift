@@ -27,7 +27,7 @@ enum DiskSpaceCheck {
 
     /// Free space as Finder reports it, on the volume holding `url` (or its
     /// nearest existing parent, since the destination may not exist yet).
-    static func freeSpace(at url: URL) -> (bytes: Int64, name: String)? {
+    static func freeSpace(at url: URL) -> VolumeSpace? {
         var probe = url
         while !FileManager.default.fileExists(atPath: probe.path) {
             let parent = probe.deletingLastPathComponent()
@@ -36,7 +36,7 @@ enum DiskSpaceCheck {
         }
         guard let values = try? probe.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeNameKey]),
               let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
-        return (bytes, values.volumeName ?? "this disk")
+        return VolumeSpace(availableBytes: bytes, name: values.volumeName ?? "this disk")
     }
 
     /// Bytes the files under `directory` occupy. Zero when it doesn't exist.

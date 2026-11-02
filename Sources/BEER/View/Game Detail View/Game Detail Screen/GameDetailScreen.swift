@@ -39,6 +39,14 @@ struct GameDetailScreen: View {
         .sheet(isPresented: $model.isShowingCloudConnect) {
             SteamCloudQRSheet(onConnected: model.cloudDidConnect)
         }
+        .sheet(isPresented: $model.isShowingInstallSheet) {
+            InstallSheet(
+                game: model.game,
+                report: model.installSpaceReport,
+                onInstall: model.confirmInstall,
+                onCancel: { model.isShowingInstallSheet = false }
+            )
+        }
         .sheet(isPresented: $model.isShowingSaveBackups) {
             if let bottle = model.installedBottle {
                 SaveBackupsSheet(bottle: bottle, model: model)
