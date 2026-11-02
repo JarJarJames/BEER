@@ -7,6 +7,7 @@ enum RuntimeInstallerError: LocalizedError {
     case digestMismatch
     case extractionFailed(String)
     case runtimeNotFound
+    case notEnoughSpace(DiskSpaceShortfall)
 
     var errorDescription: String? {
         switch self {
@@ -22,6 +23,8 @@ enum RuntimeInstallerError: LocalizedError {
             output.isEmpty ? "Could not extract the GPTK archive." : "Could not extract the GPTK archive: \(output)"
         case .runtimeNotFound:
             "The archive extracted, but no usable wine, wine64, or gameportingtoolkit executable was found."
+        case .notEnoughSpace(let shortfall):
+            "\(DiskSpaceStrings.alertTitle). \(DiskSpaceStrings.shortfall(shortfall))"
         }
     }
 }

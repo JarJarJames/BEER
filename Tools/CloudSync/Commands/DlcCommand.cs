@@ -21,7 +21,7 @@ static class DlcCommand
 
         // Independent of everything below, and gated on a push Steam sends just
         // after logon — kick it off first and collect it once the DLC ids are known.
-        var ownedTask = OwnedAppIdsAsync(s, apps);
+        var ownedTask = OwnedApps.RequestAsync(s, apps);
 
         var baseInfo = await AppInfo.RequestAsync(apps, new[] { appid });
         if (!baseInfo.TryGetValue(appid, out var baseApp) || baseApp is null)
@@ -71,36 +71,6 @@ static class DlcCommand
             });
         }
         JsonOutput.Emit(new Dictionary<string, object?> { ["dlc"] = result });
-    }
-
-    /// Every appid granted by the packages this account holds a licence for.
-    static async Task<HashSet<uint>> OwnedAppIdsAsync(SteamSession s, SteamApps apps)
-    {
-        var licenses = await s.LicensesAsync();
-        var requests = licenses
-            .GroupBy(l => l.PackageID)
-            .Select(g =>
-            {
-                var req = new SteamKit2.SteamApps.PICSRequest(g.Key);
-                var token = g.Select(l => l.AccessToken).FirstOrDefault(t => t != 0);
-                if (token != 0) req.AccessToken = token;
-                return req;
-            })
-            .ToList();
-
-        var owned = new HashSet<uint>();
-        if (requests.Count == 0) return owned;
-
-        // PICS rejects very large batches; chunk to stay well inside its limit.
-        foreach (var chunk in requests.Chunk(500))
-        {
-            var info = await apps.PICSGetProductInfo(new List<SteamKit2.SteamApps.PICSRequest>(), chunk.ToList());
-            foreach (var result in info.Results ?? Enumerable.Empty<SteamApps.PICSProductInfoCallback>())
-                foreach (var package in result.Packages.Values)
-                    foreach (var child in package.KeyValues["appids"].Children)
-                        owned.Add(child.AsUnsignedInteger());
-        }
-        return owned;
     }
 
     /// True when the app owns at least one depot with a manifest that a Windows

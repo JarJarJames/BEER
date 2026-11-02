@@ -77,6 +77,15 @@ final class RuntimeInstaller: ObservableObject {
                 return
             }
 
+            // The archive stays on disk while it unpacks next to it.
+            if release.size > 0, let volume = DiskSpaceCheck.freeSpace(at: installDirectory),
+               let shortfall = DiskSpaceCheck.shortfall(
+                   installBytes: release.size * (1 + DiskSpaceLimits.runtimeExtractionFactor),
+                   availableBytes: volume.availableBytes, volumeName: volume.name
+               ) {
+                throw RuntimeInstallerError.notEnoughSpace(shortfall)
+            }
+
             statusMessage = "Downloading \(release.assetName) (\(release.displaySize))..."
             try await download(from: release.assetURL, to: archiveURL)
 

@@ -48,13 +48,14 @@ extension GameDetailViewModel {
         }
     }
 
-    /// Called when the QR sheet finishes connecting. Resumes a paused install.
+    /// Called when the QR sheet finishes connecting. Brings back the install
+    /// sheet for an install that was waiting on sign-in.
     func cloudDidConnect() {
         cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
         cloudSyncIsError = false
         if shouldResumeInstallAfterCloudConnect {
             shouldResumeInstallAfterCloudConnect = false
-            startInstall()
+            requestInstall()
         }
     }
 

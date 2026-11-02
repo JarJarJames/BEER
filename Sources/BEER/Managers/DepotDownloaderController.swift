@@ -89,12 +89,7 @@ final class DepotDownloaderController: ObservableObject {
         auth: SteamCloudAccount,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
-        let bottlePrefix = AppPaths.prefixURL(for: bottle)
-        let safe = gameName.safeGameFolderName
-        let installDir = bottlePrefix
-            .appendingPathComponent("drive_c", isDirectory: true)
-            .appendingPathComponent("Games", isDirectory: true)
-            .appendingPathComponent(safe, isDirectory: true)
+        let installDir = AppPaths.gameInstallDirectory(for: bottle, gameName: gameName)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
         try await download(appID: appID, into: installDir, auth: auth, events: events)

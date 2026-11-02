@@ -2,12 +2,49 @@ import Foundation
 
 extension GameDetailViewModel {
     func startInstallOrLogin() {
-        startInstall()
+        requestInstall()
     }
 
     var preferredDefaultRuntime: RuntimeCandidate? { detector.preferredGameRuntime }
 
-    func startInstall() {
+    /// The game's folder when a bottle already exists for it: a download that
+    /// stopped partway left files there.
+    private var existingInstallDirectory: URL? {
+        bottles.findBottle(forAppID: game.appID)
+            .map { AppPaths.gameInstallDirectory(for: $0, gameName: game.name) }
+    }
+
+    /// Show the install sheet: the game's size and the disk's free space, with
+    /// Install turned off when it won't fit. Nothing downloads until confirmed.
+    func requestInstall() {
+        guard !game.effectiveIsNonSteam, !isStartingInstall, preferredDefaultRuntime != nil else { return }
+        guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
+            shouldResumeInstallAfterCloudConnect = true
+            isShowingCloudConnect = true
+            return
+        }
+        installSpaceReport = nil
+        isShowingInstallSheet = true
+
+        let installDir = existingInstallDirectory
+        Task { [self] in
+            let report = await installSpaceCheck.report(
+                appIDs: [game.appID], account: steamAccount,
+                destination: installDir ?? AppPaths.bottlesDirectory, partialDownload: installDir
+            )
+            if isShowingInstallSheet { installSpaceReport = report }
+        }
+    }
+
+    func confirmInstall() {
+        let checked = installSpaceReport?.verdict
+        isShowingInstallSheet = false
+        startInstall(checked: checked)
+    }
+
+    /// `checked` is the install sheet's answer, so the size isn't asked for
+    /// twice; without it (resuming a download) the check runs here.
+    func startInstall(checked: InstallSpace? = nil) {
         guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
         // still doing wineboot must be a no-op, not a fresh bottle.
@@ -26,6 +63,29 @@ extension GameDetailViewModel {
             // Fire the Downloads entry FIRST so the UI shows something
             // immediately. The bottleID is patched in below.
             downloads.start(appID: game.appID, name: game.name, bottleID: UUID())
+            downloads.setStatus(appID: game.appID, phase: "Checking free space…")
+
+            // Before any bottle exists, so a refused install leaves nothing behind.
+            let space: InstallSpace
+            if let checked {
+                space = checked
+            } else {
+                let installDir = existingInstallDirectory
+                space = await installSpaceCheck.run(
+                    appIDs: [game.appID], account: steamAccount,
+                    destination: installDir ?? AppPaths.bottlesDirectory, partialDownload: installDir
+                )
+            }
+            switch space {
+            case .fits:
+                break
+            case .unchecked(let note):
+                downloads.append(appID: game.appID, log: note)
+            case .short(let shortfall):
+                downloads.remove(appID: game.appID)
+                diskSpaceShortfall = shortfall
+                return
+            }
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:

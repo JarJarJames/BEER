@@ -39,6 +39,14 @@ struct GameDetailScreen: View {
         .sheet(isPresented: $model.isShowingCloudConnect) {
             SteamCloudQRSheet(onConnected: model.cloudDidConnect)
         }
+        .sheet(isPresented: $model.isShowingInstallSheet) {
+            InstallSheet(
+                game: model.game,
+                report: model.installSpaceReport,
+                onInstall: model.confirmInstall,
+                onCancel: { model.isShowingInstallSheet = false }
+            )
+        }
         .sheet(isPresented: $model.isShowingSaveBackups) {
             if let bottle = model.installedBottle {
                 SaveBackupsSheet(bottle: bottle, model: model)
@@ -77,6 +85,15 @@ struct GameDetailScreen: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("The game's folder inside BEER is deleted. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
+        }
+        .alert(
+            DiskSpaceStrings.alertTitle,
+            isPresented: Binding(get: { model.diskSpaceShortfall != nil }, set: { if !$0 { model.diskSpaceShortfall = nil } }),
+            presenting: model.diskSpaceShortfall
+        ) { _ in
+            Button(DiskSpaceStrings.okButton, role: .cancel) { model.diskSpaceShortfall = nil }
+        } message: { shortfall in
+            Text(DiskSpaceStrings.shortfall(shortfall))
         }
         .confirmationDialog(
             "Back up and clear local saves?",

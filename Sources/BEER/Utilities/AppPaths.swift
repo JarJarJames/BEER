@@ -50,6 +50,14 @@ enum AppPaths {
         bottlesDirectory.appendingPathComponent(bottle.folderName, isDirectory: true)
     }
 
+    /// Where DepotDownloader puts a Steam game inside its bottle.
+    static func gameInstallDirectory(for bottle: Bottle, gameName: String) -> URL {
+        prefixURL(for: bottle)
+            .appendingPathComponent("drive_c", isDirectory: true)
+            .appendingPathComponent("Games", isDirectory: true)
+            .appendingPathComponent(gameName.safeGameFolderName, isDirectory: true)
+    }
+
     static func logsURL(for bottle: Bottle) -> URL {
         prefixURL(for: bottle).appendingPathComponent("beer.log")
     }

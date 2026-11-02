@@ -12,6 +12,6 @@ import Foundation
 
 struct CloudSyncClient {
     /// The helper to run instead of the one `locateBinary` finds. Tests point
-    /// this at a stand-in that answers like Steam without going near it.
+    /// this at `FakeSteam`, which answers like Steam without going near it.
     var binary: URL? = nil
 }
