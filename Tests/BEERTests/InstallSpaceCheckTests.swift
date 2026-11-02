@@ -1,9 +1,9 @@
 import XCTest
 @testable import BEER
 
-/// The check a game install runs before downloading, driven end to end against
-/// a stand-in for the CloudSync helper and a faked free-space reading. Nothing
-/// talks to Steam and nothing big is written to disk.
+/// The check game and DLC installs run before downloading, driven end to end
+/// against a stand-in for the CloudSync helper and a faked free-space reading.
+/// Nothing talks to Steam and nothing big is written to disk.
 @MainActor
 final class InstallSpaceCheckTests: XCTestCase {
     private let gb: Int64 = 1024 * 1024 * 1024
@@ -28,22 +28,23 @@ final class InstallSpaceCheckTests: XCTestCase {
     }
 
     func testRefusesAGameTheDiskCantHold() async {
-        standIn.installBytes = 100 * gb
-        let result = await check(freeBytes: 64 * gb).run(appID: 1, account: account, installDir: nil)
+        standIn.installSizes = [1: 100 * gb]
+        let result = await check(freeBytes: 64 * gb).run(appIDs: [1], account: account, destination: root)
         XCTAssertEqual(result, .short(DiskSpaceShortfall(
             neededBytes: 100 * gb + margin, availableBytes: 64 * gb, volumeName: "Macintosh HD")))
         XCTAssertEqual(standIn.calls().map(\.command), ["installsize"])
+        XCTAssertEqual(standIn.calls().map(\.appIDs), [[1]])
     }
 
     func testAllowsAGameThatFitsWithTheMargin() async {
-        standIn.installBytes = 100 * gb
-        let result = await check(freeBytes: 100 * gb + margin + 1).run(appID: 1, account: account, installDir: nil)
+        standIn.installSizes = [1: 100 * gb]
+        let result = await check(freeBytes: 100 * gb + margin + 1).run(appIDs: [1], account: account, destination: root)
         XCTAssertEqual(result, .fits)
     }
 
     func testRefusesWhenOnlyTheMarginWontFit() async {
-        standIn.installBytes = 100 * gb
-        let result = await check(freeBytes: 101 * gb).run(appID: 1, account: account, installDir: nil)
+        standIn.installSizes = [1: 100 * gb]
+        let result = await check(freeBytes: 101 * gb).run(appIDs: [1], account: account, destination: root)
         guard case .short = result else { return XCTFail("expected a refusal, got \(result)") }
     }
 
@@ -52,33 +53,63 @@ final class InstallSpaceCheckTests: XCTestCase {
         let installDir = root.appendingPathComponent("drive_c/Games/Game", isDirectory: true)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
         try Data(count: 8_000_000).write(to: installDir.appendingPathComponent("data.pak"))
-        standIn.installBytes = 10_000_000
+        standIn.installSizes = [1: 10_000_000]
 
         // Enough for the last 2 MB plus the margin, not for all 10 MB.
         let free = margin + 5_000_000
-        let fresh = await check(freeBytes: free).run(appID: 1, account: account, installDir: nil)
-        let resumed = await check(freeBytes: free).run(appID: 1, account: account, installDir: installDir)
+        let fresh = await check(freeBytes: free).run(appIDs: [1], account: account, destination: root)
+        let resumed = await check(freeBytes: free).run(appIDs: [1], account: account, destination: installDir, partialDownload: installDir)
 
         guard case .short = fresh else { return XCTFail("a fresh install shouldn't fit, got \(fresh)") }
         XCTAssertEqual(resumed, .fits)
     }
 
     func testUnknownSizeLetsTheInstallGoAhead() async {
-        standIn.installBytes = nil
-        let result = await check(freeBytes: 0).run(appID: 1, account: account, installDir: nil)
+        standIn.installSizes = [:]
+        let result = await check(freeBytes: 0).run(appIDs: [1], account: account, destination: root)
         XCTAssertEqual(result, .unchecked(DiskSpaceStrings.unknownSize))
     }
 
     func testHelperFailureLetsTheInstallGoAhead() async {
-        standIn.installBytes = 100 * gb
+        standIn.installSizes = [1: 100 * gb]
         standIn.signInExpired = true
-        let result = await check(freeBytes: 0).run(appID: 1, account: account, installDir: nil)
+        let result = await check(freeBytes: 0).run(appIDs: [1], account: account, destination: root)
         guard case .unchecked = result else { return XCTFail("expected the install to go ahead, got \(result)") }
     }
 
     func testUnreadableVolumeLetsTheInstallGoAhead() async {
-        standIn.installBytes = 100 * gb
-        let result = await check(freeBytes: nil).run(appID: 1, account: account, installDir: nil)
+        standIn.installSizes = [1: 100 * gb]
+        let result = await check(freeBytes: nil).run(appIDs: [1], account: account, destination: root)
         XCTAssertEqual(result, .fits)
+    }
+
+    // MARK: - DLC
+
+    func testDLCBatchIsCheckedTogetherInOneCall() async {
+        // Each DLC fits alone; all three together don't.
+        standIn.installSizes = [10: 3 * gb, 11: 3 * gb, 12: 3 * gb]
+        let free = margin + 5 * gb
+        let result = await check(freeBytes: free).run(appIDs: [10, 11, 12], account: account, destination: root)
+
+        XCTAssertEqual(result, .short(DiskSpaceShortfall(
+            neededBytes: 9 * gb + margin, availableBytes: free, volumeName: "Macintosh HD")))
+        XCTAssertEqual(standIn.calls().map(\.appIDs), [[10, 11, 12]])
+    }
+
+    func testDLCIgnoresTheBaseGameAlreadyInTheFolder() async throws {
+        // The game's folder is full of base-game files; none of them are the DLC.
+        let installDir = root.appendingPathComponent("drive_c/Games/Game", isDirectory: true)
+        try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
+        try Data(count: 8_000_000).write(to: installDir.appendingPathComponent("base.pak"))
+        standIn.installSizes = [10: 8_000_000]
+
+        let result = await check(freeBytes: margin + 1_000_000).run(appIDs: [10], account: account, destination: installDir)
+        guard case .short = result else { return XCTFail("the DLC shouldn't fit, got \(result)") }
+    }
+
+    func testDLCWithoutAListedSizeStillCountsTheOthers() async {
+        standIn.installSizes = [10: 50 * gb]
+        let result = await check(freeBytes: 20 * gb).run(appIDs: [10, 11], account: account, destination: root)
+        guard case .short = result else { return XCTFail("the listed DLC alone shouldn't fit, got \(result)") }
     }
 }

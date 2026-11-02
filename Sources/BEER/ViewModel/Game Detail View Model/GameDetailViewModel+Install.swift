@@ -31,7 +31,10 @@ extension GameDetailViewModel {
             // Before any bottle exists, so a refused install leaves nothing behind.
             let installDir = bottles.findBottle(forAppID: game.appID)
                 .map { AppPaths.gameInstallDirectory(for: $0, gameName: game.name) }
-            switch await installSpaceCheck.run(appID: game.appID, account: steamAccount, installDir: installDir) {
+            switch await installSpaceCheck.run(
+                appIDs: [game.appID], account: steamAccount,
+                destination: installDir ?? AppPaths.bottlesDirectory, partialDownload: installDir
+            ) {
             case .fits:
                 break
             case .unchecked(let note):

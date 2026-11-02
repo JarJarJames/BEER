@@ -9,17 +9,19 @@ static class InstallSize
     /// default English language. Null when Steam lists no size for any of them.
     ///
     /// Uses each depot's `maxsize` (the installed size), falling back to the
-    /// public manifest's `size`. Depots tagged with `dlcappid` are left out:
-    /// DepotDownloader only pulls them for owned DLC, and an unowned HD pack
-    /// shouldn't block the base game.
-    public static ulong? Estimate(KeyValue appInfo)
+    /// public manifest's `size`. Depots tagged with `dlcappid` count only when
+    /// `ownedAppIds` has that DLC: DepotDownloader pulls them for owned DLC
+    /// only, and an unowned HD pack shouldn't block the base game.
+    public static ulong? Estimate(KeyValue appInfo, IReadOnlySet<uint> ownedAppIds)
     {
         ulong total = 0;
         var found = false;
         foreach (var depot in appInfo["depots"].Children)
         {
             if (!uint.TryParse(depot.Name, out _)) continue;   // "branches", "baselanguages", …
-            if (depot["dlcappid"] != KeyValue.Invalid) continue;
+            var dlc = depot["dlcappid"];
+            if (dlc != KeyValue.Invalid && !(uint.TryParse(dlc.Value, out var dlcId) && ownedAppIds.Contains(dlcId)))
+                continue;
             if (!IsFetched(depot["config"])) continue;
 
             var size = SizeOf(depot);

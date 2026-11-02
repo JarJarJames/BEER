@@ -11,6 +11,8 @@ public class InstallSizeTests
         string? OsList = null, string? OsArch = null, string? Language = null,
         string? LowViolence = null, string? DlcAppId = null);
 
+    static readonly IReadOnlySet<uint> NoneOwned = new HashSet<uint>();
+
     static KeyValue App(params Depot[] depots)
     {
         var root = new KeyValue("appinfo");
@@ -47,7 +49,7 @@ public class InstallSizeTests
         var app = App(
             new Depot("101", MaxSize: "1000", OsList: "windows"),
             new Depot("102", MaxSize: "250"));
-        Assert.Equal(1250UL, InstallSize.Estimate(app));
+        Assert.Equal(1250UL, InstallSize.Estimate(app, NoneOwned));
     }
 
     [Fact]
@@ -61,7 +63,7 @@ public class InstallSizeTests
             new Depot("105", MaxSize: "9000", LowViolence: "1"),
             new Depot("106", MaxSize: "9000", DlcAppId: "555"),
             new Depot("107", MaxSize: "10", OsArch: "64", Language: "english"));
-        Assert.Equal(1010UL, InstallSize.Estimate(app));
+        Assert.Equal(1010UL, InstallSize.Estimate(app, NoneOwned));
     }
 
     [Fact]
@@ -70,13 +72,23 @@ public class InstallSizeTests
         var app = App(
             new Depot("101", ManifestSize: "700"),
             new Depot("102", MaxSize: "300", ManifestSize: "1"));
-        Assert.Equal(1000UL, InstallSize.Estimate(app));
+        Assert.Equal(1000UL, InstallSize.Estimate(app, NoneOwned));
     }
 
     [Fact]
     public void UnknownWhenNoDepotListsASize()
     {
-        Assert.Null(InstallSize.Estimate(App(new Depot("101"), new Depot("102", MaxSize: "0"))));
-        Assert.Null(InstallSize.Estimate(new KeyValue("appinfo")));
+        Assert.Null(InstallSize.Estimate(App(new Depot("101"), new Depot("102", MaxSize: "0")), NoneOwned));
+        Assert.Null(InstallSize.Estimate(new KeyValue("appinfo"), NoneOwned));
+    }
+
+    [Fact]
+    public void CountsDlcContentOnlyWhenOwned()
+    {
+        var app = App(
+            new Depot("101", MaxSize: "1000"),
+            new Depot("102", MaxSize: "200", DlcAppId: "555"),
+            new Depot("103", MaxSize: "9000", DlcAppId: "666"));
+        Assert.Equal(1200UL, InstallSize.Estimate(app, new HashSet<uint> { 555 }));
     }
 }

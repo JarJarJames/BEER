@@ -12,6 +12,8 @@ final class CloudSyncStandIn {
         let command: String
         let downloads: [(filename: String, out: String)]
         let uploads: [(filename: String, mtime: Date)]
+        /// The apps an `installsize` call asked about.
+        let appIDs: [Int]
     }
 
     /// What Steam lists for the game.
@@ -20,8 +22,9 @@ final class CloudSyncStandIn {
     var contents: [String: String] = [:] { didSet { save() } }
     /// Cloud files Steam refuses to take.
     var rejectedUploads: Set<String> = [] { didSet { save() } }
-    /// What `installsize` reports for the game; nil is Steam listing no size.
-    var installBytes: Int64? { didSet { save() } }
+    /// What Steam lists as each app's install size. `installsize` reports the
+    /// sum for the apps asked about, or no size when none of them is listed.
+    var installSizes: [Int: Int64] = [:] { didSet { save() } }
     /// Answer every command as Steam does for a revoked sign-in.
     var signInExpired = false { didSet { save() } }
 
@@ -50,7 +53,8 @@ final class CloudSyncStandIn {
                 (filename: $0["filename"] as? String ?? "",
                  mtime: Date(timeIntervalSince1970: ($0["mtime"] as? NSNumber)?.doubleValue ?? 0))
             }
-            return Call(command: obj["cmd"] as? String ?? "", downloads: downloads, uploads: uploads)
+            return Call(command: obj["cmd"] as? String ?? "", downloads: downloads, uploads: uploads,
+                        appIDs: obj["appids"] as? [Int] ?? [])
         }
     }
 
@@ -62,7 +66,7 @@ final class CloudSyncStandIn {
             "contents": contents,
             "rejectedUploads": Array(rejectedUploads),
             "signInExpired": signInExpired,
-            "installBytes": installBytes.map { $0 as Any } ?? NSNull(),
+            "installSizes": Dictionary(uniqueKeysWithValues: installSizes.map { (String($0.key), $0.value) }),
         ]
         // A test that can't set up its stand-in can't mean anything.
         try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("standin.json"))
@@ -88,6 +92,8 @@ final class CloudSyncStandIn {
             jobs = json.load(f)
         call["downloads"] = jobs.get("downloads", [])
         call["uploads"] = jobs.get("uploads", [])
+    if cmd == "installsize":
+        call["appids"] = [int(a) for a in args[args.index("--appids") + 1].split(",")]
     with open(os.path.join(here, "calls.jsonl"), "a") as log:
         log.write(json.dumps(call) + "\n")
 
@@ -97,7 +103,8 @@ final class CloudSyncStandIn {
     if cmd == "enumerate":
         emit({"files": config["files"], "savefiles": []})
     elif cmd == "installsize":
-        emit({"bytes": config["installBytes"]})
+        sizes = [config["installSizes"][str(a)] for a in call["appids"] if str(a) in config["installSizes"]]
+        emit({"bytes": sum(sizes) if sizes else None})
     elif cmd == "batch":
         for d in call["downloads"]:
             content = config["contents"].get(d["filename"])
