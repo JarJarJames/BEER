@@ -20,6 +20,8 @@ final class CloudSyncStandIn {
     var contents: [String: String] = [:] { didSet { save() } }
     /// Cloud files Steam refuses to take.
     var rejectedUploads: Set<String> = [] { didSet { save() } }
+    /// What `installsize` reports for the game; nil is Steam listing no size.
+    var installBytes: Int64? { didSet { save() } }
     /// Answer every command as Steam does for a revoked sign-in.
     var signInExpired = false { didSet { save() } }
 
@@ -60,6 +62,7 @@ final class CloudSyncStandIn {
             "contents": contents,
             "rejectedUploads": Array(rejectedUploads),
             "signInExpired": signInExpired,
+            "installBytes": installBytes.map { $0 as Any } ?? NSNull(),
         ]
         // A test that can't set up its stand-in can't mean anything.
         try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("standin.json"))
@@ -93,6 +96,8 @@ final class CloudSyncStandIn {
         sys.exit(1)
     if cmd == "enumerate":
         emit({"files": config["files"], "savefiles": []})
+    elif cmd == "installsize":
+        emit({"bytes": config["installBytes"]})
     elif cmd == "batch":
         for d in call["downloads"]:
             content = config["contents"].get(d["filename"])

@@ -78,6 +78,15 @@ struct GameDetailScreen: View {
         } message: {
             Text("The game's folder inside BEER is deleted. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
         }
+        .alert(
+            DiskSpaceStrings.alertTitle,
+            isPresented: Binding(get: { model.diskSpaceShortfall != nil }, set: { if !$0 { model.diskSpaceShortfall = nil } }),
+            presenting: model.diskSpaceShortfall
+        ) { _ in
+            Button(DiskSpaceStrings.okButton, role: .cancel) { model.diskSpaceShortfall = nil }
+        } message: { shortfall in
+            Text(DiskSpaceStrings.shortfall(shortfall))
+        }
         .confirmationDialog(
             "Back up and clear local saves?",
             isPresented: Binding(get: { model.confirmClearBottle != nil }, set: { if !$0 { model.confirmClearBottle = nil } }),

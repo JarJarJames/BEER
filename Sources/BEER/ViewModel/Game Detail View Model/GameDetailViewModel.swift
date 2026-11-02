@@ -39,6 +39,9 @@ final class GameDetailViewModel: ObservableObject {
     @Published var pendingRestore: PendingSaveRestore?
     @Published var restoreConflictPrompt: RestoreConflictPrompt?
     @Published var confirmRemoveNonSteamGame: Bool = false
+    /// Set when an install was refused because the disk can't hold it.
+    @Published var diskSpaceShortfall: DiskSpaceShortfall?
+    var installSpaceCheck = InstallSpaceCheck()
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false
     @Published var isPatching: Bool = false

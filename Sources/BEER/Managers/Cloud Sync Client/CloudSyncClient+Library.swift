@@ -55,3 +55,19 @@ extension CloudSyncClient {
         ).compactMap(LaunchEntry.init(json:))
     }
 }
+
+extension CloudSyncClient {
+    /// Bytes a Windows install of `appID` takes on disk, or nil when Steam
+    /// lists no size (see `InstallSize` in Tools/CloudSync/Steam).
+    func installSize(appID: Int, account: String, refreshToken: String) async throws -> Int64? {
+        Self.installBytes(from: try await runOnce(
+            args: ["installsize", "--appid", String(appID)],
+            account: account, refreshToken: refreshToken
+        ))
+    }
+
+    static func installBytes(from json: [String: Any]) -> Int64? {
+        guard let bytes = (json["bytes"] as? NSNumber)?.int64Value, bytes > 0 else { return nil }
+        return bytes
+    }
+}

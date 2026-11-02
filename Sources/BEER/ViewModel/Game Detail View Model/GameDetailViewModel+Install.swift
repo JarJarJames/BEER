@@ -26,6 +26,21 @@ extension GameDetailViewModel {
             // Fire the Downloads entry FIRST so the UI shows something
             // immediately. The bottleID is patched in below.
             downloads.start(appID: game.appID, name: game.name, bottleID: UUID())
+            downloads.setStatus(appID: game.appID, phase: "Checking free space…")
+
+            // Before any bottle exists, so a refused install leaves nothing behind.
+            let installDir = bottles.findBottle(forAppID: game.appID)
+                .map { AppPaths.gameInstallDirectory(for: $0, gameName: game.name) }
+            switch await installSpaceCheck.run(appID: game.appID, account: steamAccount, installDir: installDir) {
+            case .fits:
+                break
+            case .unchecked(let note):
+                downloads.append(appID: game.appID, log: note)
+            case .short(let shortfall):
+                downloads.remove(appID: game.appID)
+                diskSpaceShortfall = shortfall
+                return
+            }
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:
