@@ -30,6 +30,9 @@ struct InstallSheet: View {
                 Text(game.name)
                     .font(.title3)
                     .lineLimit(2)
+                    // A sheet sizes to its content; without this the name
+                    // truncates to one line instead of wrapping to two.
+                    .fixedSize(horizontal: false, vertical: true)
                 Spacer()
                 if let report {
                     Text(report.installBytes.map(InstallSheetStrings.size) ?? InstallSheetStrings.unknownSize)
