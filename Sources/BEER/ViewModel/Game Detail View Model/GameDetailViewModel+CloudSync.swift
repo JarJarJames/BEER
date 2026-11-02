@@ -22,26 +22,12 @@ extension GameDetailViewModel {
                 parts.append("\(report.skipped) up-to-date")
                 if !report.failures.isEmpty { parts.append("\(report.failures.count) failed") }
                 cloudSyncMessage = parts.joined(separator: ", ") + "."
-            } catch CloudSyncClientError.authExpired {
-                // Token went stale — flag it and pop the QR reconnect right away,
-                // since the user explicitly asked to sync.
-                cloudAuth.sessionExpired = true
-                cloudSyncIsError = true
-                cloudSyncMessage = "Steam sign-in expired — reconnect to finish syncing."
-                isShowingCloudConnect = true
-            } catch let err as SteamAuthError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as CloudSyncClientError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as CloudSyncError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
+            } catch CloudSyncError.restoreConflict(let conflict) {
+                restoreConflictPrompt = RestoreConflictPrompt(conflict: conflict, bottle: bottle, retry: .sync(pull: pull, push: push))
             } catch {
-                cloudSyncIsError = true
-                cloudSyncMessage = error.localizedDescription
+                showCloudError(error)
             }
+            refreshPendingRestore()
         }
     }
 
@@ -53,6 +39,7 @@ extension GameDetailViewModel {
                 cloudSyncIsError = false
                 let backedUp = backup.map { " Backed up to \($0.lastPathComponent)." } ?? ""
                 cloudSyncMessage = "Local saves cleared.\(backedUp) Use “Pull from cloud” to restore from Steam."
+                refreshPendingRestore()
             } catch {
                 cloudAuth.noteCloudError(error)
                 cloudSyncIsError = true

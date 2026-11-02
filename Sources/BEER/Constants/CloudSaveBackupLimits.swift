@@ -25,6 +25,26 @@ enum CloudSaveBackupLimits {
     /// Written into each snapshot so the next sync can tell nothing changed.
     static let fingerprintFileName = ".beer-fingerprint"
 
+    /// Written into each snapshot: which save folder each copied folder came
+    /// from, so a restore knows where to put it back. Older snapshots lack it.
+    static let sourcesFileName = ".beer-sources.json"
+
+    /// Taken right before a restore replaces the local saves.
+    static let beforeRestoreLabel = "before-restore"
+
+    /// Steam's copies of restored saves, downloaded before the restored saves
+    /// are uploaded over them.
+    static let steamCloudCopyLabel = "steam-cloud-copy"
+
+    /// Present in a game's backup folder from a restore until the player picks
+    /// which saves to keep. Every sync stops on it, and the snapshot it names
+    /// is not pruned meanwhile.
+    static let pendingRestoreFileName = "pending-restore.json"
+
+    /// How far below the Wine user folder (or the game's folder) a restore
+    /// looks for the save folder of a backup that didn't record it.
+    static let restoreSearchDepth = 8
+
     /// Set once the launch cleanup has applied retention to old backups.
     static let launchCleanupDoneKey = "cloudSaveBackupRetentionApplied"
 }

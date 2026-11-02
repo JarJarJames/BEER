@@ -82,15 +82,18 @@ extension CloudSyncEngine {
         let stamp = Self.timestampFormatter.string(from: Date())
         let root = appDir.appendingPathComponent("\(stamp)-\(label)", isDirectory: true)
         do {
+            var sources: [String: String] = [:]
             for dir in presentDirs {
                 // Mirror the directory under the backup root using its last
                 // three path components (enough to disambiguate save folders).
-                let tail = dir.pathComponents.suffix(3).joined(separator: "/")
+                let tail = Self.snapshotTail(of: dir)
                 let dest = root.appendingPathComponent(tail, isDirectory: true)
                 try fm.createDirectory(at: dest.deletingLastPathComponent(), withIntermediateDirectories: true)
                 if fm.fileExists(atPath: dest.path) { try? fm.removeItem(at: dest) }
                 try fm.copyItem(at: dir, to: dest)
+                sources[tail] = dir.path
             }
+            try writeSources(sources, into: root)
             // Written last, so only a complete copy can stand in for a later one.
             try fingerprint.write(to: root.appendingPathComponent(CloudSaveBackupLimits.fingerprintFileName),
                                   atomically: true, encoding: .utf8)
@@ -100,6 +103,20 @@ extension CloudSyncEngine {
         }
         pruneBackups(appID: appID, keeping: root)
         return root
+    }
+
+    /// Where a save folder goes inside a snapshot.
+    nonisolated static func snapshotTail(of dir: URL) -> String {
+        dir.pathComponents.suffix(3).joined(separator: "/")
+    }
+
+    /// Record which save folder each copied folder came from, so a restore
+    /// can put it back.
+    func writeSources(_ sources: [String: String], into snapshot: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(sources).write(to: snapshot.appendingPathComponent(CloudSaveBackupLimits.sourcesFileName),
+                                          options: .atomic)
     }
 
     private func storedFingerprint(of snapshot: URL) -> String? {

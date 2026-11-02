@@ -58,6 +58,11 @@ extension GameDetailViewModel {
                     let r = try await cloudSync.pull(bottle: bottle, appID: game.appID, auth: cloudAuth)
                     cloudSyncIsError = !r.failures.isEmpty
                     cloudSyncMessage = "Pulled \(r.downloaded) save\(r.downloaded == 1 ? "" : "s") before launch."
+                } catch CloudSyncError.restoreConflict(let conflict) {
+                    // Playing on either set of saves before choosing would
+                    // make the choice for the player. Ask, then launch.
+                    restoreConflictPrompt = RestoreConflictPrompt(conflict: conflict, bottle: installedBottle, retry: .launch)
+                    return
                 } catch CloudSyncClientError.authExpired {
                     cloudAuth.sessionExpired = true
                     cloudSyncIsError = true
@@ -130,6 +135,9 @@ extension GameDetailViewModel {
                     let r = try await cloudSync.push(bottle: bottle, appID: game.appID, auth: cloudAuth)
                     cloudSyncIsError = !r.failures.isEmpty
                     cloudSyncMessage = "Pushed \(r.uploaded) save\(r.uploaded == 1 ? "" : "s") to cloud after play."
+                } catch CloudSyncError.restoreConflict {
+                    cloudSyncIsError = true
+                    cloudSyncMessage = SaveRestoreStrings.postPlayBlocked
                 } catch CloudSyncClientError.authExpired {
                     cloudAuth.sessionExpired = true
                     cloudSyncIsError = true

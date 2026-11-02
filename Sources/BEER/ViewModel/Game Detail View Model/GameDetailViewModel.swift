@@ -29,6 +29,15 @@ final class GameDetailViewModel: ObservableObject {
     @Published var cloudSyncMessage: String?
     @Published var cloudSyncIsError: Bool = false
     @Published var confirmClearBottle: Bottle?
+    @Published var isShowingSaveBackups: Bool = false
+    @Published var saveBackups: [CloudSaveSnapshot] = []
+    /// Set while the restore confirmation is up.
+    @Published var restorePlanToConfirm: SaveRestorePlan?
+    /// Shown inside the backups sheet: why a restore couldn't start or failed.
+    @Published var saveBackupsError: String?
+    /// Kept here rather than read in `body`, which redraws on every store tick.
+    @Published var pendingRestore: PendingSaveRestore?
+    @Published var restoreConflictPrompt: RestoreConflictPrompt?
     @Published var confirmRemoveNonSteamGame: Bool = false
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false

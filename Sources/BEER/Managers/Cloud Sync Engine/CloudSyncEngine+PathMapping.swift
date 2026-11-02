@@ -15,7 +15,7 @@ extension CloudSyncEngine {
     }
 
     func resolveWineUserHome(for bottle: Bottle) throws -> URL {
-        let usersDir = AppPaths.prefixURL(for: bottle)
+        let usersDir = bottlePrefix(bottle)
             .appendingPathComponent("drive_c", isDirectory: true)
             .appendingPathComponent("users", isDirectory: true)
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: usersDir.path)) ?? []
