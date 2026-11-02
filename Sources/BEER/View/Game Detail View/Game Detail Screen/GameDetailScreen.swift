@@ -39,6 +39,19 @@ struct GameDetailScreen: View {
         .sheet(isPresented: $model.isShowingCloudConnect) {
             SteamCloudQRSheet(onConnected: model.cloudDidConnect)
         }
+        .sheet(isPresented: $model.isShowingSaveBackups) {
+            if let bottle = model.installedBottle {
+                SaveBackupsSheet(bottle: bottle, model: model)
+            }
+        }
+        .sheet(item: $model.restoreConflictPrompt) { prompt in
+            RestoreConflictSheet(
+                prompt: prompt,
+                onKeepRestored: { model.resolveRestoreConflict(prompt, keepRestored: true) },
+                onUseCloud: { model.resolveRestoreConflict(prompt, keepRestored: false) },
+                onCancel: { model.restoreConflictPrompt = nil }
+            )
+        }
         .sheet(isPresented: $model.isShowingDLCManager) {
             if let bottle = model.installedBottle, let installDir = bottle.resolvedInstallDirectory {
                 DLCManagerView(

@@ -10,4 +10,8 @@ import Foundation
 // whichever lines decode to a recognized JSON shape — anything that isn't JSON
 // (the helper's "connected; logging on…" notes) is ignored.
 
-struct CloudSyncClient {}
+struct CloudSyncClient {
+    /// The helper to run instead of the one `locateBinary` finds. Tests point
+    /// this at a stand-in that answers like Steam without going near it.
+    var binary: URL? = nil
+}

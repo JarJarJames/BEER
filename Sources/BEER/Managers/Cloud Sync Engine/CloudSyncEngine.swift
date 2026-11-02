@@ -18,21 +18,25 @@ import Foundation
 @MainActor
 final class CloudSyncEngine: ObservableObject {
 
-    @Published private(set) var isSyncing: Bool = false
+    @Published var isSyncing: Bool = false
 
-    @Published private(set) var phase: String = ""
+    @Published var phase: String = ""
 
-    @Published private(set) var lastSyncAt: Date? = nil
+    @Published var lastSyncAt: Date? = nil
 
-    @Published private(set) var lastReport: CloudSyncReport? = nil
+    @Published var lastReport: CloudSyncReport? = nil
 
     @Published var lastError: String? = nil
 
-    let client = CloudSyncClient()
+    /// Tests swap in a client that runs a stand-in helper.
+    var client = CloudSyncClient()
 
     /// Where backups and `last-sync.log` go for an app. Tests point this at a
     /// temporary folder.
     var backupsDirectory: (Int) -> URL = AppPaths.cloudSaveBackupsDirectory(forAppID:)
+
+    /// Where a bottle's Wine prefix is. Tests point this at a temporary folder.
+    var bottlePrefix: (Bottle) -> URL = AppPaths.prefixURL(for:)
 
     /// How many snapshots per game survive pruning (`before-clear` ones are
     /// always kept on top of these).
@@ -91,6 +95,8 @@ final class CloudSyncEngine: ObservableObject {
         for dir in trackedDirs {
             try FileManager.default.removeItemIfPresent(at: dir)
         }
+        // Clearing is a choice of Steam's saves over anything restored.
+        clearPendingRestore(appID: appID)
         phase = "Local saves cleared. Backup saved."
         lastSyncAt = Date()
         return backup
@@ -122,6 +128,13 @@ final class CloudSyncEngine: ObservableObject {
             throw error
         }
         let remote = listing.files
+        // A restored backup waiting on the player's choice: pulling would put
+        // Steam's copies over it, and pushing would replace Steam's unasked.
+        if let conflict = restoreConflict(appID: appID, remote: remote, userHome: userHome, installDir: installDir) {
+            writeAbortedSyncLog(appID: appID, stage: "checking restored saves against Steam Cloud",
+                                reason: "they differ from Steam's, so the player has to choose which to keep")
+            throw CloudSyncError.restoreConflict(conflict)
+        }
         let saveRules = resolveSaveRules(listing.saveRules, userHome: userHome, installDir: installDir,
                                          steamID64: account.steamID64)
 
