@@ -42,6 +42,20 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("CustomArt", isDirectory: true)
     }
 
+    /// The shortcuts BEER has made, so uninstalling can remove them.
+    static var gameShortcutsURL: URL {
+        applicationSupport.appendingPathComponent("shortcuts.json")
+    }
+
+    static var desktopDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop", isDirectory: true)
+    }
+
+    /// Application shortcuts go in the main Applications folder, beside the user's other apps.
+    static var applicationShortcutsDirectory: URL {
+        URL(fileURLWithPath: "/Applications", isDirectory: true)
+    }
+
     static var metadataURL: URL {
         applicationSupport.appendingPathComponent("bottles.json")
     }

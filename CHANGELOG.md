@@ -4,7 +4,19 @@ Notable changes to BEER. Versions follow the GitHub releases.
 
 ## Unreleased
 
+### Added
+- **Game shortcuts.** A game's menu can now put a shortcut on the Desktop or
+  in Applications that opens BEER and starts the game. **Shortcut Icon…**
+  picks what it shows: a square cut from the game's cover (drag and zoom to
+  choose) or Steam's own Windows icon. The install sheet can make either
+  shortcut as part of an install, and uninstalling a game removes the
+  shortcuts BEER made. A shortcut you moved or renamed is left alone.
+
 ### Fixed
+- **Installing a game signed you out of Steam.** BEER's downloader logged on
+  with the same session ID the Steam client on your Mac uses, and Steam ends
+  the older session when two match. Installs and updates now use their own
+  ID, so a Steam client running alongside BEER stays signed in.
 - **Cloud-save backups filled the disk.** BEER copied a game's whole save
   folder before every sync and never removed old copies, so Kingdom Come
   games alone reached hundreds of GB. It now keeps the newest 3 backups per
@@ -16,6 +28,9 @@ Notable changes to BEER. Versions follow the GitHub releases.
   made on the Mac, or a new save folder per playthrough, were never uploaded
   and nothing said so. It now also checks the save folders Steam lists for
   the game.
+- **`build_app.sh` stopped while fetching SDL.** On a machine without SDL's
+  source already downloaded, macOS's bash read the "…" in the download
+  message as part of `$VERSION` and quit with "unbound variable".
 
 ## 0.6.2 — 2026-11-01
 

@@ -6,7 +6,7 @@ import Foundation
 // into BEER. CloudSyncClient writes a short-lived DepotDownloader-compatible
 // account cache, this controller runs:
 //   ./DepotDownloader -app <id> -dir <path> -os windows -osarch 64
-//                     -username <name> -remember-password
+//                     -username <name> -remember-password -loginid <random>
 // and the cache is removed immediately afterward. The token never appears in
 // argv and DepotDownloader never owns a second authentication session.
 //
@@ -187,14 +187,9 @@ final class DepotDownloaderController: ObservableObject {
         activeDownloads += 1
         defer { activeDownloads -= 1 }
 
-        let args: [String] = [
-            "-app", String(appID),
-            "-dir", installDir.path,
-            "-os", "windows",
-            "-osarch", "64",
-            "-username", auth.accountName,
-            "-remember-password"
-        ]
+        let args = Self.downloadArguments(
+            appID: appID, installDir: installDir,
+            accountName: auth.accountName, loginID: Self.newLoginID())
 
         await MainActor.run { events(.status("Connecting to Steam…")) }
 
@@ -277,6 +272,34 @@ final class DepotDownloaderController: ObservableObject {
         guard exit == 0 else {
             throw DepotDownloaderError.downloadFailed(exit, tail.value.suffix(15).joined(separator: "\n"))
         }
+    }
+
+    // MARK: - Arguments
+
+    static func downloadArguments(
+        appID: Int, installDir: URL, accountName: String, loginID: UInt32
+    ) -> [String] {
+        [
+            "-app", String(appID),
+            "-dir", installDir.path,
+            "-os", "windows",
+            "-osarch", "64",
+            "-username", accountName,
+            "-remember-password",
+            "-loginid", String(loginID)
+        ]
+    }
+
+    /// Steam ends any session on the account that logs on with a LoginID
+    /// already in use. Without `-loginid`, DepotDownloader falls back to an ID
+    /// made from this Mac's LAN address — the same one the real Steam client
+    /// sends — so every install signed the user's Steam client out.
+    ///
+    /// Random per run, not fixed: a DLC install can overlap a base-game install,
+    /// and two runs sharing an ID would knock each other off. The ceiling keeps
+    /// it below the CloudSync helper's fixed presence ID (0x42454552).
+    static func newLoginID() -> UInt32 {
+        UInt32.random(in: 1...0x3FFF_FFFF)
     }
 
     // MARK: - Process invocation

@@ -84,11 +84,13 @@ final class SteamLibraryStore: ObservableObject {
     /// Fold a fresh owned-games fetch into the current list.
     nonisolated static func merge(existing: [SteamLibraryGame], fetched: [SteamLibraryGame]) -> [SteamLibraryGame] {
         let fetchedAppIDs = Set(fetched.map(\.appID))
-        // Preserve installedBottleID associations.
+        // Keep what BEER knows about each game that Steam's list doesn't carry.
         var merged = fetched.map { fresh -> SteamLibraryGame in
             if let current = existing.first(where: { $0.appID == fresh.appID }) {
                 var updated = fresh
                 updated.installedBottleID = current.installedBottleID
+                updated.clientIconURL = current.clientIconURL
+                updated.shortcutIcon = current.shortcutIcon
                 return updated
             }
             return fresh
@@ -140,6 +142,19 @@ final class SteamLibraryStore: ObservableObject {
     func markInstalled(appID: Int, bottleID: UUID) {
         guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
         games[index].installedBottleID = bottleID
+        persist()
+    }
+
+    func setClientIconURL(_ url: URL?, appID: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }),
+              games[index].clientIconURL != url?.absoluteString else { return }
+        games[index].clientIconURL = url?.absoluteString
+        persist()
+    }
+
+    func setShortcutIcon(_ choice: ShortcutIconChoice, appID: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
+        games[index].shortcutIcon = choice
         persist()
     }
 

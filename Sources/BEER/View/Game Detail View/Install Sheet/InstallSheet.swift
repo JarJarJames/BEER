@@ -9,6 +9,8 @@ struct InstallSheet: View {
     let report: InstallSpaceReport?
     let onInstall: () -> Void
     let onCancel: () -> Void
+    @AppStorage(GameShortcutPreferences.desktopKey) private var createDesktopShortcut = false
+    @AppStorage(GameShortcutPreferences.applicationKey) private var createApplicationShortcut = false
 
     var body: some View {
         let shortfall: DiskSpaceShortfall? = if case .short(let s) = report?.verdict { s } else { nil }
@@ -71,6 +73,12 @@ struct InstallSheet: View {
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Toggle(GameShortcutStrings.installDesktop, isOn: $createDesktopShortcut)
+                Toggle(GameShortcutStrings.installApplication, isOn: $createApplicationShortcut)
+            }
+            .toggleStyle(.checkbox)
 
             HStack(spacing: 12) {
                 Spacer()

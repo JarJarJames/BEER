@@ -22,6 +22,10 @@ struct GameActionRow: View {
                         Label("Reveal Files", systemImage: "folder")
                     }
                     Divider()
+                    Button(GameShortcutStrings.createDesktop) { model.createShortcut(.desktop) }
+                    Button(GameShortcutStrings.createApplication) { model.createShortcut(.application) }
+                    Button(GameShortcutStrings.editIcon) { model.isShowingShortcutIcon = true }
+                    Divider()
                     if model.game.effectiveIsNonSteam {
                         Button("Remove Game…", role: .destructive, action: model.requestUninstall)
                     } else {

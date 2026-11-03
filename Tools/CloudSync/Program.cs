@@ -24,6 +24,7 @@ namespace CloudSync;
 //   dlc       --appid N
 //   launchinfo --appid N
 //   installsize --appids N,N,...  (disk a Windows install of them needs; bytes or null)
+//   clienticon --appid N    (hash of the app's Windows .ico, or null)
 //   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
@@ -86,6 +87,7 @@ static class Program
                     case "ownedgames": await OwnedGamesCommand.RunAsync(session, ulong.Parse(CliArgs.Require(args, "steamid"))); break;
                     case "dlc": await DlcCommand.RunAsync(session, appid); break;
                     case "launchinfo": await LaunchInfoCommand.RunAsync(session, appid); break;
+                    case "clienticon": await ClientIconCommand.RunAsync(session, appid); break;
                     case "installsize":
                         await InstallSizeCommand.RunAsync(session, CliArgs.Require(args, "appids")
                             .Split(',', StringSplitOptions.RemoveEmptyEntries).Select(uint.Parse).ToList());
