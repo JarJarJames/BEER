@@ -14,6 +14,14 @@ struct VolumeSpace: Equatable {
     let name: String
 }
 
+/// Steam's answer to "how big is this?".
+struct InstallSize: Equatable {
+    let bytes: Int64?
+    /// Why free space can't be checked (Steam lists no size, or couldn't be
+    /// asked); nil when `bytes` is known.
+    let uncheckedReason: String?
+}
+
 /// The check's result with the numbers the install sheet shows.
 struct InstallSpaceReport: Equatable {
     /// Steam's size for the install; nil when Steam lists none or couldn't be asked.
@@ -39,28 +47,34 @@ struct InstallSpaceCheck {
     }
 
     func report(appIDs: [Int], account: SteamCloudAccount, destination: URL, partialDownload: URL? = nil) async -> InstallSpaceReport {
-        let installBytes: Int64?
-        var unchecked: String?
+        await assess(size(appIDs: appIDs, account: account), destination: destination, partialDownload: partialDownload)
+    }
+
+    /// Steam's size for the install. Asked once per sheet: choosing another
+    /// drive only re-runs `assess`.
+    func size(appIDs: [Int], account: SteamCloudAccount) async -> InstallSize {
         do {
-            installBytes = try await client.installSize(
+            let bytes = try await client.installSize(
                 appIDs: appIDs, account: account.accountName, refreshToken: account.refreshToken
             )
-            if installBytes == nil { unchecked = DiskSpaceStrings.unknownSize }
+            return InstallSize(bytes: bytes, uncheckedReason: bytes == nil ? DiskSpaceStrings.unknownSize : nil)
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-            installBytes = nil
-            unchecked = DiskSpaceStrings.sizeCheckFailed(msg)
+            return InstallSize(bytes: nil, uncheckedReason: DiskSpaceStrings.sizeCheckFailed(msg))
         }
+    }
 
+    /// Whether `size` fits at `destination`.
+    func assess(_ size: InstallSize, destination: URL, partialDownload: URL? = nil) async -> InstallSpaceReport {
         let freeSpace = freeSpace
         let (volume, alreadyOnDisk) = await Task.detached {
             (freeSpace(destination), partialDownload.map(DiskSpaceCheck.allocatedSize(of:)) ?? 0)
         }.value
 
         let verdict: InstallSpace
-        if let unchecked {
+        if let unchecked = size.uncheckedReason {
             verdict = .unchecked(unchecked)
-        } else if let installBytes, let volume, let shortfall = DiskSpaceCheck.shortfall(
+        } else if let installBytes = size.bytes, let volume, let shortfall = DiskSpaceCheck.shortfall(
             installBytes: installBytes, alreadyOnDisk: alreadyOnDisk,
             availableBytes: volume.availableBytes, volumeName: volume.name
         ) {
@@ -69,6 +83,6 @@ struct InstallSpaceCheck {
             // Fits, or the volume couldn't be read: that's left to the download to hit.
             verdict = .fits
         }
-        return InstallSpaceReport(installBytes: installBytes, volume: volume, verdict: verdict)
+        return InstallSpaceReport(installBytes: size.bytes, volume: volume, verdict: verdict)
     }
 }

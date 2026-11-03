@@ -47,10 +47,19 @@ struct GameDetailScreen: View {
         .sheet(isPresented: $model.isShowingInstallSheet) {
             InstallSheet(
                 game: model.game,
+                size: model.installSize,
                 report: model.installSpaceReport,
+                options: model.installOptions,
+                selection: Binding(get: { model.installTarget }, set: model.selectInstallTarget),
+                note: model.installNote,
                 onInstall: model.confirmInstall,
                 onCancel: { model.isShowingInstallSheet = false }
             )
+        }
+        .sheet(isPresented: $model.isShowingMoveSheet) {
+            if let bottle = model.installedBottle {
+                MoveGameSheet(bottle: bottle, model: model)
+            }
         }
         .sheet(isPresented: $model.isShowingShortcutIcon) {
             ShortcutIconSheet(
@@ -98,7 +107,16 @@ struct GameDetailScreen: View {
             Button("Remove Game", role: .destructive, action: model.uninstall)
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("The game's folder inside BEER is deleted. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
+            Text("The game's folder in BEER is deleted, on this Mac or on its drive. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
+        }
+        .confirmationDialog(
+            InstallDriveStrings.removeWhileMissingTitle(model.game.name),
+            isPresented: $model.confirmRemoveWithDriveMissing
+        ) {
+            Button(InstallDriveStrings.removeButton, role: .destructive, action: model.uninstall)
+            Button(InstallDriveStrings.cancelButton, role: .cancel) {}
+        } message: {
+            Text(InstallDriveStrings.removeWhileMissingMessage(model.installLocation?.missingDriveName ?? ""))
         }
         .alert(
             DiskSpaceStrings.alertTitle,

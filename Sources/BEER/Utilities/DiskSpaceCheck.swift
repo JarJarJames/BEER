@@ -27,15 +27,25 @@ enum DiskSpaceCheck {
 
     /// Free space as Finder reports it, on the volume holding `url` (or its
     /// nearest existing parent, since the destination may not exist yet).
+    ///
+    /// Nil for a path on a drive that isn't mounted. Walking up from one would
+    /// end at /Volumes, which is on the Mac's disk, and report the Mac's free
+    /// space as the drive's.
     static func freeSpace(at url: URL) -> VolumeSpace? {
+        if let driveRoot = GameFolders.driveRoot(of: url), !GameFolders.isMounted(driveRoot) {
+            return nil
+        }
         var probe = url
         while !FileManager.default.fileExists(atPath: probe.path) {
             let parent = probe.deletingLastPathComponent()
             guard parent != probe else { return nil }
             probe = parent
         }
-        guard let values = try? probe.resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeNameKey]),
-              let bytes = values.volumeAvailableCapacityForImportantUsage else { return nil }
+        let keys: Set<URLResourceKey> = [.volumeAvailableCapacityForImportantUsageKey, .volumeAvailableCapacityKey, .volumeNameKey]
+        // Some external formats only report the plain capacity.
+        guard let values = try? probe.resourceValues(forKeys: keys),
+              let bytes = values.volumeAvailableCapacityForImportantUsage
+                ?? values.volumeAvailableCapacity.map(Int64.init) else { return nil }
         return VolumeSpace(availableBytes: bytes, name: values.volumeName ?? "this disk")
     }
 

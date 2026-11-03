@@ -11,9 +11,13 @@ enum CloudSyncError: LocalizedError {
     case restoreTargetUnknown(String)
     /// Saving Steam's copies failed, so the restored saves weren't uploaded.
     case steamCopyFailed(String)
+    /// The game's folder is on a drive that isn't connected.
+    case installDriveMissing(String)
 
     var errorDescription: String? {
         switch self {
+        case .installDriveMissing(let name):
+            return InstallDriveStrings.syncNeedsDrive(name)
         case .userHomeNotFound(let url):
             return "Couldn't find a Wine user home inside \(url.path). The bottle may not be initialized."
         case .notSignedIn:

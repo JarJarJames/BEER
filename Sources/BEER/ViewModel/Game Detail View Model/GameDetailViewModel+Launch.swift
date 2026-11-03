@@ -2,7 +2,20 @@ import Foundation
 
 extension GameDetailViewModel {
     func launch(_ installedBottle: Bottle) {
-        guard installedBottle.gameLaunchExecutable != nil else { return }
+        guard installedBottle.gameLaunchExecutable != nil, !mover.isMoving(installedBottle.id) else { return }
+        // A shortcut can ask while the drive is unplugged; the page says why.
+        switch bottles.installLocation(of: installedBottle) {
+        case .available:
+            break
+        case .driveMissing(let name):
+            cloudSyncIsError = true
+            cloudSyncMessage = InstallDriveStrings.driveMissingDetail(name)
+            return
+        case .missing:
+            cloudSyncIsError = true
+            cloudSyncMessage = InstallDriveStrings.filesMissing
+            return
+        }
         Task { [self] in
             if !game.effectiveIsNonSteam {
                 await adoptSteamLaunchConfigIfNeeded(installedBottle)

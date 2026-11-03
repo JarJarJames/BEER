@@ -8,17 +8,40 @@ struct GameActionRow: View {
     var body: some View {
         HStack(spacing: 12) {
             if let bottle = model.installedBottle, bottle.gameLaunchExecutable != nil {
-                Button(action: { model.launch(bottle) }) {
-                    Label("Play", systemImage: "play.fill")
+                switch model.installLocation {
+                case .driveMissing(let name):
+                    Label(InstallDriveStrings.connectToPlay(name), systemImage: "externaldrive.badge.xmark")
                         .font(.title3.bold())
                         .frame(minWidth: 180, minHeight: 36)
+                        .padding(.horizontal, 12)
+                        .background(Color.orange.opacity(0.25), in: RoundedRectangle(cornerRadius: 8))
+                case .missing where !model.game.effectiveIsNonSteam:
+                    Button(action: model.startInstallOrLogin) {
+                        Label("Reinstall", systemImage: "arrow.down.circle.fill")
+                            .font(.title3.bold())
+                            .frame(minWidth: 180, minHeight: 36)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(model.isStartingInstall)
+                    Text(InstallDriveStrings.filesMissing)
+                        .foregroundStyle(.white.opacity(0.78))
+                case .missing:
+                    Text(InstallDriveStrings.filesMissing)
+                        .foregroundStyle(.white.opacity(0.78))
+                default:
+                    Button(action: { model.launch(bottle) }) {
+                        Label("Play", systemImage: "play.fill")
+                            .font(.title3.bold())
+                            .frame(minWidth: 180, minHeight: 36)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .disabled(bottles.activeBottleIDs.contains(bottle.id))
 
                 Menu {
-                    Button(action: { bottles.reveal(bottle) }) {
+                    Button(action: { bottles.revealGameFiles(bottle) }) {
                         Label("Reveal Files", systemImage: "folder")
                     }
                     Divider()
@@ -28,9 +51,12 @@ struct GameActionRow: View {
                     Divider()
                     if model.game.effectiveIsNonSteam {
                         Button("Remove Game…", role: .destructive, action: model.requestUninstall)
+                            .disabled(model.mover.isMoving(bottle.id))
                     } else {
                         Button("Reinstall / Validate", action: model.startInstallOrLogin)
+                            .disabled(model.mover.isMoving(bottle.id))
                         Button("Uninstall", role: .destructive, action: model.requestUninstall)
+                            .disabled(model.mover.isMoving(bottle.id))
                     }
                 } label: {
                     Label("More", systemImage: "ellipsis")

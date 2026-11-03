@@ -82,14 +82,16 @@ final class DepotDownloaderController: ObservableObject {
 
     // MARK: - Game install
 
+    /// `installDir` is the game's folder, inside its bottle or on a drive.
     func installGame(
         appID: Int,
         gameName: String,
-        bottle: Bottle,
+        installDir: URL,
         auth: SteamCloudAccount,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
-        let installDir = AppPaths.gameInstallDirectory(for: bottle, gameName: gameName)
+        // Say the drive is missing, rather than fail on a path that's gone.
+        try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
         try await download(appID: appID, into: installDir, auth: auth, events: events)

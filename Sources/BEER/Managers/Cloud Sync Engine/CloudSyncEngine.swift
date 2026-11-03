@@ -38,6 +38,9 @@ final class CloudSyncEngine: ObservableObject {
     /// Where a bottle's Wine prefix is. Tests point this at a temporary folder.
     var bottlePrefix: (Bottle) -> URL = AppPaths.prefixURL(for:)
 
+    /// The mounted drives, for games whose files are on one. Tests fake them.
+    var volumes: VolumeCatalog = .system
+
     /// How many snapshots per game survive pruning (`before-clear` ones are
     /// always kept on top of these).
     var snapshotsToKeep = CloudSaveBackupLimits.snapshotsPerGame
@@ -69,6 +72,7 @@ final class CloudSyncEngine: ObservableObject {
     @discardableResult
     func backupAndClearLocalSaves(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> URL? {
         guard let account = auth.account else { throw CloudSyncError.notSignedIn }
+        let installDir = try gameInstallDirectory(for: bottle)
         isSyncing = true
         defer { isSyncing = false }
 
@@ -77,7 +81,6 @@ final class CloudSyncEngine: ObservableObject {
         // seen would survive only in the backup.
         let remote = try await client.enumerate(appID: appID, account: account.accountName, refreshToken: account.refreshToken).files
         let userHome = try resolveWineUserHome(for: bottle)
-        let installDir = bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
 
         // Tracked local files = the local mapping of every cloud file that
         // currently exists locally.
@@ -104,13 +107,13 @@ final class CloudSyncEngine: ObservableObject {
 
     func run(bottle: Bottle, appID: Int, auth: SteamAuthStore, doPull: Bool, doPush: Bool) async throws -> CloudSyncReport {
         guard let account = auth.account else { throw CloudSyncError.notSignedIn }
+        let installDir = try gameInstallDirectory(for: bottle)
         isSyncing = true
         defer { isSyncing = false }
 
         let acct = account.accountName
         let token = account.refreshToken
         let userHome = try resolveWineUserHome(for: bottle)
-        let installDir = bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
         var report = CloudSyncReport()
 
         phase = "Listing cloud files…"

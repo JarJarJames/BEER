@@ -72,6 +72,20 @@ enum AppPaths {
             .appendingPathComponent(gameName.safeGameFolderName, isDirectory: true)
     }
 
+    /// Where games go on a drive other than this Mac's: `<drive>/BEER/Games`.
+    /// The last folder is `Games` like inside a bottle, so the lookup for
+    /// bottles that predate stored install folders works the same on a drive.
+    static func driveGamesDirectory(onDriveAt root: URL) -> URL {
+        root.appendingPathComponent("BEER", isDirectory: true)
+            .appendingPathComponent("Games", isDirectory: true)
+    }
+
+    /// Moves between drives that haven't finished, so a move cut short by a
+    /// crash or an unplugged drive is undone or completed on the next launch.
+    static var gameMovesURL: URL {
+        applicationSupport.appendingPathComponent("game-moves.json")
+    }
+
     static func logsURL(for bottle: Bottle) -> URL {
         prefixURL(for: bottle).appendingPathComponent("beer.log")
     }

@@ -273,10 +273,10 @@ extension CloudSyncEngine {
     /// uploaded over them. Nothing is uploaded unless every copy downloaded.
     func keepRestoredSaves(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> CloudSyncReport {
         guard let account = auth.account else { throw CloudSyncError.notSignedIn }
+        let installDir = try gameInstallDirectory(for: bottle)
         isSyncing = true
         defer { isSyncing = false }
         let userHome = try resolveWineUserHome(for: bottle)
-        let installDir = bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
         var report = CloudSyncReport()
 
         phase = "Listing cloud files…"

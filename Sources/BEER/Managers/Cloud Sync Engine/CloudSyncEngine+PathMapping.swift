@@ -14,6 +14,21 @@ extension CloudSyncEngine {
         return CloudSaveBackupRetention.fingerprint(of: dirs)
     }
 
+    /// The folder `%GAMEINSTALL%` saves map into. Throws when it's on a drive
+    /// that isn't connected: some games keep saves in their own folder, and a
+    /// sync without them would report success while skipping those saves.
+    /// Checked before anything else so a refused sync spends no Steam logon.
+    func gameInstallDirectory(for bottle: Bottle) throws -> URL? {
+        guard bottle.gameDrive != nil else {
+            return bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
+        }
+        switch bottle.installLocation(volumes: volumes) {
+        case .available(let url): return url
+        case .driveMissing(let name): throw CloudSyncError.installDriveMissing(name)
+        case .missing: return nil
+        }
+    }
+
     func resolveWineUserHome(for bottle: Bottle) throws -> URL {
         let usersDir = bottlePrefix(bottle)
             .appendingPathComponent("drive_c", isDirectory: true)

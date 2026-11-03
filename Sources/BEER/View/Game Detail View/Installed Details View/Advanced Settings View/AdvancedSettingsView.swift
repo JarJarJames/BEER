@@ -55,7 +55,7 @@ struct AdvancedSettingsView: View {
             if let exe = liveBottle.gameLaunchExecutable {
                 LabeledValue(key: "Launch executable", value: exe)
             }
-            if let installDir = liveBottle.resolvedInstallDirectory {
+            if let installDir = bottles.installLocation(of: liveBottle).url {
                 LabeledValue(key: "Install location", value: installDir.path)
             }
             LabeledValue(key: "Bottle path", value: AppPaths.prefixURL(for: liveBottle).path)

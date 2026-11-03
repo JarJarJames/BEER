@@ -95,24 +95,26 @@ Views mirror the **app's navigation**: `ContentView` is the shell (sidebar in `M
 View/
 ├── Content View/
 │   └── Main Shell View/ -> Library Pane/, Steam Account Bar/
-├── Steam Library Grid View/ -> Game Card View/, Library Toolbar View/, Library Empty State View/
+├── Steam Library Grid View/ -> Game Card View/, Library Toolbar View/, Library Empty State View/,
+│                                 Found Games Banner/, Found Games Sheet/
 ├── Game Detail View/
 │   ├── Game Detail Screen/            Owns the GameDetailViewModel
 │   ├── Game Hero View/ -> Game Action Row/, Steam Hero Artwork/, Steam Library Logo/
 │   ├── Download Progress View/
 │   ├── Installed Details View/        One folder per settings row
-│   │   ├── Runtime Row/, Graphics Row/, Display Mode Row/, Launch Arguments Row/,
+│   │   ├── Install Location Row/, Runtime Row/, Graphics Row/, Display Mode Row/, Launch Arguments Row/,
 │   │   │   Steam Emulator Row/, DLC Row/, Steam Cloud Row/
 │   │   └── Advanced Settings View/ -> Environment Row/, Dependencies Row/, Wine Log View/, Labeled Value/
 │   ├── Settings Row/                  Shared by every row above
 │   ├── DLC Manager View/ -> DLC Manager Row/, DLC Manager Footer/, ...
+│   ├── Move Game Sheet/
 │   ├── Shortcut Icon Sheet/ -> Cover Crop Editor/
 │   └── Steam Cloud QR Sheet/
 ├── Downloads Pane/ -> Download Row/
 ├── Runtime Manager View/ -> Runtime Section/, Runtime Release Row/, ...
 ├── Steam Sign In View/
 ├── Depot Downloader Setup View/
-└── Reuseable Views/ -> QR Code View/    Components shared by more than one screen
+└── Reuseable Views/ -> QR Code View/, Install Target List/    Components shared by more than one screen
 ```
 
 ### Nesting rule: a component lives inside the screen that owns it

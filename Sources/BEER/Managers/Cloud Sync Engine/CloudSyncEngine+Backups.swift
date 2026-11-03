@@ -56,6 +56,16 @@ extension CloudSyncEngine {
         }
     }
 
+    /// Back up the saves this session's syncs found inside `folder`, a game
+    /// folder about to be deleted because the game moved. Games that keep
+    /// saves in their own folder lose nothing if the move's copy is ever
+    /// found wanting later.
+    func backUpSaves(inside folder: URL, appID: Int) throws {
+        let dirs = (knownSaveDirs[appID] ?? []).filter { Self.isInside($0, folder) }
+        guard !dirs.isEmpty else { return }
+        _ = try backUpBeforeWriting(appID: appID, dirs: dirs, label: "before-move")
+    }
+
     /// Copy every file under `dirs` into a fresh timestamped backup folder,
     /// preserving the path tail after the user home so a restore is obvious.
     /// Returns the snapshot holding the current saves: the newest existing one

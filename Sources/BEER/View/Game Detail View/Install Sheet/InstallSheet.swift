@@ -1,12 +1,19 @@
 import SwiftUI
 
 // Shown before a game downloads, like Steam's install dialog: the game's size
-// and the disk's free space, with Install turned off when it won't fit.
+// and where it can go with each place's free space, with Install turned off
+// when it won't fit.
 
 struct InstallSheet: View {
     let game: SteamLibraryGame
-    /// Nil while the size and free space are looked up.
+    /// Nil while Steam is asked.
+    let size: InstallSize?
+    /// Free space at the chosen place; nil while it's looked up.
     let report: InstallSpaceReport?
+    let options: [InstallTargetOption]
+    @Binding var selection: InstallTarget?
+    /// Why the place can't be changed, or why Install is off.
+    let note: String?
     let onInstall: () -> Void
     let onCancel: () -> Void
     @AppStorage(GameShortcutPreferences.desktopKey) private var createDesktopShortcut = false
@@ -36,8 +43,8 @@ struct InstallSheet: View {
                     // truncates to one line instead of wrapping to two.
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer()
-                if let report {
-                    Text(report.installBytes.map(InstallSheetStrings.size) ?? InstallSheetStrings.unknownSize)
+                if let size {
+                    Text(size.bytes.map(InstallSheetStrings.size) ?? InstallSheetStrings.unknownSize)
                         .font(.headline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -48,19 +55,14 @@ struct InstallSheet: View {
 
             Text(InstallSheetStrings.installTo)
                 .font(.headline)
-            HStack {
-                Image(systemName: "internaldrive")
-                Text(report?.volume?.name ?? (report == nil ? InstallSheetStrings.checking : InstallSheetStrings.unknownVolume))
-                    .font(.title3)
-                Spacer()
-                if let volume = report?.volume {
-                    Text(InstallSheetStrings.free(volume.availableBytes))
-                        .font(.headline)
-                }
+            InstallTargetList(options: options, selection: $selection, selectionDoesNotFit: shortfall != nil)
+
+            if let note {
+                Text(note)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(14)
-            .foregroundStyle(.white)
-            .background(shortfall == nil ? Color.accentColor : Color.red, in: RoundedRectangle(cornerRadius: 6))
 
             if let shortfall {
                 Text(DiskSpaceStrings.shortfall(shortfall))
@@ -88,7 +90,7 @@ struct InstallSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(report == nil || shortfall != nil)
+                .disabled(report == nil || selection == nil || shortfall != nil)
 
                 Button(action: onCancel) {
                     Text(InstallSheetStrings.cancelButton)

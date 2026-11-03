@@ -5,7 +5,7 @@ extension GameDetailViewModel {
     /// The game is running or a sync is under way: saves are in use, so
     /// they can't be restored.
     func savesAreBusy(_ bottle: Bottle) -> Bool {
-        cloudSync.isSyncing || bottles.activeBottleIDs.contains(bottle.id)
+        cloudSync.isSyncing || bottles.activeBottleIDs.contains(bottle.id) || mover.isMoving(bottle.id)
     }
 
     func showSaveBackups() {
@@ -32,8 +32,8 @@ extension GameDetailViewModel {
         saveBackupsError = nil
         Task { [self] in
             do {
+                let installDir = try cloudSync.gameInstallDirectory(for: bottle)
                 let userHome = try cloudSync.resolveWineUserHome(for: bottle)
-                let installDir = bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
                 restorePlanToConfirm = try await Task.detached {
                     try CloudSyncEngine.restorePlan(for: snapshot, userHome: userHome, installDir: installDir)
                 }.value

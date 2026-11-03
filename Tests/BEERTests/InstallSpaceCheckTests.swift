@@ -102,6 +102,17 @@ final class InstallSpaceCheckTests: XCTestCase {
         XCTAssertEqual(report.verdict, .unchecked(DiskSpaceStrings.unknownSize))
     }
 
+    func testChoosingAnotherDriveDoesntAskSteamAgain() async {
+        fakeSteam.installSizes = [1: 35 * gb]
+        let size = await check(freeBytes: 40 * gb).size(appIDs: [1], account: account)
+        let small = await check(freeBytes: 20 * gb).assess(size, destination: root)
+        let big = await check(freeBytes: 266 * gb).assess(size, destination: root)
+
+        guard case .short = small.verdict else { return XCTFail("shouldn't fit on the small drive, got \(small.verdict)") }
+        XCTAssertEqual(big.verdict, .fits)
+        XCTAssertEqual(fakeSteam.calls().map(\.command), ["installsize"], "Steam asked once")
+    }
+
     // MARK: - DLC
 
     func testDLCBatchIsCheckedTogetherInOneCall() async {

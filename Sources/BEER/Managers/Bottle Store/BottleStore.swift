@@ -12,6 +12,9 @@ final class BottleStore: ObservableObject {
 
     @Published var lastError: String?
 
+    /// The mounted drives, for games whose files are on one.
+    var volumes: VolumeCatalog = .system
+
     func load() async {
         do {
             try AppPaths.ensureBaseDirectories()
@@ -63,11 +66,17 @@ final class BottleStore: ObservableObject {
     /// + steamGameName + gameInstallStatus = .installing IMMEDIATELY (before the
     /// long DepotDownloader phase) so retries can find and reuse this bottle
     /// instead of leaving an orphan behind.
-    func claimForSteamApp(_ bottle: Bottle, appID: Int, gameName: String) async {
+    ///
+    /// The folder the download goes to is recorded now too, so a resume after
+    /// a failure (or an unplugged drive) continues there rather than starting
+    /// over inside the bottle.
+    func claimForSteamApp(_ bottle: Bottle, appID: Int, gameName: String, installDirectory: URL, drive: GameDrive?) async {
         guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
         bottles[index].steamAppID = appID
         bottles[index].steamGameName = gameName
         bottles[index].gameInstallStatus = .installing
+        bottles[index].gameInstallDirectory = installDirectory.path
+        bottles[index].gameDrive = drive
         bottles[index].updatedAt = Date()
         await save()
     }
@@ -107,6 +116,7 @@ final class BottleStore: ObservableObject {
         launchExecutable: String,
         launchArguments: String?,
         installDirectory: String? = nil,
+        drive: GameDrive? = nil,
         steamLaunchConfigChecked: Bool = false
     ) async {
         guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
@@ -114,6 +124,7 @@ final class BottleStore: ObservableObject {
         bottles[index].steamGameName = gameName
         bottles[index].gameLaunchExecutable = launchExecutable
         bottles[index].gameInstallDirectory = installDirectory
+        bottles[index].gameDrive = drive
         bottles[index].gameInstallStatus = .installed
         bottles[index].steamLaunchConfigChecked = steamLaunchConfigChecked
         if let launchArguments, !launchArguments.isEmpty {
@@ -140,20 +151,28 @@ final class BottleStore: ObservableObject {
     }
 
     /// Record a game the user brought in from a folder (no Steam app behind it).
-    func recordNonSteamInstall(_ bottle: Bottle, launchExecutable: String, installDirectory: String) async {
+    func recordNonSteamInstall(_ bottle: Bottle, launchExecutable: String, installDirectory: String, drive: GameDrive? = nil) async {
         guard let index = bottles.firstIndex(where: { $0.id == bottle.id }) else { return }
         bottles[index].gameLaunchExecutable = launchExecutable
         bottles[index].gameInstallDirectory = installDirectory
+        bottles[index].gameDrive = drive
         bottles[index].gameInstallStatus = .installed
         bottles[index].updatedAt = Date()
         await save()
     }
 
+    /// Delete the bottle, and the game's folder when that's on a connected
+    /// drive (see `GameFolders.driveFolderToDelete`). With the drive unplugged
+    /// its files stay there, and BEER offers to add them back when it returns.
     func delete(_ bottle: Bottle) async {
         do {
+            let driveFolder = GameFolders.driveFolderToDelete(for: bottle, among: bottles, volumes: volumes)
             let url = AppPaths.prefixURL(for: bottle)
             if FileManager.default.fileExists(atPath: url.path) {
                 try FileManager.default.removeItem(at: url)
+            }
+            if let driveFolder {
+                try FileManager.default.removeItemIfPresent(at: driveFolder)
             }
             bottles.removeAll { $0.id == bottle.id }
             logs[bottle.id] = nil
@@ -168,6 +187,38 @@ final class BottleStore: ObservableObject {
     /// while they work; this names that fact instead of re-deriving it.
     func live(_ bottle: Bottle) -> Bottle {
         bottles.first { $0.id == bottle.id } ?? bottle
+    }
+
+    /// Point games on a drive at where it's mounted now, after it was renamed.
+    func followRenamedDrives() async {
+        var changed = false
+        for index in bottles.indices where bottles[index].followRenamedDrive(volumes: volumes) {
+            changed = true
+        }
+        if changed { await save() }
+    }
+
+    /// Record that the game's files now live at `installDirectory`, after a
+    /// move. The launch .exe moves with them.
+    func relocateGame(bottleID: UUID, from oldDirectory: URL, to installDirectory: URL, drive: GameDrive?) throws {
+        guard let index = bottles.firstIndex(where: { $0.id == bottleID }) else {
+            throw GameFolderError.notAGameFolder(installDirectory.path)
+        }
+        let before = bottles[index]
+        if let exe = bottles[index].gameLaunchExecutable {
+            bottles[index].gameLaunchExecutable = GameFolderTransfer.relocated(
+                URL(fileURLWithPath: exe), from: oldDirectory, to: installDirectory
+            ).path
+        }
+        bottles[index].gameInstallDirectory = installDirectory.path
+        bottles[index].gameDrive = drive
+        bottles[index].updatedAt = Date()
+        do {
+            try persist()
+        } catch {
+            bottles[index] = before
+            throw error
+        }
     }
 
     func update(_ bottle: Bottle) async {
@@ -199,11 +250,18 @@ final class BottleStore: ObservableObject {
 
     func save() async {
         do {
-            try AppPaths.ensureBaseDirectories()
-            let data = try JSONEncoder.gamenative.encode(bottles)
-            try data.write(to: AppPaths.metadataURL, options: .atomic)
+            try persist()
         } catch {
             lastError = "Could not save bottles: \(error.localizedDescription)"
         }
+    }
+
+    /// `save`, for a caller that must not carry on if it failed: a move
+    /// deletes the game's old copy only once the bottle is saved pointing at
+    /// the new one.
+    func persist() throws {
+        try AppPaths.ensureBaseDirectories()
+        let data = try JSONEncoder.gamenative.encode(bottles)
+        try data.write(to: AppPaths.metadataURL, options: .atomic)
     }
 }

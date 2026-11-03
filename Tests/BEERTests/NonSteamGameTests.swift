@@ -46,6 +46,49 @@ final class NonSteamGameTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: source.path))
     }
 
+    // MARK: - Onto another drive
+
+    func testMoveToAnotherDriveChecksTheCopyThenDeletesTheOriginal() throws {
+        let source = try makeGame(named: "Game")
+        let dest = root.appendingPathComponent("Drive/BEER/Games/Game")
+
+        try GameFolderTransfer.transfer(from: source, to: dest, mode: .move, sameVolume: false)
+
+        XCTAssertEqual(try Data(contentsOf: dest.appendingPathComponent("save.dat")), Data("save".utf8))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("bin/game.exe").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: source.path))
+    }
+
+    func testCopyToAnotherDriveKeepsTheOriginal() throws {
+        let source = try makeGame(named: "Game")
+        let dest = root.appendingPathComponent("Drive/BEER/Games/Game")
+
+        try GameFolderTransfer.transfer(from: source, to: dest, mode: .copy, sameVolume: false)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("save.dat").path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: source.appendingPathComponent("save.dat").path))
+    }
+
+    func testCheckedCopyStandsWhenTheOriginalWontGo() throws {
+        // A folder in the original that can't be emptied (here, read-only).
+        // The checked copy is the game now; the transfer mustn't fail and
+        // have it thrown away.
+        let source = try makeGame(named: "Game")
+        let locked = source.appendingPathComponent("bin")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+        let dest = root.appendingPathComponent("Drive/BEER/Games/Game")
+
+        XCTAssertNoThrow(try GameFolderTransfer.transfer(from: source, to: dest, mode: .move, sameVolume: false))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: dest.appendingPathComponent("bin/game.exe").path))
+    }
+
+    func testMoveOnOneDiskNeedsNoRoom() {
+        XCTAssertEqual(GameFolderTransfer.spaceNeeded(folderBytes: 50, mode: .move, sameVolume: true), 0)
+        XCTAssertEqual(GameFolderTransfer.spaceNeeded(folderBytes: 50, mode: .move, sameVolume: false), 50)
+        XCTAssertEqual(GameFolderTransfer.spaceNeeded(folderBytes: 50, mode: .copy, sameVolume: true), 50)
+    }
+
     func testRejectsDestinationInsideSource() throws {
         let source = try makeGame(named: "Game")
 

@@ -11,6 +11,8 @@ struct BEERApp: App {
     @StateObject private var depotDownloader = DepotDownloaderInstaller()
     @StateObject private var cloudAuth = SteamAuthStore()
     @StateObject private var presence = SteamPresenceStore()
+    @StateObject private var drives = InstallVolumeMonitor()
+    @StateObject private var mover = GameMover()
 
     var body: some Scene {
         WindowGroup {
@@ -22,6 +24,8 @@ struct BEERApp: App {
                 .environmentObject(depotDownloader)
                 .environmentObject(cloudAuth)
                 .environmentObject(presence)
+                .environmentObject(drives)
+                .environmentObject(mover)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -31,6 +35,12 @@ struct BEERApp: App {
                     // could post to it.
                     AchievementOverlayWindow.shared.activate()
                     await store.load()
+                    // Games on a drive renamed while BEER was closed follow
+                    // it, and folders from before markers get one.
+                    store.volumes = drives.current
+                    drives.start()
+                    await store.followRenamedDrives()
+                    store.writeMissingFolderMarkers()
                     await detector.refresh()
                     depotDownloader.refresh()
                     library.load()

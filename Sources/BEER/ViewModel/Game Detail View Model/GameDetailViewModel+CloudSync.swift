@@ -4,6 +4,8 @@ extension GameDetailViewModel {
     /// Pull and/or push saves. `syncSaves(pull:true, push:true)` is the default
     /// two-way sync; the menu offers one-direction variants.
     func syncSaves(for bottle: Bottle, pull: Bool, push: Bool) {
+        // Saves written into the old copy now would be lost with it.
+        guard !refuseWhileMoving(bottle) else { return }
         Task { [self] in
             cloudSyncMessage = nil
             do {
@@ -32,6 +34,7 @@ extension GameDetailViewModel {
     }
 
     func clearLocalSaves(for bottle: Bottle) {
+        guard !refuseWhileMoving(bottle) else { return }
         Task { [self] in
             cloudSyncMessage = nil
             do {
