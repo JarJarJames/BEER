@@ -11,8 +11,45 @@ Notable changes to BEER. Versions follow the GitHub releases.
   choose) or Steam's own Windows icon. The install sheet can make either
   shortcut as part of an install, and uninstalling a game removes the
   shortcuts BEER made. A shortcut you moved or renamed is left alone.
+- **Install games to external drives.** The install sheet lists This Mac and
+  every usable drive with its free space; drives a game can't run from
+  (exFAT, case-sensitive) are greyed out with the reason. Only the game's
+  files go on the drive: its bottle, saves and save backups stay on the Mac.
+  The sheet updates live as drives are plugged in or pulled out.
+- **Move games between your Mac and drives.** A game's Location row can move
+  it. BEER copies the game, checks the copy, switches over, backs up any
+  saves kept in the game folder, and only then deletes the old copy. A move
+  cut short by a crash or a pulled drive is finished or undone the next time
+  the drive is connected.
+- **Games on an unplugged drive.** The game page says "Connect <drive> to
+  play", and launching, cloud sync and anything that writes into the game
+  folder wait until it's back. Drives are tracked by their ID, so renaming
+  one doesn't lose its games, even while BEER is open.
+- **Games found on a drive.** Plugging in a drive that holds games BEER
+  installed elsewhere (another Mac, or before a reinstall) offers to add
+  them back. Non-Steam games can be added to a drive too.
+
+### Changed
+- **The Wine log follows new output.** The Wine log and the DepotDownloader
+  output keep the newest line in view, stay put when you scroll up to read,
+  and follow again once you scroll back to the end.
 
 ### Fixed
+- **BEER crashed while a game started or closed.** The window could get
+  stuck re-laying itself out until macOS closed BEER, most often with the
+  Wine log open while a game launched. The sidebar, the game page and the
+  log panels now have fixed sizes, so changing content can't set this off.
+- **BEER froze for seconds when a game started from a USB drive.** Every
+  launch copied the Steam emulator's 44 MB of files into the game folder
+  again, and the window waited for it. Files already in place are now
+  skipped, and the rest are copied in the background.
+- **Download status stuck on "Pre-allocating" or "Validating".** The status
+  now switches to "Downloading…" once data arrives, and the game page shows
+  the percentage next to it.
+- **Games whose name ends in "." wouldn't start.** Windows drops a trailing
+  dot, so Wine couldn't find anything inside a folder like
+  "Easy Delivery Co.". New installs leave the dot off, and existing folders
+  are renamed the next time BEER opens.
 - **Installing a game signed you out of Steam.** BEER's downloader logged on
   with the same session ID the Steam client on your Mac uses, and Steam ends
   the older session when two match. Installs and updates now use their own

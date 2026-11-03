@@ -43,36 +43,13 @@ struct MainShellView: View {
                 ideal: MainShellLayout.sidebarIdealWidth,
                 max: MainShellLayout.sidebarMaxWidth
             )
+            // The width bounds above don't cover height: the account bar's
+            // text wrapping differently would still move the minimum.
+            .frame(minHeight: 0, maxHeight: .infinity)
         } detail: {
-            switch sidebar {
-            case .library:
-                LibraryPane(selectedGameAppID: $selectedGameAppID)
-                    .environmentObject(foundGames)
-                    .environmentObject(depotController)
-                    .environmentObject(downloads)
-                    .environmentObject(goldberg)
-                    .environmentObject(cloudSync)
-                    .environmentObject(graphicsTranslator)
-                    .environmentObject(windowsDependencies)
-                    .environmentObject(dlcStore)
-            case .installed:
-                LibraryPane(selectedGameAppID: $selectedGameAppID, installedOnly: true)
-                    .environmentObject(foundGames)
-                    .environmentObject(depotController)
-                    .environmentObject(downloads)
-                    .environmentObject(goldberg)
-                    .environmentObject(cloudSync)
-                    .environmentObject(graphicsTranslator)
-                    .environmentObject(windowsDependencies)
-                    .environmentObject(dlcStore)
-            case .downloads:
-                DownloadsPane()
-                    .environmentObject(depotController)
-                    .environmentObject(downloads)
-            case .runtimes:
-                RuntimeManagerView()
-                    .environmentObject(graphicsTranslator)
-            }
+            detail
+                .frame(minWidth: MainShellLayout.detailMinWidth, maxWidth: .infinity,
+                       minHeight: MainShellLayout.detailMinHeight, maxHeight: .infinity)
         }
         .navigationSplitViewStyle(.balanced)
         // Switching tabs returns to that tab's grid rather than carrying a
@@ -111,6 +88,39 @@ struct MainShellView: View {
         }
         .onChange(of: library.games.count) { _, _ in
             Task { await foundGames.scan(drives: drives.drives, bottles: store.bottles, library: library.games) }
+        }
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch sidebar {
+        case .library:
+            LibraryPane(selectedGameAppID: $selectedGameAppID)
+                .environmentObject(foundGames)
+                .environmentObject(depotController)
+                .environmentObject(downloads)
+                .environmentObject(goldberg)
+                .environmentObject(cloudSync)
+                .environmentObject(graphicsTranslator)
+                .environmentObject(windowsDependencies)
+                .environmentObject(dlcStore)
+        case .installed:
+            LibraryPane(selectedGameAppID: $selectedGameAppID, installedOnly: true)
+                .environmentObject(foundGames)
+                .environmentObject(depotController)
+                .environmentObject(downloads)
+                .environmentObject(goldberg)
+                .environmentObject(cloudSync)
+                .environmentObject(graphicsTranslator)
+                .environmentObject(windowsDependencies)
+                .environmentObject(dlcStore)
+        case .downloads:
+            DownloadsPane()
+                .environmentObject(depotController)
+                .environmentObject(downloads)
+        case .runtimes:
+            RuntimeManagerView()
+                .environmentObject(graphicsTranslator)
         }
     }
 

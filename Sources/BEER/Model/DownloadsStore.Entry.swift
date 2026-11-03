@@ -29,5 +29,12 @@ extension DownloadsStore {
             case .failed(let reason): return reason
             }
         }
+
+        /// The phase with how far along it is, for places without their own
+        /// percentage, e.g. "Downloading… 52%".
+        var phaseWithPercent: String {
+            guard isActive, fraction > 0 else { return phaseText }
+            return "\(phaseText) \(fraction.percentString)"
+        }
     }
 }

@@ -114,7 +114,7 @@ View/
 ├── Runtime Manager View/ -> Runtime Section/, Runtime Release Row/, ...
 ├── Steam Sign In View/
 ├── Depot Downloader Setup View/
-└── Reuseable Views/ -> QR Code View/, Install Target List/    Components shared by more than one screen
+└── Reuseable Views/ -> QR Code View/, Install Target List/, Log Follower/ Components shared by more than one screen
 ```
 
 ### Nesting rule: a component lives inside the screen that owns it

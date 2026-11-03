@@ -17,10 +17,7 @@ extension GameDetailViewModel {
     func showMoveSheet(for bottle: Bottle) {
         guard moveBlockedReason(bottle) == nil, let source = bottles.installLocation(of: bottle).url else { return }
         moveSourceBytes = nil
-        moveOptions = InstallTargets.options(
-            drives: drives.drives, macFreeBytes: InstallTargets.macFreeBytes(),
-            alreadyHere: { $0.holds(bottle.gameDrive) }
-        )
+        moveOptions = moveTargetOptions(for: bottle)
         moveTarget = InstallTargets.initialSelection(moveOptions, rememberedDriveUUID: nil)
         isShowingMoveSheet = true
         Task { [self] in
@@ -28,6 +25,13 @@ extension GameDetailViewModel {
             let bytes = await Task.detached { DiskSpaceCheck.allocatedSize(of: source) }.value
             if isShowingMoveSheet { moveSourceBytes = bytes }
         }
+    }
+
+    func moveTargetOptions(for bottle: Bottle) -> [InstallTargetOption] {
+        InstallTargets.options(
+            drives: drives.drives, macFreeBytes: InstallTargets.macFreeBytes(),
+            alreadyHere: { $0.holds(bottle.gameDrive) }
+        )
     }
 
     /// The move won't fit at the chosen place. Same margin as an install: the

@@ -27,30 +27,39 @@ extension GameDetailViewModel {
 
     /// What to run for `exe`: the exe itself, or for a Steam game that needs
     /// it, the emulator's steamclient loader (see `SteamClientLoaderPlan`).
-    func steamClientLoaderExecutable(for exe: String, in bottle: Bottle) throws -> String {
-        let exeURL = URL(fileURLWithPath: exe)
-        guard !game.effectiveIsNonSteam,
-              let installDir = bottle.resolvedInstallDirectory,
-              let plan = SteamClientLoaderPlan.make(
-                  executable: exeURL, installDir: installDir,
-                  mode: bottle.effectiveSteamClientLoaderMode,
-                  injectsOverlay: bottle.effectiveSteamClientLoaderInjectsOverlay,
-                  staysOpen: bottle.effectiveSteamClientLoaderStaysOpen
-              ) else { return exe }
-        guard let loaderSource = goldberg.coldClientDirectory else {
-            throw GoldbergPatchError.coldClientMissing("steamclient_loader")
-        }
-        let account = cloudAuth.account
-        return try ColdClientApplicator.prepare(
-            executable: exeURL, installDir: installDir, appID: game.appID, plan: plan,
-            loaderSource: loaderSource, oldSteamLibrary: goldberg.oldSteamLibraryURL,
-            writeSettings: { [appID = game.appID] folder in
-                try GoldbergApplicator.writeSteamSettings(
-                    in: folder, appID: appID,
-                    account: account?.accountName, steamID64: account?.steamID64,
-                    dlc: bottle.effectiveInstalledDLC
-                )
+    func steamClientLoaderExecutable(for exe: String, in bottle: Bottle) async throws -> String {
+        guard !game.effectiveIsNonSteam, let installDir = bottle.resolvedInstallDirectory else { return exe }
+        let mode = bottle.effectiveSteamClientLoaderMode
+        let injectsOverlay = bottle.effectiveSteamClientLoaderInjectsOverlay
+        let staysOpen = bottle.effectiveSteamClientLoaderStaysOpen
+        let loaderSource = goldberg.coldClientDirectory
+        let oldSteamLibrary = goldberg.oldSteamLibraryURL
+        let appID = game.appID
+        let accountName = cloudAuth.account?.accountName
+        let steamID64 = cloudAuth.account?.steamID64
+        let dlc = bottle.effectiveInstalledDLC
+
+        // Off the main thread: this reads the game's exe and can copy ~44 MB
+        // of emulator into the game's folder, which on a USB drive froze the
+        // window for seconds.
+        return try await Task.detached {
+            let exeURL = URL(fileURLWithPath: exe)
+            guard let plan = SteamClientLoaderPlan.make(
+                executable: exeURL, installDir: installDir,
+                mode: mode, injectsOverlay: injectsOverlay, staysOpen: staysOpen
+            ) else { return exe }
+            guard let loaderSource else {
+                throw GoldbergPatchError.coldClientMissing("steamclient_loader")
             }
-        ).path
+            return try ColdClientApplicator.prepare(
+                executable: exeURL, installDir: installDir, appID: appID, plan: plan,
+                loaderSource: loaderSource, oldSteamLibrary: oldSteamLibrary,
+                writeSettings: { folder in
+                    try GoldbergApplicator.writeSteamSettings(
+                        in: folder, appID: appID, account: accountName, steamID64: steamID64, dlc: dlc
+                    )
+                }
+            ).path
+        }.value
     }
 }

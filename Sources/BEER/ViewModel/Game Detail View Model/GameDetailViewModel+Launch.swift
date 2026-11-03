@@ -24,7 +24,7 @@ extension GameDetailViewModel {
             guard let gameExe = bottle.gameLaunchExecutable else { return }
             let exe: String
             do {
-                exe = try steamClientLoaderExecutable(for: gameExe, in: bottle)
+                exe = try await steamClientLoaderExecutable(for: gameExe, in: bottle)
             } catch {
                 cloudSyncIsError = true
                 cloudSyncMessage = "Couldn't launch: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"

@@ -10,10 +10,14 @@ struct VolumeCatalog: Sendable {
     var mountedDrives: @Sendable () -> [InstallVolume]
     /// The ID of the volume holding `url`; nil when `url` doesn't exist.
     var volumeUUID: @Sendable (URL) -> String?
+    /// The drive mounted at `root`, read directly. For the address a mount or
+    /// rename notification carries, which the mounted list can lag behind.
+    var drive: @Sendable (_ root: URL) -> InstallVolume? = { _ in nil }
 
     static let system = VolumeCatalog(
         mountedDrives: SystemVolumes.mountedDrives,
-        volumeUUID: SystemVolumes.volumeUUID(of:)
+        volumeUUID: SystemVolumes.volumeUUID(of:),
+        drive: SystemVolumes.drive(at:)
     )
 
     func drive(withUUID uuid: String) -> InstallVolume? {
@@ -33,14 +37,13 @@ private enum SystemVolumes {
         let urls = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: keys, options: [.skipHiddenVolumes]
         ) ?? []
-        // Only /Volumes: the startup disk is "/" and its system volumes live
-        // under /System/Volumes; simulator runtimes mount elsewhere too.
-        return urls
-            .filter { $0.standardizedFileURL.pathComponents.count == 3 && $0.path.hasPrefix("/Volumes/") }
-            .compactMap(volume(at:))
+        return urls.compactMap(drive(at:))
     }
 
-    static func volume(at root: URL) -> InstallVolume? {
+    @Sendable static func drive(at root: URL) -> InstallVolume? {
+        // Only /Volumes: the startup disk is "/" and its system volumes live
+        // under /System/Volumes; simulator runtimes mount elsewhere too.
+        guard root.standardizedFileURL.pathComponents.count == 3, root.path.hasPrefix("/Volumes/") else { return nil }
         // Resource values for a volume that just unmounted fail; it's gone.
         guard let values = try? root.resourceValues(forKeys: Set(keys)) else { return nil }
         let available = values.volumeAvailableCapacityForImportantUsage
