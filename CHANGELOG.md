@@ -5,6 +5,10 @@ Notable changes to BEER. Versions follow the GitHub releases.
 ## Unreleased
 
 ### Fixed
+- **Installing a game signed you out of Steam.** BEER's downloader logged on
+  with the same session ID the Steam client on your Mac uses, and Steam ends
+  the older session when two match. Installs and updates now use their own
+  ID, so a Steam client running alongside BEER stays signed in.
 - **Cloud-save backups filled the disk.** BEER copied a game's whole save
   folder before every sync and never removed old copies, so Kingdom Come
   games alone reached hundreds of GB. It now keeps the newest 3 backups per
