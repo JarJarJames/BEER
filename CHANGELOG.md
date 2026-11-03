@@ -28,6 +28,9 @@ Notable changes to BEER. Versions follow the GitHub releases.
   made on the Mac, or a new save folder per playthrough, were never uploaded
   and nothing said so. It now also checks the save folders Steam lists for
   the game.
+- **`build_app.sh` stopped while fetching SDL.** On a machine without SDL's
+  source already downloaded, macOS's bash read the "…" in the download
+  message as part of `$VERSION` and quit with "unbound variable".
 
 ## 0.6.2 — 2026-11-01
 
