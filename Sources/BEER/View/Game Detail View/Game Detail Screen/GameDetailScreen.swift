@@ -52,7 +52,9 @@ struct GameDetailScreen: View {
                 size: model.installSize,
                 report: model.installSpaceReport,
                 options: model.installOptions,
-                selection: Binding(get: { model.installTarget }, set: model.selectInstallTarget),
+                // A closure, not `set: model.selectInstallTarget`: Swift 6.3
+                // crashes generating the wrapper for that method reference.
+                selection: Binding(get: { model.installTarget }, set: { model.selectInstallTarget($0) }),
                 note: model.installNote,
                 onInstall: model.confirmInstall,
                 onCancel: { model.isShowingInstallSheet = false }
