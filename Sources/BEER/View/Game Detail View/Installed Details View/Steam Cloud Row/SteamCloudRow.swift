@@ -73,6 +73,11 @@ struct SteamCloudRow: View {
                             Label("Push to cloud", systemImage: "icloud.and.arrow.up")
                         }
                         Divider()
+                        Button {
+                            model.showSaveBackups()
+                        } label: {
+                            Label(SaveRestoreStrings.menuItem, systemImage: "clock.arrow.circlepath")
+                        }
                         Button(role: .destructive) {
                             model.confirmClearBottle = bottle
                         } label: {
@@ -91,6 +96,14 @@ struct SteamCloudRow: View {
                     .fixedSize()
                     .disabled(cloudSync.isSyncing)
                 }
+            }
+
+            if let pending = model.pendingRestore {
+                Text(SaveRestoreStrings.pendingCaption(pending))
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.leading, SettingsRow<EmptyView>.captionIndent)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if cloudSync.isSyncing && !cloudSync.phase.isEmpty {
@@ -124,5 +137,6 @@ struct SteamCloudRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
+        .onAppear(perform: model.refreshPendingRestore)
     }
 }

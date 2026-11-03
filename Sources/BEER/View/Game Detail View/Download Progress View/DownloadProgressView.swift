@@ -29,8 +29,9 @@ struct DownloadProgressView: View {
                             }
                         }
                         .padding(8)
+                        .background(LogFollower())
                     }
-                    .frame(maxHeight: 160)
+                    .frame(height: LogPanelLayout.downloadOutputHeight)
                     .background(Color(nsColor: .textBackgroundColor))
                     .clipShape(RoundedRectangle(cornerRadius: 6))
                 }

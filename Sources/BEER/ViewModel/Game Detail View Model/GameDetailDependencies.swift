@@ -15,13 +15,16 @@ struct GameDetailDependencies {
     let presence: SteamPresenceStore
     let graphicsTranslator: GraphicsTranslatorInstaller
     let dlcStore: DLCStore
+    let drives: InstallVolumeMonitor
+    let mover: GameMover
 
     var changePublishers: [ObservableObjectPublisher] {
         [
             library.objectWillChange, bottles.objectWillChange, detector.objectWillChange,
             depotCtl.objectWillChange, downloads.objectWillChange, goldberg.objectWillChange,
             cloudAuth.objectWillChange, cloudSync.objectWillChange, presence.objectWillChange,
-            graphicsTranslator.objectWillChange, dlcStore.objectWillChange
+            graphicsTranslator.objectWillChange, dlcStore.objectWillChange,
+            drives.objectWillChange, mover.objectWillChange
         ]
     }
 }

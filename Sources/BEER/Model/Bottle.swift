@@ -33,6 +33,10 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// contains the game's own steam_api*.dll). Used by the Goldberg patcher
     /// when reapplying or restoring on an already-installed game.
     var gameInstallDirectory: String? = nil
+    /// The drive the game's files are on when that isn't this Mac. Nil for a
+    /// game inside its bottle, which every bottle from before drives were an
+    /// option is. See `installLocation`.
+    var gameDrive: GameDrive? = nil
     /// Whether `gameLaunchExecutable` has been checked against Steam's own
     /// launch config. Installs from older builds only had a guess, so they are
     /// checked once on next launch. Optional so older bottle metadata decodes.

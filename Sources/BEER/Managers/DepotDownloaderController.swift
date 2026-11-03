@@ -6,12 +6,12 @@ import Foundation
 // into BEER. CloudSyncClient writes a short-lived DepotDownloader-compatible
 // account cache, this controller runs:
 //   ./DepotDownloader -app <id> -dir <path> -os windows -osarch 64
-//                     -username <name> -remember-password
+//                     -username <name> -remember-password -loginid <random>
 // and the cache is removed immediately afterward. The token never appears in
 // argv and DepotDownloader never owns a second authentication session.
 //
 // Output streamed from DepotDownloader is parsed for:
-//   • " Pre-allocating ", " Downloaded ", " Validating "         → status phases
+//   • " Pre-allocating ", " Validating ", percentage lines       → status phases
 //   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
@@ -82,19 +82,16 @@ final class DepotDownloaderController: ObservableObject {
 
     // MARK: - Game install
 
+    /// `installDir` is the game's folder, inside its bottle or on a drive.
     func installGame(
         appID: Int,
         gameName: String,
-        bottle: Bottle,
+        installDir: URL,
         auth: SteamCloudAccount,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
-        let bottlePrefix = AppPaths.prefixURL(for: bottle)
-        let safe = gameName.safeGameFolderName
-        let installDir = bottlePrefix
-            .appendingPathComponent("drive_c", isDirectory: true)
-            .appendingPathComponent("Games", isDirectory: true)
-            .appendingPathComponent(safe, isDirectory: true)
+        // Say the drive is missing, rather than fail on a path that's gone.
+        try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
         try await download(appID: appID, into: installDir, auth: auth, events: events)
@@ -192,14 +189,9 @@ final class DepotDownloaderController: ObservableObject {
         activeDownloads += 1
         defer { activeDownloads -= 1 }
 
-        let args: [String] = [
-            "-app", String(appID),
-            "-dir", installDir.path,
-            "-os", "windows",
-            "-osarch", "64",
-            "-username", auth.accountName,
-            "-remember-password"
-        ]
+        let args = Self.downloadArguments(
+            appID: appID, installDir: installDir,
+            accountName: auth.accountName, loginID: Self.newLoginID())
 
         await MainActor.run { events(.status("Connecting to Steam…")) }
 
@@ -214,6 +206,7 @@ final class DepotDownloaderController: ObservableObject {
         // Mutable scratch for the stdout parser thread.
         let tail = Box<[String]>([])
         let lastEmittedProgress = Box<Double>(-1)
+        let status = Box(DepotDownloaderStatus())
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
@@ -229,7 +222,7 @@ final class DepotDownloaderController: ObservableObject {
             Task { @MainActor in events(.log(line)) }
 
             // Status phases
-            if let phase = parseStatusPhrase(line) {
+            if let phase = status.value.update(with: line) {
                 Task { @MainActor in events(.status(phase)) }
             }
 
@@ -282,6 +275,34 @@ final class DepotDownloaderController: ObservableObject {
         guard exit == 0 else {
             throw DepotDownloaderError.downloadFailed(exit, tail.value.suffix(15).joined(separator: "\n"))
         }
+    }
+
+    // MARK: - Arguments
+
+    static func downloadArguments(
+        appID: Int, installDir: URL, accountName: String, loginID: UInt32
+    ) -> [String] {
+        [
+            "-app", String(appID),
+            "-dir", installDir.path,
+            "-os", "windows",
+            "-osarch", "64",
+            "-username", accountName,
+            "-remember-password",
+            "-loginid", String(loginID)
+        ]
+    }
+
+    /// Steam ends any session on the account that logs on with a LoginID
+    /// already in use. Without `-loginid`, DepotDownloader falls back to an ID
+    /// made from this Mac's LAN address — the same one the real Steam client
+    /// sends — so every install signed the user's Steam client out.
+    ///
+    /// Random per run, not fixed: a DLC install can overlap a base-game install,
+    /// and two runs sharing an ID would knock each other off. The ceiling keeps
+    /// it below the CloudSync helper's fixed presence ID (0x42454552).
+    static func newLoginID() -> UInt32 {
+        UInt32.random(in: 1...0x3FFF_FFFF)
     }
 
     // MARK: - Process invocation

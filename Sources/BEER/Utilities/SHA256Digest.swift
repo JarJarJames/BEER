@@ -2,6 +2,10 @@ import CryptoKit
 import Foundation
 
 enum SHA256Digest {
+    static func hexDigest(_ data: Data) -> String {
+        SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+    }
+
     static func fileHexDigest(_ url: URL) throws -> String {
         let handle = try FileHandle(forReadingFrom: url)
         defer { try? handle.close() }

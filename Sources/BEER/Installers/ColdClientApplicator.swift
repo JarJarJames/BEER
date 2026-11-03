@@ -27,8 +27,10 @@ enum ColdClientApplicator {
     static let settingsFolder = "steam_settings"
 
     /// Lay out the loader for `executable` and return the .exe to launch in
-    /// its place. Re-run before every launch: it's a handful of small copies,
-    /// and it picks up settings the DLC manager or a reinstall changed.
+    /// its place. Re-run before every launch, so it picks up settings the DLC
+    /// manager or a reinstall changed. The emulator's DLLs are ~44 MB, so
+    /// ones already in place aren't copied again: rewriting them each launch
+    /// took seconds on a USB drive.
     ///
     /// `oldSteamLibrary` is gbe_fork's `steam_old_lib/Steam.dll`, needed only
     /// when the plan injects it. `writeSettings` fills a settings folder for a
@@ -53,7 +55,10 @@ enum ColdClientApplicator {
                 if name.hasPrefix("GameOverlayRenderer") { continue }  // recommended, not required
                 throw GoldbergPatchError.coldClientMissing(name)
             }
-            try replaceItem(at: folder.appendingPathComponent(name), with: source, fileManager: fm)
+            let destination = folder.appendingPathComponent(name)
+            if !isSameFile(destination, as: source) {
+                try replaceItem(at: destination, with: source, fileManager: fm)
+            }
         }
 
         // Rebuilt every time, so a plan that no longer injects something
@@ -162,6 +167,18 @@ enum ColdClientApplicator {
             if url.lastPathComponent == settingsFolder { return url }
         }
         return nil
+    }
+
+    /// Whether `copy` is already `source` as copied before: same size and
+    /// modification date, which a copy keeps. A new emulator release changes
+    /// both.
+    static func isSameFile(_ copy: URL, as source: URL) -> Bool {
+        // Read fresh: URL resource values are cached on the URL.
+        let fm = FileManager.default
+        guard let a = try? fm.attributesOfItem(atPath: copy.path), let b = try? fm.attributesOfItem(atPath: source.path),
+              a[.type] as? FileAttributeType == .typeRegular, b[.type] as? FileAttributeType == .typeRegular,
+              let size = a[.size] as? Int, let date = a[.modificationDate] as? Date else { return false }
+        return size == b[.size] as? Int && date == b[.modificationDate] as? Date
     }
 
     private static func replaceItem(at destination: URL, with source: URL, fileManager fm: FileManager) throws {

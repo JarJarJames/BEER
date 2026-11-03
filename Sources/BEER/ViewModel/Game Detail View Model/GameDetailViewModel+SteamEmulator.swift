@@ -99,6 +99,11 @@ extension GameDetailViewModel {
     #endif
 
     func applyGoldbergPatch(to bottle: Bottle) {
+        guard !mover.isMoving(bottle.id) else {
+            patchStatusMessage = GameMoveStrings.waitForMove
+            patchStatusIsError = true
+            return
+        }
         guard let installDir = bottle.resolvedInstallDirectory else {
             patchStatusMessage = "Could not locate the game's install directory."
             patchStatusIsError = true
@@ -133,9 +138,11 @@ extension GameDetailViewModel {
                     achievements: achievementFetch.achievements,
                     using: goldberg
                 )
-                // Make sure the bottle has the install dir recorded for future ops.
-                if bottle.gameInstallDirectory == nil {
-                    var updated = bottle
+                // Make sure the bottle has the install dir recorded for future
+                // ops. Re-read first: the snapshot is from before the Steam
+                // query, and saving it whole would undo anything since.
+                var updated = bottles.live(bottle)
+                if updated.gameInstallDirectory == nil {
                     updated.gameInstallDirectory = installDir.path
                     await bottles.update(updated)
                 }
@@ -151,6 +158,11 @@ extension GameDetailViewModel {
     }
 
     func restoreOriginalDLLs(for bottle: Bottle) {
+        guard !mover.isMoving(bottle.id) else {
+            patchStatusMessage = GameMoveStrings.waitForMove
+            patchStatusIsError = true
+            return
+        }
         guard let installDir = bottle.resolvedInstallDirectory else {
             patchStatusMessage = "Could not locate the game's install directory."
             patchStatusIsError = true

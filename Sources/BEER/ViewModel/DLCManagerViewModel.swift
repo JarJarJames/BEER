@@ -15,6 +15,8 @@ final class DLCManagerViewModel: ObservableObject {
     private let cloudAuth: SteamAuthStore
 
     @Published private(set) var isInstallingAll = false
+    @Published private(set) var isCheckingSpace = false
+    var installSpaceCheck = InstallSpaceCheck()
     private var storeChanges: Set<AnyCancellable> = []
 
     init(game: SteamLibraryGame, bottle: Bottle, installDir: URL, dependencies: GameDetailDependencies) {
@@ -43,7 +45,7 @@ final class DLCManagerViewModel: ObservableObject {
 
     /// `isInstalling` drops to false between items of a batch; gate on the batch
     /// flag too so buttons don't flicker back to enabled mid-run.
-    var isBusy: Bool { depotCtl.isBusy || isInstallingAll }
+    var isBusy: Bool { depotCtl.isBusy || isInstallingAll || isCheckingSpace }
 
     /// Computed once per body pass: `effectiveInstalledDLC` sorts on every
     /// access, so it must not be recomputed per row.
@@ -65,7 +67,10 @@ final class DLCManagerViewModel: ObservableObject {
 
     func install(_ dlc: CloudSyncClient.DLCInfo) {
         guard let auth = cloudAuth.account else { return }
-        Task { await installOne(dlc, auth: auth) }
+        Task { [self] in
+            guard await hasRoom(for: [dlc], auth: auth) else { return }
+            await installOne(dlc, auth: auth)
+        }
     }
 
     func installAll(_ queue: [CloudSyncClient.DLCInfo]) {
@@ -73,6 +78,7 @@ final class DLCManagerViewModel: ObservableObject {
         isInstallingAll = true
         Task { [self] in
             defer { isInstallingAll = false }
+            guard await hasRoom(for: queue, auth: auth) else { return }
             // One auth session for the batch: each DLC still gets its own
             // DepotDownloader run, but they no longer re-mint the credential
             // cache — and re-authenticating per item is what Steam throttles.
@@ -83,6 +89,26 @@ final class DLCManagerViewModel: ObservableObject {
                     if dlcStore.message?.isError == true { break }
                 }
             }
+        }
+    }
+
+    /// Checks the whole batch at once, before any of it downloads: one Steam
+    /// logon however many DLC, and no half-finished batch on a full disk.
+    func hasRoom(for queue: [CloudSyncClient.DLCInfo], auth: SteamCloudAccount) async -> Bool {
+        let appIDs = queue.filter(\.hasDepots).map(\.appID)
+        guard !appIDs.isEmpty else { return true }
+        isCheckingSpace = true
+        defer { isCheckingSpace = false }
+
+        switch await installSpaceCheck.run(appIDs: appIDs, account: auth, destination: installDir) {
+        case .fits:
+            return true
+        case .unchecked(let note):
+            Log.install.info("DLC for \(self.game.appID): \(note)")
+            return true
+        case .short(let shortfall):
+            dlcStore.message = .failure(DiskSpaceStrings.shortfall(shortfall))
+            return false
         }
     }
 

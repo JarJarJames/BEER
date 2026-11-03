@@ -5,9 +5,12 @@ import UniformTypeIdentifiers
 struct AddNonSteamGameSheet: View {
     @StateObject private var model: AddNonSteamGameViewModel
     @Environment(\.dismiss) private var dismiss
+    @EnvironmentObject private var drives: InstallVolumeMonitor
 
-    init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector) {
-        _model = StateObject(wrappedValue: AddNonSteamGameViewModel(bottles: bottles, library: library, detector: detector))
+    init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector, drives: InstallVolumeMonitor) {
+        _model = StateObject(wrappedValue: AddNonSteamGameViewModel(
+            bottles: bottles, library: library, detector: detector, drives: drives
+        ))
     }
 
     var body: some View {
@@ -82,6 +85,19 @@ struct AddNonSteamGameSheet: View {
                 }
             }
 
+            row(InstallDriveStrings.putOn) {
+                VStack(alignment: .leading, spacing: 4) {
+                    InstallTargetList(options: model.targetOptions, selection: $model.target,
+                                      selectionDoesNotFit: model.spaceShortfall != nil)
+                    if let shortfall = model.spaceShortfall {
+                        Text(DiskSpaceStrings.shortfall(shortfall))
+                            .font(.caption)
+                            .foregroundStyle(.red)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+
             if !model.hasRuntime {
                 Text("No Wine runtime available. Open Runtime Manager in the sidebar.")
                     .font(.caption)
@@ -107,6 +123,7 @@ struct AddNonSteamGameSheet: View {
         .padding(24)
         .frame(width: 560)
         .interactiveDismissDisabled(model.isWorking)
+        .onReceive(drives.$drives) { _ in model.refreshTargets() }
         .alert("Couldn't add game", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

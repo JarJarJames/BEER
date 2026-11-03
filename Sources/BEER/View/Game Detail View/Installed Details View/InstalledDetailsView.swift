@@ -7,7 +7,13 @@ struct InstalledDetailsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            if let driveName = model.installLocation?.missingDriveName {
+                Label(InstallDriveStrings.driveMissingDetail(driveName), systemImage: "externaldrive.badge.xmark")
+                    .foregroundStyle(.orange)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("Game Settings").font(.headline)
+            InstallLocationRow(bottle: bottle, model: model)
             RuntimeRow(bottle: bottle)
             GraphicsRow(bottle: bottle)
             DisplayModeRow(bottle: bottle)

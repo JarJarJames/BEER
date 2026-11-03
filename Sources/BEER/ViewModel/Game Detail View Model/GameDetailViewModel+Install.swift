@@ -2,12 +2,48 @@ import Foundation
 
 extension GameDetailViewModel {
     func startInstallOrLogin() {
-        startInstall()
+        requestInstall()
     }
 
     var preferredDefaultRuntime: RuntimeCandidate? { detector.preferredGameRuntime }
 
-    func startInstall() {
+    /// Show the install sheet: the game's size, where it can go and each
+    /// place's free space, with Install turned off when it won't fit. Nothing
+    /// downloads until confirmed.
+    func requestInstall() {
+        guard !game.effectiveIsNonSteam, !isStartingInstall, preferredDefaultRuntime != nil else { return }
+        guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
+            shouldResumeInstallAfterCloudConnect = true
+            isShowingCloudConnect = true
+            return
+        }
+        installSpaceReport = nil
+        installSize = nil
+        prepareInstallTargets()
+        isShowingInstallSheet = true
+
+        Task { [self] in
+            let size = await installSpaceCheck.size(appIDs: [game.appID], account: steamAccount)
+            guard isShowingInstallSheet else { return }
+            installSize = size
+            await assessInstallTarget()
+        }
+    }
+
+    func confirmInstall() {
+        guard let target = installTarget else { return }
+        let checked = installSpaceReport?.verdict
+        isShowingInstallSheet = false
+        if bottles.findBottle(forAppID: game.appID) == nil {
+            UserDefaults.standard.set(target.volume?.uuid, forKey: InstallPreferences.lastDriveKey)
+        }
+        startInstall(to: target, checked: checked)
+    }
+
+    /// `checked` is the install sheet's answer, so the size isn't asked for
+    /// twice; without it the check runs here. A game that already has a bottle
+    /// goes where its files already are, whatever `target` says.
+    func startInstall(to target: InstallTarget, checked: InstallSpace? = nil) {
         guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
         // still doing wineboot must be a no-op, not a fresh bottle.
@@ -26,22 +62,75 @@ extension GameDetailViewModel {
             // Fire the Downloads entry FIRST so the UI shows something
             // immediately. The bottleID is patched in below.
             downloads.start(appID: game.appID, name: game.name, bottleID: UUID())
+            downloads.setStatus(appID: game.appID, phase: "Checking free space…")
+
+            // Before any bottle exists, so a refused install leaves nothing behind.
+            let space: InstallSpace
+            if let checked {
+                space = checked
+            } else {
+                let (destination, partial) = installDestination(for: target)
+                space = await installSpaceCheck.run(
+                    appIDs: [game.appID], account: steamAccount,
+                    destination: destination, partialDownload: partial
+                )
+            }
+            switch space {
+            case .fits:
+                break
+            case .unchecked(let note):
+                downloads.append(appID: game.appID, log: note)
+            case .short(let shortfall):
+                downloads.remove(appID: game.appID)
+                diskSpaceShortfall = shortfall
+                return
+            }
+
+            // The drive may have been unplugged since the sheet showed it.
+            let existing = bottles.findBottle(forAppID: game.appID)
+            let mountedDrive: InstallVolume?
+            if let existing {
+                mountedDrive = fixedTarget(for: existing)?.volume
+                if let drive = existing.gameDrive, mountedDrive == nil {
+                    downloads.fail(appID: game.appID, reason: InstallDriveStrings.resumeDriveMissing(drive.name))
+                    return
+                }
+            } else if let volume = target.volume {
+                guard let mounted = volume.uuid.flatMap(VolumeCatalog.system.drive(withUUID:)) else {
+                    downloads.fail(appID: game.appID, reason: InstallDriveStrings.driveNotConnected(volume.name))
+                    return
+                }
+                mountedDrive = mounted
+            } else {
+                mountedDrive = nil
+            }
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:
             //   - Reuse any bottle already claimed for this appID (skips wineboot)
             //   - Otherwise create a fresh bottle + claim it immediately
             // After this point the bottle is tagged with steamAppID +
-            // gameInstallStatus = .installing, so a future retry can find it.
+            // gameInstallStatus = .installing and knows where its files go,
+            // so a future retry can find both.
             let bottle: Bottle
-            if let existing = bottles.findBottle(forAppID: game.appID) {
+            let installDir: URL
+            let drive: GameDrive?
+            if let existing {
                 bottle = existing
+                installDir = existing.downloadDirectory(gameName: game.name)
+                drive = existing.gameDrive
                 downloads.append(appID: game.appID, log: "Reusing existing bottle for this game (skipping wineboot).")
                 // Defensive: clean up any other orphans for this appID.
                 await bottles.cleanupOrphans(forAppID: game.appID, keep: existing.id)
             } else {
                 let fresh = await bottles.createBottle(name: game.name, runtime: runtime, graphicsBackend: .automatic)
-                await bottles.claimForSteamApp(fresh, appID: game.appID, gameName: game.name)
+                drive = mountedDrive?.link
+                installDir = mountedDrive.map {
+                    GameFolders.freeFolder(for: game.name,
+                                           in: AppPaths.driveGamesDirectory(onDriveAt: $0.root))
+                } ?? AppPaths.gameInstallDirectory(for: fresh, gameName: game.name)
+                await bottles.claimForSteamApp(fresh, appID: game.appID, gameName: game.name,
+                                               installDirectory: installDir, drive: drive)
                 bottle = fresh
             }
             let bottleID = bottle.id
@@ -51,7 +140,7 @@ extension GameDetailViewModel {
                 let result = try await depotCtl.installGame(
                     appID: game.appID,
                     gameName: game.name,
-                    bottle: bottle,
+                    installDir: installDir,
                     auth: steamAccount,
                     events: downloads.consume(appID: game.appID)
                 )
@@ -119,15 +208,27 @@ extension GameDetailViewModel {
                         // Arguments the user set before a reinstall win.
                         launchArguments: refreshed.gameLaunchArguments == nil ? steamArguments : nil,
                         installDirectory: result.installDirectory.path,
+                        drive: drive,
                         steamLaunchConfigChecked: launchConfigChecked
                     )
+                    attempt("Write game folder marker", log: Log.install) {
+                        try GameFolderMarkerFile.write(
+                            GameFolderMarkerFile.marker(for: bottles.live(refreshed), installDir: result.installDirectory),
+                            in: result.installDirectory
+                        )
+                    }
                 }
+                await createShortcutsChosenAtInstall(appID: game.appID)
                 downloads.complete(appID: game.appID)
             } catch DepotDownloaderError.sessionExpired {
                 cloudAuth.sessionExpired = true
                 shouldResumeInstallAfterCloudConnect = true
                 downloads.fail(appID: game.appID, reason: "Steam sign-in expired. Reconnect to resume the download.")
                 isShowingCloudConnect = true
+            } catch _ where drive.map({ !GameFolders.isConnected($0, volumes: .system) }) ?? false {
+                // Whatever DepotDownloader said, the cause is the drive. What
+                // came down is on it; Resume continues from there.
+                downloads.fail(appID: game.appID, reason: InstallDriveStrings.downloadPaused(drive?.name ?? ""))
             } catch let err as DepotDownloaderError {
                 downloads.fail(appID: game.appID, reason: err.errorDescription ?? "Install failed")
             } catch {
@@ -152,8 +253,11 @@ extension GameDetailViewModel {
 
     /// Uninstalling a non-Steam game deletes the folder it was brought in as,
     /// so it asks first. A Steam game can be downloaded again, so it doesn't.
+    /// Either asks when its drive isn't connected: the files stay there.
     func requestUninstall() {
-        if game.effectiveIsNonSteam {
+        if installLocation?.missingDriveName != nil {
+            confirmRemoveWithDriveMissing = true
+        } else if game.effectiveIsNonSteam {
             confirmRemoveNonSteamGame = true
         } else {
             uninstall()
@@ -166,6 +270,7 @@ extension GameDetailViewModel {
         let bottle = installedBottle
         Task { [self] in
             if let bottle { await bottles.delete(bottle) }
+            GameShortcutStore.shared.removeShortcuts(appID: appID)
             if isNonSteam {
                 library.removeNonSteamGame(appID: appID)
             } else {

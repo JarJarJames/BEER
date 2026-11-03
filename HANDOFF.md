@@ -105,5 +105,5 @@ swift build && swift run BEER      # dev
 - First-run on a fresh machine: large GPTK runtime download; GPTK install can be finicky. Friend testing will surface this.
 - Windowed mode depends on the game's own setting; aspect distortion on free-resize.
 - Goldberg/anticheat/multiplayer-with-Steamworks games won't work — by design.
-- Push currently only walks directories that already have a cloud file (learns the path from siblings); a brand-new save folder not yet in the cloud is skipped until one file from it exists in the cloud.
+- Push walks folders that already have cloud files, plus the folders named by the game's Steam `ufs/savefiles` rules (`enumerate` reports them as `savefiles`). A new file takes its cloud name from sibling cloud files when it has any, otherwise from its rule (`%Root%/path/file`). Rules for other platforms, unknown roots, or unknown `{placeholders}` are dropped. A game with no rules still only pushes folders already in the cloud.
 - No Keychain yet — refresh token sits in `steam-cloud-auth.json` (TODO in `Paths.swift`).

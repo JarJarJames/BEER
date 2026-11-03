@@ -55,3 +55,36 @@ extension CloudSyncClient {
         ).compactMap(LaunchEntry.init(json:))
     }
 }
+
+extension CloudSyncClient {
+    /// Bytes a Windows install of `appIDs` takes on disk together, counting
+    /// DLC content the account owns, or nil when Steam lists no size (see
+    /// `InstallSize` in Tools/CloudSync/Steam). One Steam logon for the lot.
+    func installSize(appIDs: [Int], account: String, refreshToken: String) async throws -> Int64? {
+        Self.installBytes(from: try await runOnce(
+            args: ["installsize", "--appids", appIDs.map(String.init).joined(separator: ",")],
+            account: account, refreshToken: refreshToken
+        ))
+    }
+
+    static func installBytes(from json: [String: Any]) -> Int64? {
+        guard let bytes = (json["bytes"] as? NSNumber)?.int64Value, bytes > 0 else { return nil }
+        return bytes
+    }
+}
+
+extension CloudSyncClient {
+    /// Where Steam keeps `appID`'s Windows icon, the multi-size `.ico` Steam
+    /// puts on its own shortcuts. Nil when Steam lists none.
+    func clientIcon(appID: Int, account: String, refreshToken: String) async throws -> URL? {
+        Self.clientIconURL(appID: appID, from: try await runOnce(
+            args: ["clienticon", "--appid", String(appID)],
+            account: account, refreshToken: refreshToken
+        ))
+    }
+
+    static func clientIconURL(appID: Int, from json: [String: Any]) -> URL? {
+        guard let hash = json["clienticon"] as? String, !hash.isEmpty else { return nil }
+        return URL(string: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/\(appID)/\(hash).ico")
+    }
+}

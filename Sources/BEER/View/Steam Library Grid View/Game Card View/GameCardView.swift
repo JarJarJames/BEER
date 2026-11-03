@@ -3,6 +3,8 @@ import SwiftUI
 struct GameCardView: View {
     let game: SteamLibraryGame
     let isInstalled: Bool
+    /// Installed on a drive that isn't connected.
+    var isDriveMissing: Bool = false
     let action: () -> Void
 
     @State private var isHovering = false
@@ -28,11 +30,11 @@ struct GameCardView: View {
                     .clipped()
 
                     if isInstalled {
-                        Text("INSTALLED")
+                        Text(isDriveMissing ? InstallDriveStrings.cardBadge : "INSTALLED")
                             .font(.caption2.weight(.heavy))
                             .padding(.horizontal, 8)
                             .padding(.vertical, 4)
-                            .background(.green.opacity(0.85), in: Capsule())
+                            .background((isDriveMissing ? Color.orange : Color.green).opacity(0.85), in: Capsule())
                             .foregroundStyle(.white)
                             .padding(8)
                     }

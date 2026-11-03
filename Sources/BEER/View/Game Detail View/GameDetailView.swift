@@ -17,6 +17,8 @@ struct GameDetailView: View {
     @EnvironmentObject private var presence: SteamPresenceStore
     @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
     @EnvironmentObject private var dlcStore: DLCStore
+    @EnvironmentObject private var drives: InstallVolumeMonitor
+    @EnvironmentObject private var mover: GameMover
 
     var body: some View {
         GameDetailScreen(
@@ -26,7 +28,8 @@ struct GameDetailView: View {
                 library: library, bottles: bottles, detector: detector,
                 depotCtl: depotCtl, downloads: downloads, goldberg: goldberg,
                 cloudAuth: cloudAuth, cloudSync: cloudSync, presence: presence,
-                graphicsTranslator: graphicsTranslator, dlcStore: dlcStore
+                graphicsTranslator: graphicsTranslator, dlcStore: dlcStore,
+                drives: drives, mover: mover
             )
         )
     }

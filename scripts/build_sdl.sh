@@ -27,7 +27,7 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$CACHE"
 TARBALL="$CACHE/SDL2-$VERSION.tar.gz"
 if [ ! -f "$TARBALL" ]; then
-    echo "==> Downloading SDL2 $VERSION…"
+    echo "==> Downloading SDL2 ${VERSION}…"
     curl -fL -o "$TARBALL" "$URL"
 fi
 echo "$SHA256  $TARBALL" | shasum -a 256 -c -

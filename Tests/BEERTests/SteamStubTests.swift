@@ -96,6 +96,46 @@ final class SteamStubTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: extras.path).sorted(), ["load_order.txt", "steamclient_extra_x64.dll"])
     }
 
+    /// Regression: the ~44 MB of emulator DLLs were copied again on every
+    /// launch, which froze BEER for seconds with the game on a USB drive.
+    func testUnchangedEmulatorFilesAreNotCopiedAgain() throws {
+        let exe = installDir.appendingPathComponent("isaac-ng.exe")
+        try Data().write(to: exe)
+        let copy = installDir.appendingPathComponent("\(ColdClientApplicator.folderName)/steamclient.dll")
+
+        _ = try ColdClientApplicator.prepare(executable: exe, installDir: installDir, appID: 1, plan: .stub32, loaderSource: loaderSource)
+        let first = try fileNumber(of: copy)
+        _ = try ColdClientApplicator.prepare(executable: exe, installDir: installDir, appID: 1, plan: .stub32, loaderSource: loaderSource)
+
+        XCTAssertEqual(try fileNumber(of: copy), first, "the same file, not a fresh copy")
+    }
+
+    func testANewEmulatorReleaseReplacesTheCopy() throws {
+        let exe = installDir.appendingPathComponent("isaac-ng.exe")
+        try Data().write(to: exe)
+        let source = loaderSource.appendingPathComponent("steamclient.dll")
+        let copy = installDir.appendingPathComponent("\(ColdClientApplicator.folderName)/steamclient.dll")
+        _ = try ColdClientApplicator.prepare(executable: exe, installDir: installDir, appID: 1, plan: .stub32, loaderSource: loaderSource)
+
+        try Data("steamclient.dll, newer build".utf8).write(to: source)
+        _ = try ColdClientApplicator.prepare(executable: exe, installDir: installDir, appID: 1, plan: .stub32, loaderSource: loaderSource)
+
+        XCTAssertEqual(try Data(contentsOf: copy), Data("steamclient.dll, newer build".utf8))
+    }
+
+    /// Same size isn't enough: a rebuild can keep the size and change the date.
+    func testSameSizeButNewerSourceIsNotTheSameFile() throws {
+        let source = loaderSource.appendingPathComponent("steamclient.dll")
+        let copy = root.appendingPathComponent("copy.dll")
+        try FileManager.default.copyItem(at: source, to: copy)
+        XCTAssertTrue(ColdClientApplicator.isSameFile(copy, as: source))
+
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: source.path)
+
+        XCTAssertFalse(ColdClientApplicator.isSameFile(copy, as: source))
+        XCTAssertFalse(ColdClientApplicator.isSameFile(root.appendingPathComponent("missing.dll"), as: source))
+    }
+
     func testMissingSteamclientIsAnError() throws {
         try FileManager.default.removeItem(at: loaderSource.appendingPathComponent("steamclient.dll"))
         let exe = installDir.appendingPathComponent("game.exe")
@@ -240,6 +280,11 @@ final class SteamStubTests: XCTestCase {
         XCTAssertTrue(forced.injectsOverlay)
         XCTAssertTrue(forced.staysOpen)
         XCTAssertNil(SteamClientLoaderPlan.make(executable: wrapped, installDir: installDir, mode: .off))
+    }
+
+    /// Identifies the file itself; a copy over it gets a new one.
+    private func fileNumber(of url: URL) throws -> Int {
+        try XCTUnwrap(FileManager.default.attributesOfItem(atPath: url.path)[.systemFileNumber] as? Int)
     }
 
     private func makeExe(_ name: String, machine: UInt16, sections: [String]) throws -> URL {

@@ -42,12 +42,48 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("CustomArt", isDirectory: true)
     }
 
+    /// The shortcuts BEER has made, so uninstalling can remove them.
+    static var gameShortcutsURL: URL {
+        applicationSupport.appendingPathComponent("shortcuts.json")
+    }
+
+    static var desktopDirectory: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Desktop", isDirectory: true)
+    }
+
+    /// Application shortcuts go in the main Applications folder, beside the user's other apps.
+    static var applicationShortcutsDirectory: URL {
+        URL(fileURLWithPath: "/Applications", isDirectory: true)
+    }
+
     static var metadataURL: URL {
         applicationSupport.appendingPathComponent("bottles.json")
     }
 
     static func prefixURL(for bottle: Bottle) -> URL {
         bottlesDirectory.appendingPathComponent(bottle.folderName, isDirectory: true)
+    }
+
+    /// Where DepotDownloader puts a Steam game inside its bottle.
+    static func gameInstallDirectory(for bottle: Bottle, gameName: String) -> URL {
+        prefixURL(for: bottle)
+            .appendingPathComponent("drive_c", isDirectory: true)
+            .appendingPathComponent("Games", isDirectory: true)
+            .appendingPathComponent(gameName.safeGameFolderName, isDirectory: true)
+    }
+
+    /// Where games go on a drive other than this Mac's: `<drive>/BEER/Games`.
+    /// The last folder is `Games` like inside a bottle, so the lookup for
+    /// bottles that predate stored install folders works the same on a drive.
+    static func driveGamesDirectory(onDriveAt root: URL) -> URL {
+        root.appendingPathComponent("BEER", isDirectory: true)
+            .appendingPathComponent("Games", isDirectory: true)
+    }
+
+    /// Moves between drives that haven't finished, so a move cut short by a
+    /// crash or an unplugged drive is undone or completed on the next launch.
+    static var gameMovesURL: URL {
+        applicationSupport.appendingPathComponent("game-moves.json")
     }
 
     static func logsURL(for bottle: Bottle) -> URL {
@@ -128,9 +164,11 @@ enum AppPaths {
     /// here before EVERY cloud pull/push and before any "clear local saves", so
     /// a long-played save can always be recovered — even if a bottle is wiped.
     static func cloudSaveBackupsDirectory(forAppID appID: Int) -> URL {
-        applicationSupport
-            .appendingPathComponent("CloudSaveBackups", isDirectory: true)
-            .appendingPathComponent(String(appID), isDirectory: true)
+        cloudSaveBackupsRoot.appendingPathComponent(String(appID), isDirectory: true)
+    }
+
+    static var cloudSaveBackupsRoot: URL {
+        applicationSupport.appendingPathComponent("CloudSaveBackups", isDirectory: true)
     }
 
     /// BEER's SDL2 build for Wine's controller driver, as

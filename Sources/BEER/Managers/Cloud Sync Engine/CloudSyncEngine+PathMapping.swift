@@ -11,26 +11,26 @@ extension CloudSyncEngine {
     /// taking the library refresh and the presence session down with it.
     func localSaveFingerprint(appID: Int) -> String? {
         guard let dirs = knownSaveDirs[appID], !dirs.isEmpty else { return nil }
-        let fm = FileManager.default
-        var parts: [String] = []
-        for dir in dirs.sorted(by: { $0.path < $1.path }) {
-            guard let walker = fm.enumerator(
-                at: dir,
-                includingPropertiesForKeys: [.contentModificationDateKey, .fileSizeKey],
-                options: [.skipsHiddenFiles]
-            ) else { continue }
-            for case let url as URL in walker {
-                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey])
-                let mtime = values?.contentModificationDate?.timeIntervalSince1970 ?? 0
-                let size = values?.fileSize ?? 0
-                parts.append("\(url.path):\(mtime):\(size)")
-            }
+        return CloudSaveBackupRetention.fingerprint(of: dirs)
+    }
+
+    /// The folder `%GAMEINSTALL%` saves map into. Throws when it's on a drive
+    /// that isn't connected: some games keep saves in their own folder, and a
+    /// sync without them would report success while skipping those saves.
+    /// Checked before anything else so a refused sync spends no Steam logon.
+    func gameInstallDirectory(for bottle: Bottle) throws -> URL? {
+        guard bottle.gameDrive != nil else {
+            return bottle.gameInstallDirectory.map { URL(fileURLWithPath: $0) }
         }
-        return parts.isEmpty ? nil : parts.sorted().joined(separator: "|")
+        switch bottle.installLocation(volumes: volumes) {
+        case .available(let url): return url
+        case .driveMissing(let name): throw CloudSyncError.installDriveMissing(name)
+        case .missing: return nil
+        }
     }
 
     func resolveWineUserHome(for bottle: Bottle) throws -> URL {
-        let usersDir = AppPaths.prefixURL(for: bottle)
+        let usersDir = bottlePrefix(bottle)
             .appendingPathComponent("drive_c", isDirectory: true)
             .appendingPathComponent("users", isDirectory: true)
         let entries = (try? FileManager.default.contentsOfDirectory(atPath: usersDir.path)) ?? []

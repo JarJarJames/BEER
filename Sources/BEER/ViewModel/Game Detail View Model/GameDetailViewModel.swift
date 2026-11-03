@@ -22,6 +22,8 @@ final class GameDetailViewModel: ObservableObject {
     let presence: SteamPresenceStore
     let graphicsTranslator: GraphicsTranslatorInstaller
     let dlcStore: DLCStore
+    let drives: InstallVolumeMonitor
+    let mover: GameMover
 
     @Published var isShowingCloudConnect: Bool = false
     @Published var isShowingDLCManager: Bool = false
@@ -29,7 +31,41 @@ final class GameDetailViewModel: ObservableObject {
     @Published var cloudSyncMessage: String?
     @Published var cloudSyncIsError: Bool = false
     @Published var confirmClearBottle: Bottle?
+    @Published var isShowingSaveBackups: Bool = false
+    @Published var saveBackups: [CloudSaveSnapshot] = []
+    /// Set while the restore confirmation is up.
+    @Published var restorePlanToConfirm: SaveRestorePlan?
+    /// Shown inside the backups sheet: why a restore couldn't start or failed.
+    @Published var saveBackupsError: String?
+    /// Kept here rather than read in `body`, which redraws on every store tick.
+    @Published var pendingRestore: PendingSaveRestore?
+    @Published var restoreConflictPrompt: RestoreConflictPrompt?
     @Published var confirmRemoveNonSteamGame: Bool = false
+    /// Set when an install was refused because the disk can't hold it.
+    @Published var diskSpaceShortfall: DiskSpaceShortfall?
+    @Published var isShowingInstallSheet: Bool = false
+    /// The install sheet's free space for the chosen place; nil while it's looked up.
+    @Published var installSpaceReport: InstallSpaceReport?
+    /// Steam's size for the game; nil while it's asked.
+    @Published var installSize: InstallSize?
+    /// The places the install sheet offers, and the one chosen.
+    @Published var installOptions: [InstallTargetOption] = []
+    @Published var installTarget: InstallTarget?
+    /// Shown under the install sheet's list: why the place is fixed.
+    @Published var installNote: String?
+    /// Uninstalling a game whose drive isn't connected leaves its files there,
+    /// so it asks first.
+    @Published var confirmRemoveWithDriveMissing: Bool = false
+    @Published var isShowingMoveSheet: Bool = false
+    @Published var moveOptions: [InstallTargetOption] = []
+    @Published var moveTarget: InstallTarget?
+    /// What the game takes up now; nil while it's measured.
+    @Published var moveSourceBytes: Int64?
+    /// The move result, shown in the Location row.
+    @Published var moveMessage: String?
+    @Published var moveIsError: Bool = false
+    var installSpaceCheck = InstallSpaceCheck()
+    @Published var isShowingShortcutIcon: Bool = false
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false
     @Published var isPatching: Bool = false
@@ -63,6 +99,8 @@ final class GameDetailViewModel: ObservableObject {
         presence = dependencies.presence
         graphicsTranslator = dependencies.graphicsTranslator
         dlcStore = dependencies.dlcStore
+        drives = dependencies.drives
+        mover = dependencies.mover
 
         // The screen reads store state through this object, so a change in any
         // store has to redraw it — the same reach the view had when it observed
@@ -83,6 +121,11 @@ final class GameDetailViewModel: ObservableObject {
     var installedBottle: Bottle? {
         guard let id = game.installedBottleID else { return nil }
         return bottles.bottles.first { $0.id == id }
+    }
+
+    /// Where the installed game's files are right now.
+    var installLocation: InstallLocation? {
+        installedBottle.map(bottles.installLocation(of:))
     }
 
     var download: DownloadsStore.Entry? {

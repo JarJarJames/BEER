@@ -4,6 +4,8 @@ extension GameDetailViewModel {
     /// Pull and/or push saves. `syncSaves(pull:true, push:true)` is the default
     /// two-way sync; the menu offers one-direction variants.
     func syncSaves(for bottle: Bottle, pull: Bool, push: Bool) {
+        // Saves written into the old copy now would be lost with it.
+        guard !refuseWhileMoving(bottle) else { return }
         Task { [self] in
             cloudSyncMessage = nil
             do {
@@ -22,36 +24,25 @@ extension GameDetailViewModel {
                 parts.append("\(report.skipped) up-to-date")
                 if !report.failures.isEmpty { parts.append("\(report.failures.count) failed") }
                 cloudSyncMessage = parts.joined(separator: ", ") + "."
-            } catch CloudSyncClientError.authExpired {
-                // Token went stale — flag it and pop the QR reconnect right away,
-                // since the user explicitly asked to sync.
-                cloudAuth.sessionExpired = true
-                cloudSyncIsError = true
-                cloudSyncMessage = "Steam sign-in expired — reconnect to finish syncing."
-                isShowingCloudConnect = true
-            } catch let err as SteamAuthError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as CloudSyncClientError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
-            } catch let err as CloudSyncError {
-                cloudSyncIsError = true
-                cloudSyncMessage = err.errorDescription
+            } catch CloudSyncError.restoreConflict(let conflict) {
+                restoreConflictPrompt = RestoreConflictPrompt(conflict: conflict, bottle: bottle, retry: .sync(pull: pull, push: push))
             } catch {
-                cloudSyncIsError = true
-                cloudSyncMessage = error.localizedDescription
+                showCloudError(error)
             }
+            refreshPendingRestore()
         }
     }
 
     func clearLocalSaves(for bottle: Bottle) {
+        guard !refuseWhileMoving(bottle) else { return }
         Task { [self] in
             cloudSyncMessage = nil
             do {
                 let backup = try await cloudSync.backupAndClearLocalSaves(bottle: bottle, appID: game.appID, auth: cloudAuth)
                 cloudSyncIsError = false
-                cloudSyncMessage = "Local saves cleared. Backed up to \(backup.lastPathComponent). Use “Pull from cloud” to restore from Steam."
+                let backedUp = backup.map { " Backed up to \($0.lastPathComponent)." } ?? ""
+                cloudSyncMessage = "Local saves cleared.\(backedUp) Use “Pull from cloud” to restore from Steam."
+                refreshPendingRestore()
             } catch {
                 cloudAuth.noteCloudError(error)
                 cloudSyncIsError = true
@@ -60,13 +51,14 @@ extension GameDetailViewModel {
         }
     }
 
-    /// Called when the QR sheet finishes connecting. Resumes a paused install.
+    /// Called when the QR sheet finishes connecting. Brings back the install
+    /// sheet for an install that was waiting on sign-in.
     func cloudDidConnect() {
         cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
         cloudSyncIsError = false
         if shouldResumeInstallAfterCloudConnect {
             shouldResumeInstallAfterCloudConnect = false
-            startInstall()
+            requestInstall()
         }
     }
 

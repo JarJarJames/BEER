@@ -91,6 +91,7 @@ extension CloudSyncClient {
     }
 
     func binaryOrThrow() throws -> URL {
+        if let binary { return binary }
         guard let url = Self.locateBinary() else { throw CloudSyncClientError.helperMissing }
         return url
     }

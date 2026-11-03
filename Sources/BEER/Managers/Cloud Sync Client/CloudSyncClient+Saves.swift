@@ -1,23 +1,12 @@
 import Foundation
 
 extension CloudSyncClient {
-    func enumerate(appID: Int, account: String, refreshToken: String) async throws -> [CloudRemoteFile] {
-        let raw = try await runOnceArray(
-            "files", args: ["enumerate", "--appid", String(appID)],
+    /// The game's cloud files and the folders it saves into, in one logon.
+    func enumerate(appID: Int, account: String, refreshToken: String) async throws -> CloudListing {
+        try CloudListing(json: await runOnce(
+            args: ["enumerate", "--appid", String(appID)],
             account: account, refreshToken: refreshToken
-        )
-        return raw.compactMap { f in
-            guard let filename = f["filename"] as? String else { return nil }
-            let size = (f["size"] as? NSNumber)?.intValue ?? 0
-            let ts = (f["timestamp"] as? NSNumber)?.doubleValue ?? 0
-            let sha = f["sha"] as? String ?? ""
-            return CloudRemoteFile(
-                filename: filename,
-                size: size,
-                timestamp: Date(timeIntervalSince1970: ts),
-                sha: sha
-            )
-        }
+        ))
     }
 
     /// Run many downloads + uploads inside a SINGLE logged-on helper session.

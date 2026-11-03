@@ -2,7 +2,7 @@ import Foundation
 
 /// State and actions behind the "Add Non-Steam Game" sheet: pick a game folder
 /// and its executable, bring the folder into a fresh GPTK bottle's
-/// `drive_c/Games` (move or copy), and register it in the library.
+/// `drive_c/Games` or onto a drive (move or copy), and register it in the library.
 @MainActor
 final class AddNonSteamGameViewModel: ObservableObject {
     @Published private(set) var folder: URL?
@@ -14,20 +14,50 @@ final class AddNonSteamGameViewModel: ObservableObject {
     @Published private(set) var isScanning = false
     @Published private(set) var isWorking = false
     @Published var errorMessage: String?
+    /// Where the game can go, and the one chosen.
+    @Published private(set) var targetOptions: [InstallTargetOption] = []
+    @Published var target: InstallTarget?
+    /// What the chosen folder takes up; nil until measured.
+    @Published private(set) var folderBytes: Int64?
 
     private let bottles: BottleStore
     private let library: SteamLibraryStore
     private let detector: ToolchainDetector
+    private let drives: InstallVolumeMonitor
 
-    init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector) {
+    init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector, drives: InstallVolumeMonitor) {
         self.bottles = bottles
         self.library = library
         self.detector = detector
+        self.drives = drives
+        refreshTargets()
     }
 
     var canAdd: Bool {
         folder != nil && selectedExecutable != nil && !trimmedName.isEmpty
             && detector.preferredGameRuntime != nil && !isWorking
+            && target != nil && folderBytes != nil && spaceShortfall == nil
+    }
+
+    /// List the places again, keeping the choice if it's still there.
+    func refreshTargets() {
+        targetOptions = InstallTargets.options(drives: drives.drives, macFreeBytes: InstallTargets.macFreeBytes())
+        if let target, targetOptions.contains(where: { $0.id == target.id && $0.isEnabled }) { return }
+        target = InstallTargets.initialSelection(targetOptions, rememberedDriveUUID: nil)
+    }
+
+    /// The game won't fit where it's going. A move on the same disk needs no room.
+    var spaceShortfall: DiskSpaceShortfall? {
+        guard let folder, let folderBytes,
+              let option = targetOptions.first(where: { $0.id == target?.id }),
+              let free = option.availableBytes else { return nil }
+        let destinationRoot = option.target.volume?.root ?? AppPaths.bottlesDirectory
+        let needed = GameFolderTransfer.spaceNeeded(
+            folderBytes: folderBytes, mode: transferMode,
+            sameVolume: GameFolderTransfer.isSameVolume(folder, destinationRoot)
+        )
+        guard needed > 0 else { return nil }
+        return DiskSpaceCheck.shortfall(installBytes: needed, availableBytes: free, volumeName: option.target.name)
     }
 
     var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
@@ -39,8 +69,14 @@ final class AddNonSteamGameViewModel: ObservableObject {
         if trimmedName.isEmpty { name = url.lastPathComponent }
         executables = []
         selectedExecutable = nil
+        folderBytes = nil
         isScanning = true
         let gameName = trimmedName
+        Task { [weak self] in
+            let bytes = await Task.detached { DiskSpaceCheck.allocatedSize(of: url) }.value
+            guard let self, self.folder == url else { return }
+            self.folderBytes = bytes
+        }
         Task { [weak self] in
             // Walks the whole folder, which can be tens of thousands of files.
             let found = await Task.detached {
@@ -77,11 +113,17 @@ final class AddNonSteamGameViewModel: ObservableObject {
         defer { isWorking = false }
 
         let gameName = trimmedName
+        // The drive may have gone since it was picked.
+        let drive = target?.volume.flatMap { $0.uuid.flatMap(VolumeCatalog.system.drive(withUUID:)) }
+        if let volume = target?.volume, drive == nil {
+            errorMessage = InstallDriveStrings.driveNotConnected(volume.name)
+            return false
+        }
         let bottle = await bottles.createBottle(name: gameName, runtime: runtime, graphicsBackend: .automatic)
-        let destination = AppPaths.prefixURL(for: bottle)
-            .appendingPathComponent("drive_c", isDirectory: true)
-            .appendingPathComponent("Games", isDirectory: true)
-            .appendingPathComponent(gameName.safeGameFolderName, isDirectory: true)
+        let destination = drive.map {
+            GameFolders.freeFolder(for: gameName,
+                                   in: AppPaths.driveGamesDirectory(onDriveAt: $0.root))
+        } ?? AppPaths.gameInstallDirectory(for: bottle, gameName: gameName)
 
         do {
             let mode = transferMode
@@ -97,7 +139,13 @@ final class AddNonSteamGameViewModel: ObservableObject {
         }
 
         let launchExe = GameFolderTransfer.relocated(exe, from: folder, to: destination)
-        await bottles.recordNonSteamInstall(bottle, launchExecutable: launchExe.path, installDirectory: destination.path)
+        await bottles.recordNonSteamInstall(bottle, launchExecutable: launchExe.path, installDirectory: destination.path,
+                                            drive: drive?.link)
+        attempt("Write game folder marker", log: Log.install) {
+            try GameFolderMarkerFile.write(
+                GameFolderMarkerFile.marker(for: bottles.live(bottle), installDir: destination), in: destination
+            )
+        }
 
         // The game is in and launchable; art is cosmetic, so a failed copy
         // doesn't undo any of that.

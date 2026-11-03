@@ -2,6 +2,87 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.7.0 — 2026-11-03
+
+### Added
+- **Restore save backups.** The Steam Cloud row's menu has **Manage or
+  Restore Backups…**, which lists a game's backups with their date, size and
+  file count. Restoring shows exactly what will change and backs up the
+  current saves first. If the restored saves differ from Steam's, the next
+  sync asks whether to keep the restored saves or use Steam's, like Steam's
+  own sync conflict, and nothing uploads until you choose.
+- **Install sheet with a space check.** Install, Reinstall and Validate open
+  a sheet showing the game's size, where it goes and how much space is free.
+  An install that won't fit with 5 GB to spare is refused before anything
+  downloads, so a full disk can't leave a half-installed game. The DLC
+  manager checks the same way before installing DLC.
+- **Game shortcuts.** A game's menu can now put a shortcut on the Desktop or
+  in Applications that opens BEER and starts the game. **Shortcut Icon…**
+  picks what it shows: a square cut from the game's cover (drag and zoom to
+  choose) or Steam's own Windows icon. The install sheet can make either
+  shortcut as part of an install, and uninstalling a game removes the
+  shortcuts BEER made. A shortcut you moved or renamed is left alone.
+- **Install games to external drives.** The install sheet lists This Mac and
+  every usable drive with its free space; drives a game can't run from
+  (exFAT, case-sensitive) are greyed out with the reason. Only the game's
+  files go on the drive: its bottle, saves and save backups stay on the Mac.
+  The sheet updates live as drives are plugged in or pulled out.
+- **Move games between your Mac and drives.** A game's Location row can move
+  it. BEER copies the game, checks the copy, switches over, backs up any
+  saves kept in the game folder, and only then deletes the old copy. A move
+  cut short by a crash or a pulled drive is finished or undone the next time
+  the drive is connected.
+- **Games on an unplugged drive.** The game page says "Connect <drive> to
+  play", and launching, cloud sync and anything that writes into the game
+  folder wait until it's back. Drives are tracked by their ID, so renaming
+  one doesn't lose its games, even while BEER is open.
+- **Games found on a drive.** Plugging in a drive that holds games BEER
+  installed elsewhere (another Mac, or before a reinstall) offers to add
+  them back. Non-Steam games can be added to a drive too.
+
+### Changed
+- **The Wine log follows new output.** The Wine log and the DepotDownloader
+  output keep the newest line in view, stay put when you scroll up to read,
+  and follow again once you scroll back to the end.
+
+### Fixed
+- **BEER crashed while a game started or closed.** The window could get
+  stuck re-laying itself out until macOS closed BEER, most often with the
+  Wine log open while a game launched. The sidebar, the game page and the
+  log panels now have fixed sizes, so changing content can't set this off.
+- **BEER froze for seconds when a game started from a USB drive.** Every
+  launch copied the Steam emulator's 44 MB of files into the game folder
+  again, and the window waited for it. Files already in place are now
+  skipped, and the rest are copied in the background.
+- **Download status stuck on "Pre-allocating" or "Validating".** The status
+  now switches to "Downloading…" once data arrives, and the game page shows
+  the percentage next to it.
+- **Games whose name ends in "." wouldn't start.** Windows drops a trailing
+  dot, so Wine couldn't find anything inside a folder like
+  "Easy Delivery Co.". New installs leave the dot off, and existing folders
+  are renamed the next time BEER opens.
+- **Installing a game signed you out of Steam.** BEER's downloader logged on
+  with the same session ID the Steam client on your Mac uses, and Steam ends
+  the older session when two match. Installs and updates now use their own
+  ID, so a Steam client running alongside BEER stays signed in.
+- **Cloud-save backups filled the disk.** BEER copied a game's whole save
+  folder before every sync and never removed old copies, so Kingdom Come
+  games alone reached hundreds of GB. It now keeps the newest 3 backups per
+  game (plus every backup taken before clearing local saves), skips the copy
+  when the saves haven't changed, and no longer leaves empty backup folders.
+  On first launch BEER offers to apply this to backups already on disk.
+- **Saves in a new folder never reached Steam Cloud.** BEER only looked for
+  new saves in folders that already had cloud files, so a game's first saves
+  made on the Mac, or a new save folder per playthrough, were never uploaded
+  and nothing said so. It now also checks the save folders Steam lists for
+  the game.
+- **Saves in Documents never uploaded.** Saves under the bottle's
+  `Documents` folder, which links to your Mac's, weren't matched to their
+  cloud files, so games like Dark Souls Remastered couldn't upload them.
+- **`build_app.sh` stopped while fetching SDL.** On a machine without SDL's
+  source already downloaded, macOS's bash read the "…" in the download
+  message as part of `$VERSION` and quit with "unbound variable".
+
 ## 0.6.2 — 2026-11-01
 
 ### Fixed
