@@ -67,7 +67,7 @@ struct GameActionRow: View {
             } else if let entry = model.download, entry.isActive {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
-                    Text(entry.phaseText)
+                    Text(entry.phaseWithPercent).monospacedDigit()
                 }
                 .frame(minWidth: 180, minHeight: 36)
                 .padding(.horizontal, 12)

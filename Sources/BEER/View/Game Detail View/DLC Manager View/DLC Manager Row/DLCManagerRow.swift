@@ -24,7 +24,7 @@ struct DLCManagerRow: View {
                     ProgressView(value: active.fraction)
                         .progressViewStyle(.linear)
                         .frame(maxWidth: 260)
-                    Text(active.phaseText)
+                    Text(active.phaseWithPercent)
                         .font(.caption2.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }

@@ -11,7 +11,7 @@ import Foundation
 // argv and DepotDownloader never owns a second authentication session.
 //
 // Output streamed from DepotDownloader is parsed for:
-//   • " Pre-allocating ", " Downloaded ", " Validating "         → status phases
+//   • " Pre-allocating ", " Validating ", percentage lines       → status phases
 //   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
@@ -206,6 +206,7 @@ final class DepotDownloaderController: ObservableObject {
         // Mutable scratch for the stdout parser thread.
         let tail = Box<[String]>([])
         let lastEmittedProgress = Box<Double>(-1)
+        let status = Box(DepotDownloaderStatus())
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
@@ -221,7 +222,7 @@ final class DepotDownloaderController: ObservableObject {
             Task { @MainActor in events(.log(line)) }
 
             // Status phases
-            if let phase = parseStatusPhrase(line) {
+            if let phase = status.value.update(with: line) {
                 Task { @MainActor in events(.status(phase)) }
             }
 

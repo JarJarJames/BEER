@@ -16,8 +16,10 @@ struct WineLogView: View {
                     }
                 }
                 .padding(10)
+                // Newest line stays in view until the player scrolls up.
+                .background(LogFollower())
             }
-            .frame(minHeight: 120, maxHeight: 240)
+            .frame(height: LogPanelLayout.wineLogHeight)
             .background(Color(nsColor: .textBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay {

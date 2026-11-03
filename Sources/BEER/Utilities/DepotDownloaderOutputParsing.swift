@@ -19,6 +19,23 @@ func parseStatusPhrase(_ line: String) -> String? {
     return nil
 }
 
+/// The status line through a DepotDownloader run. Each depot pre-allocates
+/// (or, for files already there, validates) every file first, one line per
+/// file, then prints only a percentage per chunk while it downloads. Going by
+/// the phrases alone, the status stayed on the last file's "Pre-allocating"
+/// or "Validating" for the whole download.
+struct DepotDownloaderStatus {
+    private(set) var current: String?
+
+    /// The new status after `line`, or nil when it doesn't change.
+    mutating func update(with line: String) -> String? {
+        let next = parseProgressFraction(line) != nil ? "Downloading…" : parseStatusPhrase(line)
+        guard let next, next != current else { return nil }
+        current = next
+        return next
+    }
+}
+
 func parseProgressFraction(_ line: String) -> Double? {
     // DepotDownloader prints lines like " 12.34% C:\\... " during download.
     if let m = line.firstMatch(of: /^\s*([0-9]+(?:\.[0-9]+)?)%/) {
