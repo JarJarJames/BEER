@@ -41,9 +41,12 @@ struct SteamAccountBar: View {
                 }
             }
             .menuStyle(.borderlessButton)
-            .fixedSize()
-
-            Spacer()
+            // Takes the room there is and truncates, rather than sizing to
+            // its text: a fixed-size label made the sidebar's minimum width
+            // follow the status line, which Steam changes mid-layout ("In-Game
+            // · <game>" → "Online" when a game ends), and the window looped
+            // on constraint passes until AppKit aborted.
+            .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
 
             // A Steam session that has failed is otherwise invisible: the app
             // keeps working, the status line just quietly stops being true.

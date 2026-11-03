@@ -38,7 +38,11 @@ struct MainShellView: View {
                     SteamAccountBar()
                 }
             }
-            .frame(minWidth: 200)
+            .navigationSplitViewColumnWidth(
+                min: MainShellLayout.sidebarMinWidth,
+                ideal: MainShellLayout.sidebarIdealWidth,
+                max: MainShellLayout.sidebarMaxWidth
+            )
         } detail: {
             switch sidebar {
             case .library:
