@@ -49,3 +49,8 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placemen
 - **You cannot merge.** All changes land via pull request and require the
   maintainer's approval (`master` is protected). Branch off `dev`, open the PR
   against `dev`, and don't push to `master`.
+- **Never push to `dev` or `master`.** Not directly, not by accident. Create
+  branches with `git switch -c <branch> --no-track origin/dev`: without
+  `--no-track`, the branch's upstream is `dev` and a plain `git push` lands
+  your commits on `dev` with no PR. Push only with
+  `git push -u origin <branch>`, and only when asked.

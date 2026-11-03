@@ -29,7 +29,8 @@ The CloudSync helper lives in `Tools/CloudSync/` (C# / .NET 9 / SteamKit2). `dot
 
 ## Conventions
 - Apple Silicon + macOS 14+ only. Runtime is Apple GPTK Wine (`winemac.drv`).
-- Branch: work on a feature branch; `master` is the main line. Commit/push only when asked.
+- Branch: work on a feature branch off `dev`; PRs go to `dev`. Commit/push only when asked.
+- **Never push to `dev` or `master`.** Create branches with `git switch -c <branch> --no-track origin/dev`: without `--no-track` the branch's upstream is `dev`, and a plain `git push` puts the commits on `dev` with no PR. Push only with `git push -u origin <branch>`.
 - When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log` first, then the bottle's `beer.log`.
 - Don't reintroduce: per-file Steam logons (rate-limit), `wine explorer /desktop` for windowed mode (borderless/un-movable), or the real Steam client on GPTK (webhelper crash-loop). See `HANDOFF.md` §7.
 - **Wine username is pinned to `crossover`** (`USER`/`USERNAME` in `BottleStore.environment`). It's GPTK's hardcoded default; we force it on every runtime so save paths (`drive_c/users/crossover/…`) stay consistent when a bottle switches Wine. Not a CrossOver dependency — just a compatibility constant. Don't change it without migrating existing bottles' user folders.
