@@ -2,9 +2,20 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.7.0 — 2026-11-03
 
 ### Added
+- **Restore save backups.** The Steam Cloud row's menu has **Manage or
+  Restore Backups…**, which lists a game's backups with their date, size and
+  file count. Restoring shows exactly what will change and backs up the
+  current saves first. If the restored saves differ from Steam's, the next
+  sync asks whether to keep the restored saves or use Steam's, like Steam's
+  own sync conflict, and nothing uploads until you choose.
+- **Install sheet with a space check.** Install, Reinstall and Validate open
+  a sheet showing the game's size, where it goes and how much space is free.
+  An install that won't fit with 5 GB to spare is refused before anything
+  downloads, so a full disk can't leave a half-installed game. The DLC
+  manager checks the same way before installing DLC.
 - **Game shortcuts.** A game's menu can now put a shortcut on the Desktop or
   in Applications that opens BEER and starts the game. **Shortcut Icon…**
   picks what it shows: a square cut from the game's cover (drag and zoom to
@@ -65,6 +76,9 @@ Notable changes to BEER. Versions follow the GitHub releases.
   made on the Mac, or a new save folder per playthrough, were never uploaded
   and nothing said so. It now also checks the save folders Steam lists for
   the game.
+- **Saves in Documents never uploaded.** Saves under the bottle's
+  `Documents` folder, which links to your Mac's, weren't matched to their
+  cloud files, so games like Dark Souls Remastered couldn't upload them.
 - **`build_app.sh` stopped while fetching SDL.** On a machine without SDL's
   source already downloaded, macOS's bash read the "…" in the download
   message as part of `$VERSION` and quit with "unbound variable".
