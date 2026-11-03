@@ -34,6 +34,14 @@ struct InstallVolume: Equatable, Hashable, Identifiable, Sendable {
         return nil
     }
 
+    /// The same drive under `name`. Right after a rename the drive still
+    /// reports its old name for a moment; the notification has the new one.
+    func named(_ name: String) -> InstallVolume {
+        InstallVolume(root: root, name: name, uuid: uuid, availableBytes: availableBytes, format: format,
+                      supportsSymbolicLinks: supportsSymbolicLinks, isCaseSensitive: isCaseSensitive,
+                      isReadOnly: isReadOnly, isLocal: isLocal, isDiskImage: isDiskImage)
+    }
+
     var link: GameDrive? {
         uuid.map { GameDrive(uuid: $0, name: name, mountPath: root.path) }
     }

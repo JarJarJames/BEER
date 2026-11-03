@@ -22,7 +22,8 @@ final class FakeDrives: @unchecked Sendable {
                 let path = url.standardizedFileURL.path
                 guard FileManager.default.fileExists(atPath: path) else { return nil }
                 return drives.first { path == $0.root.path || path.hasPrefix($0.root.path + "/") }?.uuid
-            }
+            },
+            drive: { [self] root in drives.first { $0.root.standardizedFileURL == root.standardizedFileURL } }
         )
     }
 

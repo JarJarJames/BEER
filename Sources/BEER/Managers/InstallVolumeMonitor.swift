@@ -33,15 +33,34 @@ final class InstallVolumeMonitor: ObservableObject {
             NSWorkspace.didMountNotification, NSWorkspace.didUnmountNotification, NSWorkspace.didRenameVolumeNotification
         ]
         observers = names.map { name in
-            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
-                MainActor.assumeIsolated { self?.refresh() }
+            center.addObserver(forName: name, object: nil, queue: .main) { [weak self] note in
+                // Read on this thread: `Notification` isn't Sendable.
+                let info = note.userInfo
+                let current = info?[NSWorkspace.volumeURLUserInfoKey] as? URL
+                let old = info?[NSWorkspace.oldVolumeURLUserInfoKey] as? URL
+                let name = info?[NSWorkspace.localizedVolumeNameUserInfoKey] as? String
+                let isUnmount = note.name == NSWorkspace.didUnmountNotification
+                MainActor.assumeIsolated {
+                    self?.refresh(mountedAt: isUnmount ? nil : current, named: name, gone: isUnmount ? current : old)
+                }
             }
         }
         refresh()
     }
 
-    func refresh() {
-        let fresh = source.mountedDrives()
+    /// Read the drive list again. A notification's own addresses override
+    /// the system's list, which lags behind it: right after a rename the
+    /// list still names the old path, which no longer exists, so the drive
+    /// would read as unplugged and nothing would come along to fix that.
+    /// The drive also reports its old name for a moment, hence `name`.
+    func refresh(mountedAt mounted: URL? = nil, named name: String? = nil, gone: URL? = nil) {
+        let goneRoot = gone.map(GameFolders.canonicalPath)
+        var fresh = source.mountedDrives().filter { GameFolders.canonicalPath($0.root) != goneRoot }
+        if let mounted, var drive = source.drive(mounted) {
+            if let name { drive = drive.named(name) }
+            fresh.removeAll { $0.id == drive.id }
+            fresh.append(drive)
+        }
         snapshot.drives = fresh
         if fresh != drives { drives = fresh }
     }

@@ -29,6 +29,8 @@ struct GameDetailScreen: View {
         // instead of leaving a detached logon running to completion.
         .task(id: model.appID) { await model.loadDLC(force: false) }
         .task(id: model.patchStatusProbeID) { await model.refreshPatchStatus() }
+        // Plugging a drive in or pulling it out updates any open sheet's list.
+        .onReceive(model.drives.$drives.dropFirst()) { _ in model.drivesChanged() }
         .onReceive(GameLinkRouter.shared.$pendingLaunchAppID.receive(on: DispatchQueue.main)) { appID in
             guard appID == model.appID else { return }
             GameLinkRouter.shared.pendingLaunchAppID = nil
