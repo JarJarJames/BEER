@@ -4,6 +4,14 @@ Notable changes to BEER. Versions follow the GitHub releases.
 
 ## Unreleased
 
+### Added
+- **Game shortcuts.** A game's menu can now put a shortcut on the Desktop or
+  in Applications that opens BEER and starts the game. **Shortcut Icon…**
+  picks what it shows: a square cut from the game's cover (drag and zoom to
+  choose) or Steam's own Windows icon. The install sheet can make either
+  shortcut as part of an install, and uninstalling a game removes the
+  shortcuts BEER made. A shortcut you moved or renamed is left alone.
+
 ### Fixed
 - **Installing a game signed you out of Steam.** BEER's downloader logged on
   with the same session ID the Steam client on your Mac uses, and Steam ends

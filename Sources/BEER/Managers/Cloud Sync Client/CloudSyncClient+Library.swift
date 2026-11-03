@@ -72,3 +72,19 @@ extension CloudSyncClient {
         return bytes
     }
 }
+
+extension CloudSyncClient {
+    /// Where Steam keeps `appID`'s Windows icon, the multi-size `.ico` Steam
+    /// puts on its own shortcuts. Nil when Steam lists none.
+    func clientIcon(appID: Int, account: String, refreshToken: String) async throws -> URL? {
+        Self.clientIconURL(appID: appID, from: try await runOnce(
+            args: ["clienticon", "--appid", String(appID)],
+            account: account, refreshToken: refreshToken
+        ))
+    }
+
+    static func clientIconURL(appID: Int, from json: [String: Any]) -> URL? {
+        guard let hash = json["clienticon"] as? String, !hash.isEmpty else { return nil }
+        return URL(string: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/\(appID)/\(hash).ico")
+    }
+}

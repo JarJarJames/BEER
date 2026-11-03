@@ -14,6 +14,8 @@ struct MainShellView: View {
     @StateObject private var dlcStore = DLCStore()
     @State private var sidebar: AppSidebarItem = .library
     @State private var selectedGameAppID: Int?
+    /// A game a shortcut asked for, held while the sidebar switches to Library.
+    @State private var linkedAppID: Int?
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
@@ -67,8 +69,22 @@ struct MainShellView: View {
         // Switching tabs returns to that tab's grid rather than carrying a
         // selected game across (e.g. Library → Installed shouldn't show a detail).
         .onChange(of: sidebar) { _, _ in
-            selectedGameAppID = nil
+            selectedGameAppID = linkedAppID
+            linkedAppID = nil
             columnVisibility = .all
+        }
+        // On the next turn of the run loop: when a shortcut launches BEER the
+        // link is waiting before the first frame, and opening the game page
+        // mid-layout sends the window's toolbar into a layout loop (crash).
+        .onReceive(GameLinkRouter.shared.$requestedAppID.receive(on: DispatchQueue.main)) { appID in
+            guard let appID else { return }
+            GameLinkRouter.shared.requestedAppID = nil
+            if sidebar == .library || sidebar == .installed {
+                selectedGameAppID = appID
+            } else {
+                linkedAppID = appID
+                sidebar = .library
+            }
         }
         .task {
             depotController.load()

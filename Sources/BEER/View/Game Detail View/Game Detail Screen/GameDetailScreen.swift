@@ -29,6 +29,11 @@ struct GameDetailScreen: View {
         // instead of leaving a detached logon running to completion.
         .task(id: model.appID) { await model.loadDLC(force: false) }
         .task(id: model.patchStatusProbeID) { await model.refreshPatchStatus() }
+        .onReceive(GameLinkRouter.shared.$pendingLaunchAppID.receive(on: DispatchQueue.main)) { appID in
+            guard appID == model.appID else { return }
+            GameLinkRouter.shared.pendingLaunchAppID = nil
+            model.launchFromShortcut()
+        }
         .toolbar {
             ToolbarItem(placement: .navigation) {
                 Button(action: onBack) {
@@ -45,6 +50,15 @@ struct GameDetailScreen: View {
                 report: model.installSpaceReport,
                 onInstall: model.confirmInstall,
                 onCancel: { model.isShowingInstallSheet = false }
+            )
+        }
+        .sheet(isPresented: $model.isShowingShortcutIcon) {
+            ShortcutIconSheet(
+                game: model.game,
+                account: model.isSteamConnected ? model.cloudAuth.account : nil,
+                rememberClientIcon: { model.library.setClientIconURL($0, appID: model.appID) },
+                onSave: model.shortcutIconSaved,
+                onCancel: { model.isShowingShortcutIcon = false }
             )
         }
         .sheet(isPresented: $model.isShowingSaveBackups) {

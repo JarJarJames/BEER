@@ -182,6 +182,7 @@ extension GameDetailViewModel {
                         steamLaunchConfigChecked: launchConfigChecked
                     )
                 }
+                await createShortcutsChosenAtInstall(appID: game.appID)
                 downloads.complete(appID: game.appID)
             } catch DepotDownloaderError.sessionExpired {
                 cloudAuth.sessionExpired = true
@@ -226,6 +227,7 @@ extension GameDetailViewModel {
         let bottle = installedBottle
         Task { [self] in
             if let bottle { await bottles.delete(bottle) }
+            GameShortcutStore.shared.removeShortcuts(appID: appID)
             if isNonSteam {
                 library.removeNonSteamGame(appID: appID)
             } else {

@@ -106,6 +106,7 @@ View/
 │   │   └── Advanced Settings View/ -> Environment Row/, Dependencies Row/, Wine Log View/, Labeled Value/
 │   ├── Settings Row/                  Shared by every row above
 │   ├── DLC Manager View/ -> DLC Manager Row/, DLC Manager Footer/, ...
+│   ├── Shortcut Icon Sheet/ -> Cover Crop Editor/
 │   └── Steam Cloud QR Sheet/
 ├── Downloads Pane/ -> Download Row/
 ├── Runtime Manager View/ -> Runtime Section/, Runtime Release Row/, ...

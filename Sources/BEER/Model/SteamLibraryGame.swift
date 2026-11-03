@@ -26,6 +26,10 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     /// Cover art the user picked for a non-Steam game, a copy kept under
     /// `AppPaths.customArtDirectory`.
     var customImagePath: String?
+    /// Steam's Windows icon for the game, once BEER has asked for it.
+    var clientIconURL: String?
+    /// What the game's shortcuts show. Nil until the player picks.
+    var shortcutIcon: ShortcutIconChoice?
 
     var effectiveIsNonSteam: Bool { isNonSteam ?? false }
 
@@ -58,6 +62,13 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     var libraryCapsuleImage: URL? {
         if effectiveIsNonSteam { return customImageURL }
         return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_600x900.jpg")
+    }
+
+    /// The cover at full size (600×900), for cutting a sharp square icon from.
+    /// `library_600x900.jpg` is only 300×450 despite its name.
+    var shortcutCoverImage: URL? {
+        if effectiveIsNonSteam { return customImageURL }
+        return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_600x900_2x.jpg")
     }
 
     /// Transparent title treatment Steam layers over its Library hero art.

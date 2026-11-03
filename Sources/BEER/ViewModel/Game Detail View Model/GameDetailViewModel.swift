@@ -45,6 +45,7 @@ final class GameDetailViewModel: ObservableObject {
     /// The install sheet's size and free space; nil while they're looked up.
     @Published var installSpaceReport: InstallSpaceReport?
     var installSpaceCheck = InstallSpaceCheck()
+    @Published var isShowingShortcutIcon: Bool = false
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false
     @Published var isPatching: Bool = false

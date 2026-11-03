@@ -70,6 +70,17 @@ cat > "$CONTENTS/Info.plist" <<PLIST
   <string>14.0</string>
   <key>NSHighResolutionCapable</key>
   <true/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>io.github.jarjarjames.beer.game</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>beer</string>
+      </array>
+    </dict>
+  </array>
 </dict>
 </plist>
 PLIST

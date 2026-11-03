@@ -3,7 +3,7 @@ import Foundation
 
 /// A fake Steam for tests: a script that runs in place of the CloudSync helper,
 /// so tests can drive a whole sync or install check without Steam. It answers
-/// `enumerate`, `batch` and `installsize` from what the test sets here, writes
+/// `enumerate`, `batch`, `installsize` and `clienticon` from what the test sets here, writes
 /// the files it "downloads", and records every call it gets, so a test can
 /// check what reached Steam and in what order.
 @MainActor
@@ -13,7 +13,7 @@ final class FakeSteam {
         let command: String
         let downloads: [(filename: String, out: String)]
         let uploads: [(filename: String, mtime: Date)]
-        /// The apps an `installsize` call asked about.
+        /// The apps an `installsize` or `clienticon` call asked about.
         let appIDs: [Int]
     }
 
@@ -26,6 +26,8 @@ final class FakeSteam {
     /// What Steam lists as each app's install size. `installsize` reports the
     /// sum for the apps asked about, or no size when none of them is listed.
     var installSizes: [Int: Int64] = [:] { didSet { save() } }
+    /// The hash of each app's Windows icon. `clienticon` reports none for an app missing here.
+    var clientIcons: [Int: String] = [:] { didSet { save() } }
     /// Answer every command as Steam does for a revoked sign-in.
     var signInExpired = false { didSet { save() } }
 
@@ -68,6 +70,7 @@ final class FakeSteam {
             "rejectedUploads": Array(rejectedUploads),
             "signInExpired": signInExpired,
             "installSizes": Dictionary(uniqueKeysWithValues: installSizes.map { (String($0.key), $0.value) }),
+            "clientIcons": Dictionary(uniqueKeysWithValues: clientIcons.map { (String($0.key), $0.value) }),
         ]
         // A test that can't set up its fake Steam can't mean anything.
         try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("fakesteam.json"))
@@ -95,6 +98,8 @@ final class FakeSteam {
         call["uploads"] = jobs.get("uploads", [])
     if cmd == "installsize":
         call["appids"] = [int(a) for a in args[args.index("--appids") + 1].split(",")]
+    if cmd == "clienticon":
+        call["appids"] = [int(args[args.index("--appid") + 1])]
     with open(os.path.join(here, "calls.jsonl"), "a") as log:
         log.write(json.dumps(call) + "\n")
 
@@ -106,6 +111,8 @@ final class FakeSteam {
     elif cmd == "installsize":
         sizes = [config["installSizes"][str(a)] for a in call["appids"] if str(a) in config["installSizes"]]
         emit({"bytes": sum(sizes) if sizes else None})
+    elif cmd == "clienticon":
+        emit({"clienticon": config["clientIcons"].get(str(call["appids"][0]))})
     elif cmd == "batch":
         for d in call["downloads"]:
             content = config["contents"].get(d["filename"])
