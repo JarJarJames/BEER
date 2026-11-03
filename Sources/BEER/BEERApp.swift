@@ -40,6 +40,7 @@ struct BEERApp: App {
                     store.volumes = drives.current
                     drives.start()
                     await store.followRenamedDrives()
+                    await store.renameFoldersWineCannotOpen()
                     store.writeMissingFolderMarkers()
                     await detector.refresh()
                     depotDownloader.refresh()

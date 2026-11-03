@@ -112,6 +112,7 @@ struct MainShellView: View {
 
     private func drivesChanged() async {
         await store.followRenamedDrives()
+        await store.renameFoldersWineCannotOpen()
         store.writeMissingFolderMarkers()
         await mover.finishInterruptedMoves(bottles: store) { bottle, folder in
             guard let appID = bottle.steamAppID else { return }

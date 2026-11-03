@@ -198,6 +198,19 @@ final class BottleStore: ObservableObject {
         if changed { await save() }
     }
 
+    /// Rename game folders Wine can't open (a trailing dot, like
+    /// "Easy Delivery Co."). Skips games that are running.
+    func renameFoldersWineCannotOpen() async {
+        var changed = false
+        for index in bottles.indices where !activeBottleIDs.contains(bottles[index].id) {
+            let renamed = attempt("Rename game folder for Wine", log: Log.install) {
+                try bottles[index].renameFolderWineCannotOpen(volumes: volumes)
+            }
+            if renamed == true { changed = true }
+        }
+        if changed { await save() }
+    }
+
     /// Record that the game's files now live at `installDirectory`, after a
     /// move. The launch .exe moves with them.
     func relocateGame(bottleID: UUID, from oldDirectory: URL, to installDirectory: URL, drive: GameDrive?) throws {

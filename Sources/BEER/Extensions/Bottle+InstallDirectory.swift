@@ -70,6 +70,27 @@ extension Bottle {
         return true
     }
 
+    /// Rename a game folder in a `Games` folder whose name Wine can't open
+    /// (see `windowsFolderName`), and point the stored paths at the new name.
+    /// Earlier builds named folders after the game, trailing dot and all.
+    /// Returns whether anything changed; nothing does when the new name is
+    /// already taken.
+    mutating func renameFolderWineCannotOpen(volumes: VolumeCatalog = .system) throws -> Bool {
+        guard let folder = installLocation(volumes: volumes).url,
+              folder.deletingLastPathComponent().lastPathComponent == "Games" else { return false }
+        let fixedName = folder.lastPathComponent.windowsFolderName
+        guard !fixedName.isEmpty, fixedName != folder.lastPathComponent else { return false }
+        let fixed = folder.deletingLastPathComponent().appendingPathComponent(fixedName, isDirectory: true)
+        guard !FileManager.default.fileExists(atPath: fixed.path) else { return false }
+
+        try FileManager.default.moveItem(at: folder, to: fixed)
+        if let exe = gameLaunchExecutable {
+            gameLaunchExecutable = GameFolderTransfer.relocated(URL(fileURLWithPath: exe), from: folder, to: fixed).path
+        }
+        gameInstallDirectory = fixed.path
+        return true
+    }
+
     /// Where the game's files go when downloading into this bottle: the folder
     /// an earlier install or unfinished download recorded, so a resume picks up
     /// where it stopped, else the default inside the bottle.

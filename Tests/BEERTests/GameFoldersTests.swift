@@ -63,6 +63,45 @@ final class GameFoldersTests: XCTestCase {
         XCTAssertEqual(GameFolders.freeFolder(for: "Hades: II", in: root).lastPathComponent, "Hades_ II")
     }
 
+    func testFolderNameDropsTheTrailingDotWindowsCantOpen() {
+        XCTAssertEqual("Easy Delivery Co.".safeGameFolderName, "Easy Delivery Co")
+        XCTAssertEqual("...".safeGameFolderName, "Game")
+    }
+
+    func testFolderWithATrailingDotIsRenamed() throws {
+        let (bottle, folder, _) = try gameOnDrive(named: "Easy Delivery Co.")
+        var renamed = bottle
+
+        XCTAssertTrue(try renamed.renameFolderWineCannotOpen(volumes: fake.catalog))
+        let fixed = folder.deletingLastPathComponent().appendingPathComponent("Easy Delivery Co", isDirectory: true)
+        XCTAssertEqual(renamed.gameInstallDirectory, fixed.path)
+        XCTAssertEqual(renamed.gameLaunchExecutable, fixed.appendingPathComponent("bin/Game.exe").path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fixed.appendingPathComponent("bin").path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
+        XCTAssertEqual(renamed.installLocation(volumes: fake.catalog), .available(fixed))
+    }
+
+    func testFolderIsNotRenamedOntoAnotherFolder() throws {
+        let (bottle, folder, _) = try gameOnDrive(named: "Easy Delivery Co.")
+        let taken = folder.deletingLastPathComponent().appendingPathComponent("Easy Delivery Co", isDirectory: true)
+        try FileManager.default.createDirectory(at: taken, withIntermediateDirectories: true)
+        var unchanged = bottle
+
+        XCTAssertFalse(try unchanged.renameFolderWineCannotOpen(volumes: fake.catalog))
+        XCTAssertEqual(unchanged.gameInstallDirectory, folder.path)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+    }
+
+    func testFolderOutsideGamesIsNotRenamed() throws {
+        var bottle = FakeDrives.bottle()
+        let folder = root.appendingPathComponent("My Stuff/Easy Delivery Co.", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        bottle.gameInstallDirectory = folder.path
+
+        XCTAssertFalse(try bottle.renameFolderWineCannotOpen(volumes: fake.catalog))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: folder.path))
+    }
+
     func testAnotherGamesFolderIsNeverReused() throws {
         try makeFolder("Game", appID: 2)
         XCTAssertEqual(GameFolders.freeFolder(for: "Game", in: root).lastPathComponent, "Game 2")
@@ -144,9 +183,9 @@ final class GameFoldersTests: XCTestCase {
         try GameFolderMarkerFile.write(GameFolderMarker(appID: appID, name: name, isNonSteam: false, launchExecutable: nil), in: folder)
     }
 
-    private func gameOnDrive() throws -> (Bottle, URL, InstallVolume) {
+    private func gameOnDrive(named folderName: String = "Game") throws -> (Bottle, URL, InstallVolume) {
         let drive = try fake.plugIn("Games", at: root.appendingPathComponent("Drive"))
-        let folder = AppPaths.driveGamesDirectory(onDriveAt: drive.root).appendingPathComponent("Game", isDirectory: true)
+        let folder = AppPaths.driveGamesDirectory(onDriveAt: drive.root).appendingPathComponent(folderName, isDirectory: true)
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("bin"), withIntermediateDirectories: true)
         var bottle = FakeDrives.bottle()
         bottle.steamAppID = 42
