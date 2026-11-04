@@ -6,13 +6,11 @@ enum AppearancePreferences {
     static let cardStyleKey = "library.cardStyle"
     /// A wide card's width in points, from the size slider.
     static let cardWidthKey = "library.cardWidth"
-    static let captionKey = "library.caption"
-    /// Off shows Wide and Cover cards as art alone.
-    static let showsNamesKey = "library.showsNames"
+    /// What shows under each card (`LibraryCardLabel`).
+    static let cardLabelKey = "library.cardLabel"
     static let sortOrderKey = "library.sortOrder"
     /// The banner's height as a fraction of its width, from the slider.
     static let bannerHeightKey = "gamePage.bannerHeight"
-    static let titleStyleKey = "gamePage.titleStyle"
     /// How much bigger or smaller than the original the title is, from the slider.
     static let titleScaleKey = "gamePage.titleScale"
     static let showsBackdropKey = "gamePage.showsBackdrop"

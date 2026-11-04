@@ -3,9 +3,9 @@ import SwiftUI
 struct GameDetailScreen: View {
     let onBack: () -> Void
     @StateObject private var model: GameDetailViewModel
-    @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = false
-    @AppStorage(AppearancePreferences.layoutKey) private var layout: GamePageLayout = .overlay
-    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = GamePageStat.encode(GamePageStat.defaultShown)
+    @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = AppearanceDefaults.showsBackdrop
+    @AppStorage(AppearancePreferences.layoutKey) private var layout = AppearanceDefaults.layout
+    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = AppearanceDefaults.shownStats
 
     /// Remeasured when the game is installed, removed, or the stat turned on.
     private var sizeProbeID: String? {
@@ -62,6 +62,15 @@ struct GameDetailScreen: View {
                     Label("Library", systemImage: "chevron.backward")
                 }
             }
+        }
+        .sheet(isPresented: $model.isShowingArtwork) {
+            CustomArtworkSheet(
+                game: model.game,
+                error: model.artworkError,
+                onChoose: { model.chooseArtwork($0, for: $1) },
+                onReset: { model.resetArtwork($0) },
+                onDone: { model.isShowingArtwork = false }
+            )
         }
         .sheet(isPresented: $model.isShowingCloudConnect) {
             SteamCloudQRSheet(onConnected: model.cloudDidConnect)

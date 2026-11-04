@@ -3,24 +3,25 @@ import SwiftUI
 struct LibraryToolbarView: View {
     @Binding var searchText: String
     @Binding var filter: LibraryFilter
+    let filters: [LibraryFilter]
     let summary: String
     var onAddNonSteamGame: () -> Void = {}
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var auth: SteamAuthStore
-    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle: LibraryCardStyle = .wide
-    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder: LibrarySortOrder = .installedFirst
+    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
+    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
 
     var body: some View {
         HStack(spacing: 10) {
             Picker(LibraryFilter.pickerLabel, selection: $filter) {
-                ForEach(LibraryFilter.allCases) { Text($0.label).tag($0) }
+                ForEach(filters) { Text($0.label).tag($0) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                 .padding(.leading, 6)
-            TextField(filter == .installed ? "Search installed" : "Search library", text: $searchText)
+            TextField(filter.searchPrompt, text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
             Spacer()

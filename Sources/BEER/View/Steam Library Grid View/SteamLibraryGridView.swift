@@ -2,9 +2,9 @@ import SwiftUI
 
 struct SteamLibraryGridView: View {
     var onSelectGame: (SteamLibraryGame) -> Void
-    /// All games, or only installed ones; switched in the library's bar.
+    /// All games, only installed ones, or hidden ones; switched in the
+    /// library's bar.
     @Binding var filter: LibraryFilter
-    private var installedOnly: Bool { filter == .installed }
 
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var bottles: BottleStore
@@ -16,13 +16,12 @@ struct SteamLibraryGridView: View {
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?
-    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle: LibraryCardStyle = .wide
-    @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = LibraryGridLayout.defaultCardWidth
-    @AppStorage(AppearancePreferences.captionKey) private var caption: LibraryCaption = .appID
-    @AppStorage(AppearancePreferences.showsNamesKey) private var showsNames = true
-    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat: PlaytimeFormat = .decimalHours
-    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat: LastPlayedFormat = .date
-    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder: LibrarySortOrder = .installedFirst
+    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
+    @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = AppearanceDefaults.cardWidth
+    @AppStorage(AppearancePreferences.cardLabelKey) private var cardLabel = AppearanceDefaults.cardLabel
+    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
+    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
+    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
     /// The scroll area's width, so no card is made wider than the view.
     @State private var gridWidth: CGFloat = 0
 
@@ -41,16 +40,17 @@ struct SteamLibraryGridView: View {
         let driveMissingIDs = Set(bottles.bottles.filter {
             $0.gameDrive != nil && bottles.installLocation(of: $0).missingDriveName != nil
         }.map(\.id))
-        let games = model.filteredGames(from: library.games, installedBottleIDs: installedIDs, installedOnly: installedOnly,
+        let games = model.filteredGames(from: library.games, installedBottleIDs: installedIDs, filter: filter,
                                          sortOrder: sortOrder)
+        let hasHidden = library.games.contains(where: \.effectiveIsHidden)
 
         VStack(spacing: 0) {
             LibraryToolbarView(
                 searchText: $model.searchText,
                 filter: $filter,
-                summary: installedOnly
-                    ? "\(games.count) installed"
-                    : "\(model.installedCount(in: library.games, installedBottleIDs: installedIDs)) installed · \(library.games.count) games",
+                // Hidden appears once there's something hidden.
+                filters: hasHidden ? LibraryFilter.allCases : [.all, .installed],
+                summary: summary(shown: games.count, installedIDs: installedIDs),
                 onAddNonSteamGame: { isAddingNonSteamGame = true }
             )
             Divider()
@@ -69,7 +69,7 @@ struct SteamLibraryGridView: View {
                 LibraryEmptyStateView(icon: "tray", title: "No games yet",
                                       message: "Click Refresh to fetch your Steam library.")
             } else if games.isEmpty {
-                if installedOnly {
+                if filter == .installed && model.searchText.isEmpty {
                     LibraryEmptyStateView(icon: "internaldrive", title: "No games installed yet",
                                           message: "Open a game in your Library and click Install — it'll show up here.")
                 } else {
@@ -87,16 +87,21 @@ struct SteamLibraryGridView: View {
                                 isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
                                 style: cardStyle,
                                 cardWidth: cardWidth,
-                                caption: caption.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
-                                showsName: showsNames,
+                                caption: cardLabel.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
+                                showsName: cardLabel.showsName,
                                 action: { onSelectGame(game) }
                             )
+                            .contextMenu { GameOrganizeMenuItems(game: game) }
                         }
                     }
                     .padding(LibraryGridLayout.gridPadding)
                 }
                 .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             }
+        }
+        // Unhiding the last hidden game takes the Hidden choice away.
+        .onChange(of: library.games.contains(where: \.effectiveIsHidden)) { _, hasHidden in
+            if !hasHidden && filter == .hidden { filter = .all }
         }
         .sheet(isPresented: Binding(get: { reviewingDriveID != nil }, set: { if !$0 { reviewingDriveID = nil } })) {
             if let group = foundGames.byDrive.first(where: { $0.drive.id == reviewingDriveID }) {
@@ -124,6 +129,16 @@ struct SteamLibraryGridView: View {
         }
         .sheet(isPresented: $isAddingNonSteamGame) {
             AddNonSteamGameSheet(bottles: bottles, library: library, detector: detector, drives: drives)
+        }
+    }
+
+    private func summary(shown: Int, installedIDs: Set<UUID>) -> String {
+        switch filter {
+        case .all:
+            let visible = library.games.filter { !$0.effectiveIsHidden }
+            return "\(model.installedCount(in: visible, installedBottleIDs: installedIDs)) installed · \(visible.count) games"
+        case .installed: return "\(shown) installed"
+        case .hidden: return "\(shown) hidden"
         }
     }
 }

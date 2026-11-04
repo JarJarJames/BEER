@@ -2,23 +2,21 @@ import SwiftUI
 
 /// The Settings window's Appearance tab: how the library and game pages look.
 struct AppearanceSettingsView: View {
-    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle: LibraryCardStyle = .wide
-    @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = LibraryGridLayout.defaultCardWidth
-    @AppStorage(AppearancePreferences.captionKey) private var caption: LibraryCaption = .appID
-    @AppStorage(AppearancePreferences.showsNamesKey) private var showsNames = true
-    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder: LibrarySortOrder = .installedFirst
-    @AppStorage(AppearancePreferences.bannerHeightKey) private var bannerHeight = GameBannerLayout.defaultHeightRatio
-    @AppStorage(AppearancePreferences.titleStyleKey) private var titleStyle: GameTitleStyle = .logo
-    @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = false
-    @AppStorage(AppearancePreferences.titleScaleKey) private var titleScale = GameBannerLayout.defaultTitleScale
-    @AppStorage(AppearancePreferences.layoutKey) private var layout: GamePageLayout = .overlay
-    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = GamePageStat.encode(GamePageStat.defaultShown)
-    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat: PlaytimeFormat = .decimalHours
-    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat: LastPlayedFormat = .date
+    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
+    @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = AppearanceDefaults.cardWidth
+    @AppStorage(AppearancePreferences.cardLabelKey) private var cardLabel = AppearanceDefaults.cardLabel
+    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
+    @AppStorage(AppearancePreferences.layoutKey) private var layout = AppearanceDefaults.layout
+    @AppStorage(AppearancePreferences.bannerHeightKey) private var bannerHeight = AppearanceDefaults.bannerHeight
+    @AppStorage(AppearancePreferences.titleScaleKey) private var titleScale = AppearanceDefaults.titleScale
+    @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = AppearanceDefaults.showsBackdrop
+    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = AppearanceDefaults.shownStats
+    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
+    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
 
     var body: some View {
         Form {
-            Section(AppearanceStrings.librarySection) {
+            Section {
                 Picker(AppearanceStrings.cardStyle, selection: $cardStyle) {
                     ForEach(LibraryCardStyle.allCases) { Text($0.label).tag($0) }
                 }
@@ -29,19 +27,24 @@ struct AppearanceSettingsView: View {
                 } maximumValueLabel: {
                     Image(systemName: "square")
                 }
-                Toggle(isOn: $showsNames) {
-                    Text(AppearanceStrings.showsNames)
-                    Text(AppearanceStrings.showsNamesCaption)
+                Picker(AppearanceStrings.cardLabel, selection: $cardLabel) {
+                    ForEach(LibraryCardLabel.allCases) { Text($0.label).tag($0) }
                 }
-                Picker(AppearanceStrings.caption, selection: $caption) {
-                    ForEach(LibraryCaption.allCases) { Text($0.label).tag($0) }
-                }
-                // Only the list shows a caption when names are off.
-                .disabled(!showsNames && cardStyle != .list)
                 Picker(AppearanceStrings.sortOrder, selection: $sortOrder) {
                     ForEach(LibrarySortOrder.allCases) { Text($0.label).tag($0) }
                 }
+                resetButton {
+                    cardStyle = AppearanceDefaults.cardStyle
+                    cardWidth = AppearanceDefaults.cardWidth
+                    cardLabel = AppearanceDefaults.cardLabel
+                    sortOrder = AppearanceDefaults.sortOrder
+                }
+            } header: {
+                Text(AppearanceStrings.librarySection)
+            } footer: {
+                Text(AppearanceStrings.libraryFooter)
             }
+
             Section(AppearanceStrings.gamePageSection) {
                 Picker(AppearanceStrings.layout, selection: $layout) {
                     ForEach(GamePageLayout.allCases) { Text($0.label).tag($0) }
@@ -53,9 +56,6 @@ struct AppearanceSettingsView: View {
                 } maximumValueLabel: {
                     Image(systemName: "rectangle.expand.vertical")
                 }
-                Picker(AppearanceStrings.titleStyle, selection: $titleStyle) {
-                    ForEach(GameTitleStyle.allCases) { Text($0.label).tag($0) }
-                }
                 Slider(value: $titleScale, in: GameBannerLayout.titleScaleRange) {
                     Text(AppearanceStrings.titleSize)
                 } minimumValueLabel: {
@@ -64,18 +64,31 @@ struct AppearanceSettingsView: View {
                     Image(systemName: "textformat.size.larger")
                 }
                 Toggle(AppearanceStrings.backdrop, isOn: $showsBackdrop)
+                resetButton {
+                    layout = AppearanceDefaults.layout
+                    bannerHeight = AppearanceDefaults.bannerHeight
+                    titleScale = AppearanceDefaults.titleScale
+                    showsBackdrop = AppearanceDefaults.showsBackdrop
+                }
             }
+
             Section(AppearanceStrings.statsSection) {
                 ForEach(GamePageStat.allCases) { stat in
                     Toggle(stat.label, isOn: shows(stat))
                 }
+                resetButton { shownStats = AppearanceDefaults.shownStats }
             }
+
             Section {
                 Picker(AppearanceStrings.playtimeFormat, selection: $playtimeFormat) {
                     ForEach(PlaytimeFormat.allCases) { Text($0.label).tag($0) }
                 }
                 Picker(AppearanceStrings.lastPlayedFormat, selection: $lastPlayedFormat) {
                     ForEach(LastPlayedFormat.allCases) { Text($0.label).tag($0) }
+                }
+                resetButton {
+                    playtimeFormat = AppearanceDefaults.playtimeFormat
+                    lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
                 }
             } header: {
                 Text(AppearanceStrings.playStatsSection)
@@ -84,6 +97,15 @@ struct AppearanceSettingsView: View {
             }
         }
         .formStyle(.grouped)
+    }
+
+    /// Puts one section back to how BEER looked before these settings.
+    private func resetButton(_ reset: @escaping () -> Void) -> some View {
+        HStack {
+            Button(AppearanceStrings.resetToDefaults, action: reset)
+                .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
     }
 
     private func shows(_ stat: GamePageStat) -> Binding<Bool> {

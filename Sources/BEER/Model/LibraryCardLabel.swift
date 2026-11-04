@@ -1,25 +1,32 @@
 import Foundation
 
-/// The line under a game's name in the library.
-enum LibraryCaption: String, CaseIterable, Identifiable {
+/// What shows under each game's art in the library: the name with one more
+/// fact, the name alone, or nothing. List rows always show the name.
+enum LibraryCardLabel: String, CaseIterable, Identifiable {
     case appID
     case playtime
     case lastPlayed
-    case none
+    case nameOnly
+    /// Wide and Cover cards show the art alone, with the name on hover.
+    case artOnly
 
     var id: String { rawValue }
 
     var label: String {
         switch self {
-        case .appID: "App ID"
-        case .playtime: "Play time"
-        case .lastPlayed: "Last played"
-        case .none: "Nothing"
+        case .appID: "Name and app ID"
+        case .playtime: "Name and play time"
+        case .lastPlayed: "Name and last played"
+        case .nameOnly: "Name only"
+        case .artOnly: "Nothing (art only)"
         }
     }
 
-    /// Nil when the caption is turned off. Steam doesn't track non-Steam
-    /// games, so those say so rather than claiming they were never played.
+    var showsName: Bool { self != .artOnly }
+
+    /// The line under the name; nil when there isn't one. Steam doesn't track
+    /// non-Steam games, so those say so rather than claiming they were never
+    /// played.
     func text(for game: SteamLibraryGame, playtime: PlaytimeFormat = .decimalHours,
               lastPlayed: LastPlayedFormat = .date, now: Date = .now) -> String? {
         switch self {
@@ -33,7 +40,7 @@ enum LibraryCaption: String, CaseIterable, Identifiable {
                 return "Last played: \(lastPlayed.text(date, now: now))"
             }
             return game.effectiveIsNonSteam ? "Non-Steam" : "Never played"
-        case .none:
+        case .nameOnly, .artOnly:
             return nil
         }
     }

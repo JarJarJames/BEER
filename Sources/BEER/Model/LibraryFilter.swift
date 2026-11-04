@@ -4,6 +4,8 @@ import Foundation
 enum LibraryFilter: String, CaseIterable, Identifiable {
     case all
     case installed
+    /// Games the player hid. Offered only while there are some.
+    case hidden
 
     static let pickerLabel = "Show"
 
@@ -13,6 +15,15 @@ enum LibraryFilter: String, CaseIterable, Identifiable {
         switch self {
         case .all: "All Games"
         case .installed: "Installed"
+        case .hidden: "Hidden"
+        }
+    }
+
+    var searchPrompt: String {
+        switch self {
+        case .all: "Search library"
+        case .installed: "Search installed"
+        case .hidden: "Search hidden"
         }
     }
 }

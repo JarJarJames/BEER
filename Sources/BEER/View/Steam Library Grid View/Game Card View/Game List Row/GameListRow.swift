@@ -20,6 +20,7 @@ struct GameListRow: View {
             .clipShape(RoundedRectangle(cornerRadius: LibraryGridLayout.listIconCornerRadius))
 
             GameCardCaption(name: game.name, caption: caption)
+            if game.effectiveIsFavorite { FavoriteMark() }
             badge
         }
         .padding(.horizontal, LibraryGridLayout.listRowHorizontalPadding)

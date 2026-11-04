@@ -15,6 +15,9 @@ struct CoverGameCard: View {
                 .overlay { GameCoverArt(game: game) }
                 .clipped()
                 .overlay(alignment: .topTrailing) { badge?.padding(LibraryGridLayout.badgeInset) }
+                .overlay(alignment: .topLeading) {
+                    if game.effectiveIsFavorite { FavoriteMark().padding(LibraryGridLayout.badgeInset) }
+                }
             if showsName {
                 GameCardCaption(name: game.name, caption: caption)
                     .padding(LibraryGridLayout.captionPadding)

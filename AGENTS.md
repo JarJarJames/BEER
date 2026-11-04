@@ -69,6 +69,7 @@ what a fake can't cover — not the first.
 | Mounted drives | `Tests/BEERTests/Support/FakeDrives.swift`, handed in as a `VolumeCatalog` | `InstallLocationTests`, `CloudSyncDriveTests` |
 | Same-volume check for moves | `GameMove.isSameVolume` | `GameMoveTests` |
 | Network downloads (icons) | `GameShortcutStore.fetch`, `ShortcutIconViewModel`'s `fetch` | `GameShortcutTests`, `ShortcutIconViewModelTests` |
+| Custom art folder | `CustomArtFiles.copy(into:)` / `remove(in:)`, pointed at a temp folder | `LibraryOrganizeTests` |
 
 The helper has its own offline xUnit tests in `Tools/CloudSync.Tests/`.
 

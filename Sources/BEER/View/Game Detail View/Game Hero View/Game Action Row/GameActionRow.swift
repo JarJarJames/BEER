@@ -39,31 +39,6 @@ struct GameActionRow: View {
                     .controlSize(.large)
                     .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
                 }
-
-                Menu {
-                    Button(action: { bottles.revealGameFiles(bottle) }) {
-                        Label("Reveal Files", systemImage: "folder")
-                    }
-                    Divider()
-                    Button(GameShortcutStrings.createDesktop) { model.createShortcut(.desktop) }
-                    Button(GameShortcutStrings.createApplication) { model.createShortcut(.application) }
-                    Button(GameShortcutStrings.editIcon) { model.isShowingShortcutIcon = true }
-                    Divider()
-                    if model.game.effectiveIsNonSteam {
-                        Button("Remove Game…", role: .destructive, action: model.requestUninstall)
-                            .disabled(model.mover.isMoving(bottle.id))
-                    } else {
-                        Button("Reinstall / Validate", action: model.startInstallOrLogin)
-                            .disabled(model.mover.isMoving(bottle.id))
-                        Button("Uninstall", role: .destructive, action: model.requestUninstall)
-                            .disabled(model.mover.isMoving(bottle.id))
-                    }
-                } label: {
-                    Label("More", systemImage: "ellipsis")
-                }
-                .menuStyle(.borderedButton)
-                .controlSize(.large)
-                .fixedSize()
             } else if let entry = model.download, entry.isActive {
                 HStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -119,6 +94,8 @@ struct GameActionRow: View {
                     OpenRuntimesButton()
                 }
             }
+
+            GameMoreMenu(model: model)
         }
     }
 }

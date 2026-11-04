@@ -13,7 +13,7 @@ final class LibraryAppearanceTests: XCTestCase {
 
     private func sorted(_ games: [SteamLibraryGame], by order: LibrarySortOrder) -> [String] {
         SteamLibraryGridViewModel()
-            .filteredGames(from: games, installedBottleIDs: [bottleID], installedOnly: false, sortOrder: order)
+            .filteredGames(from: games, installedBottleIDs: [bottleID], filter: .all, sortOrder: order)
             .map(\.name)
     }
 
@@ -47,7 +47,7 @@ final class LibraryAppearanceTests: XCTestCase {
         let model = SteamLibraryGridViewModel()
         model.searchText = "al"
         let names = model.filteredGames(from: [game(1, "Alpha"), game(2, "Bravo")],
-                                        installedBottleIDs: [], installedOnly: false, sortOrder: .mostPlayed)
+                                        installedBottleIDs: [], filter: .all, sortOrder: .mostPlayed)
             .map(\.name)
         XCTAssertEqual(names, ["Alpha"])
     }
@@ -59,15 +59,18 @@ final class LibraryAppearanceTests: XCTestCase {
         let unplayed = game(20, "Unplayed")
         let nonSteam = SteamLibraryGame(appID: -1, name: "Mine", isNonSteam: true)
 
-        XCTAssertEqual(LibraryCaption.appID.text(for: played), "appID 10")
-        XCTAssertEqual(LibraryCaption.appID.text(for: nonSteam), "Non-Steam")
-        XCTAssertEqual(LibraryCaption.playtime.text(for: played), "1.5 hours")
-        XCTAssertEqual(LibraryCaption.playtime.text(for: unplayed), "Never played")
-        XCTAssertEqual(LibraryCaption.playtime.text(for: nonSteam), "Non-Steam")
-        XCTAssertTrue(LibraryCaption.lastPlayed.text(for: played)?.hasPrefix("Last played: ") ?? false)
-        XCTAssertEqual(LibraryCaption.playtime.text(for: played, playtime: .hoursAndMinutes), "1h 30m")
-        XCTAssertEqual(LibraryCaption.lastPlayed.text(for: unplayed), "Never played")
-        XCTAssertNil(LibraryCaption.none.text(for: played))
+        XCTAssertEqual(LibraryCardLabel.appID.text(for: played), "appID 10")
+        XCTAssertEqual(LibraryCardLabel.appID.text(for: nonSteam), "Non-Steam")
+        XCTAssertEqual(LibraryCardLabel.playtime.text(for: played), "1.5 hours")
+        XCTAssertEqual(LibraryCardLabel.playtime.text(for: unplayed), "Never played")
+        XCTAssertEqual(LibraryCardLabel.playtime.text(for: nonSteam), "Non-Steam")
+        XCTAssertTrue(LibraryCardLabel.lastPlayed.text(for: played)?.hasPrefix("Last played: ") ?? false)
+        XCTAssertEqual(LibraryCardLabel.playtime.text(for: played, playtime: .hoursAndMinutes), "1h 30m")
+        XCTAssertEqual(LibraryCardLabel.lastPlayed.text(for: unplayed), "Never played")
+        XCTAssertNil(LibraryCardLabel.nameOnly.text(for: played))
+        XCTAssertNil(LibraryCardLabel.artOnly.text(for: played))
+        XCTAssertTrue(LibraryCardLabel.nameOnly.showsName)
+        XCTAssertFalse(LibraryCardLabel.artOnly.showsName)
     }
 
     // MARK: - Card art

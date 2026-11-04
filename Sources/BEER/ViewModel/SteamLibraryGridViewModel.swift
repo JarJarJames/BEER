@@ -19,12 +19,15 @@ final class SteamLibraryGridViewModel: ObservableObject {
     func filteredGames(
         from games: [SteamLibraryGame],
         installedBottleIDs: Set<UUID>,
-        installedOnly: Bool,
+        filter: LibraryFilter,
         sortOrder: LibrarySortOrder
     ) -> [SteamLibraryGame] {
-        var base = installedOnly
-            ? games.filter { isInstalled($0, installedBottleIDs: installedBottleIDs) }
-            : games
+        var base: [SteamLibraryGame]
+        switch filter {
+        case .all: base = games.filter { !$0.effectiveIsHidden }
+        case .installed: base = games.filter { !$0.effectiveIsHidden && isInstalled($0, installedBottleIDs: installedBottleIDs) }
+        case .hidden: base = games.filter(\.effectiveIsHidden)
+        }
 
         let q = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         if !q.isEmpty {
@@ -32,6 +35,8 @@ final class SteamLibraryGridViewModel: ObservableObject {
         }
 
         return base.sorted { a, b in
+            // Favorites stay on top whatever the order.
+            if a.effectiveIsFavorite != b.effectiveIsFavorite { return a.effectiveIsFavorite }
             switch sortOrder {
             case .installedFirst:
                 // So the handful you've installed are always at the top of a

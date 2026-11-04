@@ -30,8 +30,17 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     var clientIconURL: String?
     /// What the game's shortcuts show. Nil until the player picks.
     var shortcutIcon: ShortcutIconChoice?
+    /// Pinned to the top of the library, whatever the sort. Optional for the
+    /// same decoding reason as `playtimeMinutes`, like the two below.
+    var isFavorite: Bool?
+    /// Left out of All Games and Installed; listed under Hidden.
+    var isHidden: Bool?
+    /// Cover, banner and logo the player picked, used in place of Steam's.
+    var customArt: CustomGameArt?
 
     var effectiveIsNonSteam: Bool { isNonSteam ?? false }
+    var effectiveIsFavorite: Bool { isFavorite ?? false }
+    var effectiveIsHidden: Bool { isHidden ?? false }
 
     private var customImageURL: URL? {
         customImagePath.map { URL(fileURLWithPath: $0) }
@@ -45,6 +54,7 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     /// Steam's wide, high-resolution Library backdrop. Unlike `header.jpg`,
     /// this contains artwork without a baked-in oversized game logo.
     var libraryHeroImage: URL? {
+        if let custom = customArt?.url(for: .banner) { return custom }
         if effectiveIsNonSteam { return customImageURL }
         return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/library_hero.jpg")
     }
@@ -65,6 +75,7 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
 
     /// Transparent title treatment Steam layers over its Library hero art.
     var libraryLogoImage: URL? {
+        if let custom = customArt?.url(for: .logo) { return custom }
         if effectiveIsNonSteam { return nil }
         return URL(string: "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/logo.png")
     }

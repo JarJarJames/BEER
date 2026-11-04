@@ -14,7 +14,14 @@ enum GameBannerLayout {
     static let titleScaleRange: ClosedRange<Double> = 0.4...2.5
     static let defaultTitleScale: Double = 1
     /// The logo's box at the original size.
-    static let logoMaxWidth: CGFloat = 420
+    static let logoMaxWidth: CGFloat = 350
+    /// The round ⋯ beside Play, as tall as the Play button, brightening and
+    /// growing a little on hover.
+    static let moreMenuSize: CGFloat = 44
+    static let moreMenuDotsSize: CGFloat = 18
+    static let moreMenuOpacity: Double = 0.14
+    static let moreMenuHoverOpacity: Double = 0.26
+    static let moreMenuHoverScale: CGFloat = 1.1
     static let logoMaxHeight: CGFloat = 150
     /// The name's font size at the original size, when there's no logo art.
     static let titleFontSize: CGFloat = 36

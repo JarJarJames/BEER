@@ -5,13 +5,12 @@ struct GameHeroView: View {
 
     private var game: SteamLibraryGame { model.game }
 
-    @AppStorage(AppearancePreferences.bannerHeightKey) private var bannerHeight = GameBannerLayout.defaultHeightRatio
-    @AppStorage(AppearancePreferences.titleStyleKey) private var titleStyle: GameTitleStyle = .logo
-    @AppStorage(AppearancePreferences.titleScaleKey) private var titleScale = GameBannerLayout.defaultTitleScale
-    @AppStorage(AppearancePreferences.layoutKey) private var layout: GamePageLayout = .overlay
-    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = GamePageStat.encode(GamePageStat.defaultShown)
-    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat: PlaytimeFormat = .decimalHours
-    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat: LastPlayedFormat = .date
+    @AppStorage(AppearancePreferences.bannerHeightKey) private var bannerHeight = AppearanceDefaults.bannerHeight
+    @AppStorage(AppearancePreferences.titleScaleKey) private var titleScale = AppearanceDefaults.titleScale
+    @AppStorage(AppearancePreferences.layoutKey) private var layout = AppearanceDefaults.layout
+    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = AppearanceDefaults.shownStats
+    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
+    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
 
     private var stats: [GameStat] {
         GamePageStat.stats(GamePageStat.decode(shownStats), for: game, installedBytes: model.installedBytes,
@@ -104,7 +103,7 @@ struct GameHeroView: View {
     }
 
     private var logo: some View {
-        SteamLibraryLogo(game: game, usesLogoArt: titleStyle == .logo, scale: CGFloat(titleScale))
+        SteamLibraryLogo(game: game, scale: CGFloat(titleScale))
             .frame(maxWidth: GameBannerLayout.logoMaxWidth * CGFloat(titleScale),
                    maxHeight: GameBannerLayout.logoMaxHeight * CGFloat(titleScale), alignment: .leading)
     }
