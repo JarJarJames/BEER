@@ -24,13 +24,15 @@ are welcome — small focused ones are easiest to review and merge.
 - `scripts/` — build scripts.
 - `HANDOFF.md` — full architecture, debugging entry points, and known sharp
   edges. **Read this before making non-trivial changes.**
-- `CLAUDE.md` — operating guide if you use an AI coding agent in this repo.
+- `AGENTS.md` — rules, commands and the testing guide, for AI coding agents and
+  people alike.
 
 ## Building
 
 ```bash
 swift build                      # compile the app
-swift run BEER          # run it
+swift test                       # run the offline tests
+swift run BEER                   # run it
 ./scripts/build_cloudsync.sh     # build + install the CloudSync helper
 ./scripts/build_app.sh [version] # build a distributable .app + zip
 ```
@@ -42,18 +44,21 @@ swift run BEER          # run it
 
 1. Fork the repo and branch off **`dev`** (not `master`).
 2. Keep changes focused; one concern per PR, and open it against `dev`.
-3. Make sure `swift build` succeeds. If you touched the helper, make sure
-   `./scripts/build_cloudsync.sh` builds too.
-4. Describe **what** you changed and **how you tested it** (which game, which
-   Mac, what you observed). Since most features need a live account, reviewers
-   often can't reproduce — your testing notes are how we gain confidence.
-5. Don't reintroduce the known-bad patterns documented in `HANDOFF.md` §7
+3. Make sure `swift build` and `swift test` succeed. If you touched the
+   helper, make sure `./scripts/build_cloudsync.sh` builds too.
+4. Add offline tests for anything touching Steam or machine state, using the
+   fakes listed in [AGENTS.md → Testing](AGENTS.md#testing). Then test what
+   the fakes can't cover on your own account.
+5. Describe **what** you changed and **how you tested it** (which tests, which
+   game, which Mac, what you observed). Reviewers often can't reproduce
+   account features, so your testing notes are how we gain confidence.
+6. Don't reintroduce the known-bad patterns documented in `HANDOFF.md` §7
    (per-file Steam logons, `wine explorer /desktop` for windowed mode, the real
    Steam client on GPTK).
 
 ## Reporting bugs
 
-Open an issue with your macOS version, Mac model (chip), the game/app involved,
-and the relevant log. For sync problems, the most useful logs are
+Open an issue with the **Bug report** template. It asks for your Mac, macOS
+version, the game and its settings, and the logs. For sync problems, the most useful logs are
 `CloudSaveBackups/<appid>/last-sync.log` and the bottle's `beer.log`.
 **Redact your account name and any tokens** before pasting logs.

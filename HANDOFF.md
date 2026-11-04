@@ -6,8 +6,10 @@ Entry point for any new agent (or future you) picking up this project. **What it
 
 ## 0. Ground rules (read first)
 
-- **The user runs ALL tests that touch their Steam account.** Claude writes and compiles code; the user scans QR codes, signs in, and reports results. Never initiate a Steam login / QR / token exchange / sync against the user's live account "to verify." Building and compiling locally is fine. (This is a hard boundary — it was set after an early mistake.)
-- The user's long-played saves (60+ hrs in Kingdom Come: Deliverance) are sacred. Cloud sync is built defensively around never losing them.
+The hard rules, commands and testing guide are in [`AGENTS.md`](AGENTS.md). The two that shaped this codebase most:
+
+- **A human runs every test that touches a Steam account**, on their own account. Agents write code, build it and run the offline tests; they never sign in, scan a QR code or sync "to verify."
+- **Saves are irreplaceable.** Cloud sync is built defensively around never losing them.
 
 ## 1. What this is
 
@@ -25,10 +27,11 @@ It does NOT run the real Steam client (that path is a dead end on GPTK — see �
   Runtimes/                managed GPTK Wine
   Bottles/<game>-<uuid>/   one Wine prefix per game (drive_c/Games/<game>/…)
   CloudSaveBackups/<appid>/ timestamped pre-sync backups + last-sync.log
-  steam-cloud-auth.json    QR refresh token + account (cloud/library auth)
   steam-library.json       cached account + owned games
   bottles.json             bottle metadata
 ```
+
+The Steam refresh token is in the macOS Keychain, not in this folder.
 
 Two halves:
 - **Swift app** (`Sources/BEER/`) — UI, bottle management, install/launch, sync orchestration.
@@ -38,24 +41,24 @@ Two halves:
 
 - `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
 - `ContentView.swift` — onboarding router, sidebar, and the library/detail navigation boundary.
-- `GameDetailView.swift` — game hero, install/play actions, per-game runtime/graphics/display/cloud controls, collapsible advanced bottle settings, and auto cloud sync: **pull before play, push after exit**.
-- `DownloadsView.swift` — active and completed download UI.
+- `GameDetailView.swift` (and the views under `View/Game Detail View/`) — game hero, install/play actions, per-game runtime/graphics/display/cloud controls, collapsible advanced bottle settings, and auto cloud sync: **pull before play, push after exit**.
+- `DownloadsPane.swift` — active and completed download UI.
 - `RuntimeManagerView.swift` — sidebar destination for installing Wine/GPTK runtimes and graphics translators.
-- `BottleStore.swift` — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
+- `BottleStore` (`Managers/Bottle Store/`) — runs every Wine command. `launchGameExecutable` + `configureDisplayMode` (resolution mode, §6). `environment(for:)`, `dllOverrides(for:)`, `command(for:…)`.
 - `DepotDownloaderController.swift` / `DepotDownloaderInstaller.swift` — install games using the same Keychain-owned Steam refresh token as library/cloud access. `CloudSync prepare-depot-auth` creates DepotDownloader's short-lived compatibility cache; the controller removes it after the process exits and on crash recovery.
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
-  - `SteamAuth.swift` (`SteamAuthStore`) — QR sign-in **via the helper**; holds account + refresh token; `sessionExpired` flag + `noteCloudError`.
-  - `CloudSyncClient.swift` — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
-  - `CloudSyncEngine.swift` — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
-- `SteamLibraryStore.swift` — owned games. `signInWithQR(auth:)` (primary) + legacy Web-API-key path (`signIn`, dormant fallback).
+  - `SteamAuthStore.swift` — QR sign-in **via the helper**; holds the account and keeps the refresh token in the Keychain; `sessionExpired` flag + `noteCloudError`.
+  - `CloudSyncClient` (`Managers/Cloud Sync Client/`) — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
+  - `CloudSyncEngine` (`Managers/Cloud Sync Engine/`) — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
+- `SteamLibraryStore.swift` — owned games, fetched through the helper after `signInWithQR(auth:)`.
 - `DepotDownloaderSetupView.swift` / `SteamSignInView.swift` — first-run installation and QR onboarding.
-- `SteamLibraryView.swift` — owned-game library grid and cards.
-- `Paths.swift` — all the Application Support locations, incl. `cloudSyncExecutableURL`, `cloudSaveBackupsDirectory`.
+- `SteamLibraryGridView.swift` — owned-game library grid and cards.
+- `AppPaths.swift` — all the Application Support locations, incl. `cloudSyncExecutableURL`, `cloudSaveBackupsDirectory`.
 
 ## 4. Cloud saves — how it works
 
-1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**. Persisted to `steam-cloud-auth.json`. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
+1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**, which is stored in the Keychain. Builds that kept it in `steam-cloud-auth.json` have it migrated to the Keychain and the file deleted on load. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
 2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
 3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side; when timestamps differ but Steam's SHA-1 matches the local content, the unchanged file is skipped. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
 4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
@@ -87,9 +90,9 @@ What we actually do:
 ```bash
 swift build && swift run BEER      # dev
 ./scripts/build_cloudsync.sh                # (re)build + install the helper to App Support
-./scripts/build_app.sh 0.2.0                # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
+./scripts/build_app.sh 0.7.0                # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
 ```
-- Release: merged to **`master`** (the real main branch; `cloud-saves` was the feature branch). Distributed via `gh release` — v0.2.0 at https://github.com/JarJarJames/BEER/releases.
+- Work lands in **`dev`**; a release merges `dev` into `master` and is tagged there. Distributed via `gh release` at https://github.com/JarJarJames/BEER/releases. The full release steps are in `GOVERNANCE.md`.
 - **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/BEER.app`. A paid Apple Developer ID + notarization would remove that step.
 - **Apple Silicon only** (helper is osx-arm64; GPTK is arm64).
 
@@ -106,4 +109,3 @@ swift build && swift run BEER      # dev
 - Windowed mode depends on the game's own setting; aspect distortion on free-resize.
 - Goldberg/anticheat/multiplayer-with-Steamworks games won't work — by design.
 - Push walks folders that already have cloud files, plus the folders named by the game's Steam `ufs/savefiles` rules (`enumerate` reports them as `savefiles`). A new file takes its cloud name from sibling cloud files when it has any, otherwise from its rule (`%Root%/path/file`). Rules for other platforms, unknown roots, or unknown `{placeholders}` are dropped. A game with no rules still only pushes folders already in the cloud.
-- No Keychain yet — refresh token sits in `steam-cloud-auth.json` (TODO in `Paths.swift`).
