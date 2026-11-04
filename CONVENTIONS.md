@@ -66,7 +66,10 @@ plain `try? removeItem` also hides a delete that failed.
 
 - `swift build` and `swift test` succeed, and CI is green (it also builds,
   style-checks and tests the helper).
-- You tested it against **your own** account and wrote down what you did: which
-  Mac/chip, macOS version, game, and what you observed.
+- Anything touching Steam or machine state has offline tests first, using the
+  existing fakes (see [AGENTS.md → Testing](AGENTS.md#testing)).
+- Then you tested what the fakes can't cover against **your own** account and
+  wrote down what you did: which Mac/chip, macOS version, game, and what you
+  observed.
 - No secrets, no personal paths, no reintroduced `HANDOFF.md` §7 anti-patterns.
 - The change is focused — no drive-by reformatting of unrelated files.
