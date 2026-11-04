@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LibraryToolbarView: View {
     @Binding var searchText: String
-    let installedOnly: Bool
+    @Binding var filter: LibraryFilter
     let summary: String
     var onAddNonSteamGame: () -> Void = {}
     @EnvironmentObject private var library: SteamLibraryStore
@@ -12,8 +12,15 @@ struct LibraryToolbarView: View {
 
     var body: some View {
         HStack(spacing: 10) {
+            Picker(LibraryFilter.pickerLabel, selection: $filter) {
+                ForEach(LibraryFilter.allCases) { Text($0.label).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField(installedOnly ? "Search installed" : "Search library", text: $searchText)
+                .padding(.leading, 6)
+            TextField(filter == .installed ? "Search installed" : "Search library", text: $searchText)
                 .textFieldStyle(.plain)
                 .font(.body)
             Spacer()

@@ -113,9 +113,10 @@ struct GameActionRow: View {
                 }
 
                 if detector.candidates.isEmpty {
-                    Text("No Wine runtime available. Open Runtime Manager in the sidebar.")
+                    Text(RuntimeStrings.noRuntime)
                         .font(.caption)
                         .foregroundStyle(.orange)
+                    OpenRuntimesButton()
                 }
             }
         }

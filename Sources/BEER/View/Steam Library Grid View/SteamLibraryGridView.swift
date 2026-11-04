@@ -2,8 +2,9 @@ import SwiftUI
 
 struct SteamLibraryGridView: View {
     var onSelectGame: (SteamLibraryGame) -> Void
-    /// When true, show only installed games (the "Installed" sidebar tab).
-    var installedOnly: Bool = false
+    /// All games, or only installed ones; switched in the library's bar.
+    @Binding var filter: LibraryFilter
+    private var installedOnly: Bool { filter == .installed }
 
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var bottles: BottleStore
@@ -46,7 +47,7 @@ struct SteamLibraryGridView: View {
         VStack(spacing: 0) {
             LibraryToolbarView(
                 searchText: $model.searchText,
-                installedOnly: installedOnly,
+                filter: $filter,
                 summary: installedOnly
                     ? "\(games.count) installed"
                     : "\(model.installedCount(in: library.games, installedBottleIDs: installedIDs)) installed · \(library.games.count) games",

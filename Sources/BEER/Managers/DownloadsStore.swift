@@ -11,6 +11,14 @@ final class DownloadsStore: ObservableObject {
     var active: [Entry] { entries.filter(\.isActive) }
     var recent: [Entry] { entries.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt } }
 
+    /// How far along the running downloads are together, for the top bar.
+    /// Nil when nothing is downloading.
+    var overallFraction: Double? {
+        let running = active
+        guard !running.isEmpty else { return nil }
+        return running.map(\.fraction).reduce(0, +) / Double(running.count)
+    }
+
     func entry(for appID: Int) -> Entry? {
         entries.first { $0.id == appID }
     }

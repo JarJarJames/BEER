@@ -4,8 +4,8 @@ import SwiftUI
 
 // ContentView is just a router. Onboarding flows take over the entire window
 // until the user has DepotDownloader installed and is signed in. After that, the
-// main app shell (sidebar + content) takes over. Bottle-specific controls live
-// in each installed game's Advanced section; the sidebar manages runtimes.
+// main app shell (top bar + library) takes over. Bottle-specific controls live
+// in each installed game's Advanced section; runtimes are managed in Settings.
 struct ContentView: View {
     @EnvironmentObject private var depot: DepotDownloaderInstaller
     @EnvironmentObject private var library: SteamLibraryStore

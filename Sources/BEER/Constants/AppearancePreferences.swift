@@ -21,4 +21,6 @@ enum AppearancePreferences {
     static let shownStatsKey = "gamePage.shownStats"
     static let playtimeFormatKey = "playStats.playtimeFormat"
     static let lastPlayedFormatKey = "playStats.lastPlayedFormat"
+    /// The Settings window's open tab, so a button can open it on Runtimes.
+    static let settingsTabKey = "settings.tab"
 }

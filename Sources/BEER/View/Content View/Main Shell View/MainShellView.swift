@@ -12,65 +12,45 @@ struct MainShellView: View {
     @StateObject private var downloads = DownloadsStore()
     @StateObject private var goldberg = GoldbergInstaller()
     @StateObject private var cloudSync = CloudSyncEngine()
-    @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
+    @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
     @StateObject private var windowsDependencies = WindowsDependencyInstaller()
     @StateObject private var dlcStore = DLCStore()
-    @State private var sidebar: AppSidebarItem = .library
+    @State private var filter: LibraryFilter = .all
     @State private var selectedGameAppID: Int?
-    /// A game a shortcut asked for, held while the sidebar switches to Library.
-    @State private var linkedAppID: Int?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .all
 
     var body: some View {
-        NavigationSplitView(columnVisibility: $columnVisibility) {
-            List(selection: $sidebar) {
-                Section {
-                    ForEach(AppSidebarItem.allCases) { item in
-                        Label(item.label, systemImage: item.systemImage).tag(item)
-                    }
-                }
+        LibraryPane(selectedGameAppID: $selectedGameAppID, filter: $filter)
+        .environmentObject(foundGames)
+        .environmentObject(depotController)
+        .environmentObject(downloads)
+        .environmentObject(goldberg)
+        .environmentObject(cloudSync)
+        .environmentObject(windowsDependencies)
+        .environmentObject(dlcStore)
+        .frame(minWidth: MainShellLayout.detailMinWidth, maxWidth: .infinity,
+               minHeight: MainShellLayout.detailMinHeight, maxHeight: .infinity)
+        .navigationTitle(MainShellStrings.appName)
+        .toolbar {
+            // The trailing corner. Nothing goes in the middle: a centered
+            // item pulls the items after it in beside it. The All Games /
+            // Installed switch is in the library's own bar instead.
+            ToolbarItem(placement: .automatic) {
+                DownloadsToolbarButton()
+                    .environmentObject(depotController)
+                    .environmentObject(downloads)
             }
-            .listStyle(.sidebar)
-            .navigationTitle("BEER")
-            .safeAreaInset(edge: .bottom) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Divider()
-                    SteamAccountBar()
-                }
+            ToolbarItem(placement: .automatic) {
+                SteamAccountMenu()
             }
-            .navigationSplitViewColumnWidth(
-                min: MainShellLayout.sidebarMinWidth,
-                ideal: MainShellLayout.sidebarIdealWidth,
-                max: MainShellLayout.sidebarMaxWidth
-            )
-            // The width bounds above don't cover height: the account bar's
-            // text wrapping differently would still move the minimum.
-            .frame(minHeight: 0, maxHeight: .infinity)
-        } detail: {
-            detail
-                .frame(minWidth: MainShellLayout.detailMinWidth, maxWidth: .infinity,
-                       minHeight: MainShellLayout.detailMinHeight, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
-        // Switching tabs returns to that tab's grid rather than carrying a
-        // selected game across (e.g. Library → Installed shouldn't show a detail).
-        .onChange(of: sidebar) { _, _ in
-            selectedGameAppID = linkedAppID
-            linkedAppID = nil
-            columnVisibility = .all
-        }
-        // On the next turn of the run loop: when a shortcut launches BEER the
-        // link is waiting before the first frame, and opening the game page
-        // mid-layout sends the window's toolbar into a layout loop (crash).
+        // On the next turn of the run loop: when a shortcut launches BEER
+        // the link is waiting before the first frame, and opening the game
+        // page mid-layout sends the window's toolbar into a layout loop
+        // (crash). A game page shows whatever the filter is.
         .onReceive(GameLinkRouter.shared.$requestedAppID.receive(on: DispatchQueue.main)) { appID in
             guard let appID else { return }
             GameLinkRouter.shared.requestedAppID = nil
-            if sidebar == .library || sidebar == .installed {
-                selectedGameAppID = appID
-            } else {
-                linkedAppID = appID
-                sidebar = .library
-            }
+            selectedGameAppID = appID
         }
         .task {
             depotController.load()
@@ -88,39 +68,6 @@ struct MainShellView: View {
         }
         .onChange(of: library.games.count) { _, _ in
             Task { await foundGames.scan(drives: drives.drives, bottles: store.bottles, library: library.games) }
-        }
-    }
-
-    @ViewBuilder
-    private var detail: some View {
-        switch sidebar {
-        case .library:
-            LibraryPane(selectedGameAppID: $selectedGameAppID)
-                .environmentObject(foundGames)
-                .environmentObject(depotController)
-                .environmentObject(downloads)
-                .environmentObject(goldberg)
-                .environmentObject(cloudSync)
-                .environmentObject(graphicsTranslator)
-                .environmentObject(windowsDependencies)
-                .environmentObject(dlcStore)
-        case .installed:
-            LibraryPane(selectedGameAppID: $selectedGameAppID, installedOnly: true)
-                .environmentObject(foundGames)
-                .environmentObject(depotController)
-                .environmentObject(downloads)
-                .environmentObject(goldberg)
-                .environmentObject(cloudSync)
-                .environmentObject(graphicsTranslator)
-                .environmentObject(windowsDependencies)
-                .environmentObject(dlcStore)
-        case .downloads:
-            DownloadsPane()
-                .environmentObject(depotController)
-                .environmentObject(downloads)
-        case .runtimes:
-            RuntimeManagerView()
-                .environmentObject(graphicsTranslator)
         }
     }
 

@@ -33,10 +33,12 @@ struct InstalledDetailsView: View {
             }
             .padding(.top, 6)
 
-            Text("Changing the runtime swaps the Wine build this game runs on. Install additional Wine or GPTK versions from Runtime Manager in the sidebar.")
+            Text(RuntimeStrings.runtimeRowCaption)
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
+            OpenRuntimesButton()
+                .controlSize(.small)
         }
     }
 }
