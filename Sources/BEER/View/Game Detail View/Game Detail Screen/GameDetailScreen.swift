@@ -3,6 +3,15 @@ import SwiftUI
 struct GameDetailScreen: View {
     let onBack: () -> Void
     @StateObject private var model: GameDetailViewModel
+    @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = false
+    @AppStorage(AppearancePreferences.layoutKey) private var layout: GamePageLayout = .overlay
+    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = GamePageStat.encode(GamePageStat.defaultShown)
+
+    /// Remeasured when the game is installed, removed, or the stat turned on.
+    private var sizeProbeID: String? {
+        guard GamePageStat.decode(shownStats).contains(.size), let bottle = model.installedBottle else { return nil }
+        return "\(bottle.id)-\(model.installLocation?.url?.path ?? "")"
+    }
 
     init(game: SteamLibraryGame, onBack: @escaping () -> Void, dependencies: GameDetailDependencies) {
         self.onBack = onBack
@@ -11,24 +20,35 @@ struct GameDetailScreen: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                GameHeroView(model: model)
-                if let download = model.download, download.isActive {
-                    Divider()
-                    DownloadProgressView(entry: download)
+            VStack(alignment: .leading, spacing: 0) {
+                // Steam-style runs edge to edge and fades into the page, so
+                // it sits outside the margin with no divider under it.
+                if layout == .steam { GameHeroView(model: model) }
+                VStack(alignment: .leading, spacing: 22) {
+                    if layout == .overlay { GameHeroView(model: model) }
+                    if let download = model.download, download.isActive {
+                        if layout == .overlay { Divider() }
+                        DownloadProgressView(entry: download)
+                    }
+                    if let bottle = model.installedBottle {
+                        if layout == .overlay { Divider() }
+                        InstalledDetailsView(bottle: bottle, model: model)
+                    }
                 }
-                if let bottle = model.installedBottle {
-                    Divider()
-                    InstalledDetailsView(bottle: bottle, model: model)
-                }
+                .padding(GameBannerLayout.pageInset)
             }
-            .padding(28)
             .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .background {
+            if showsBackdrop { GamePageBackdrop(game: model.game) }
         }
         // Structured, so navigating away actually cancels the Steam query
         // instead of leaving a detached logon running to completion.
         .task(id: model.appID) { await model.loadDLC(force: false) }
         .task(id: model.patchStatusProbeID) { await model.refreshPatchStatus() }
+        .task(id: sizeProbeID) {
+            if sizeProbeID != nil { await model.measureInstalledSize() }
+        }
         // Plugging a drive in or pulling it out updates any open sheet's list.
         .onReceive(model.drives.$drives.dropFirst()) { _ in model.drivesChanged() }
         .onReceive(GameLinkRouter.shared.$pendingLaunchAppID.receive(on: DispatchQueue.main)) { appID in

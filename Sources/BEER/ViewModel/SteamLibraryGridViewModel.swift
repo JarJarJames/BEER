@@ -19,7 +19,8 @@ final class SteamLibraryGridViewModel: ObservableObject {
     func filteredGames(
         from games: [SteamLibraryGame],
         installedBottleIDs: Set<UUID>,
-        installedOnly: Bool
+        installedOnly: Bool,
+        sortOrder: LibrarySortOrder
     ) -> [SteamLibraryGame] {
         var base = installedOnly
             ? games.filter { isInstalled($0, installedBottleIDs: installedBottleIDs) }
@@ -30,12 +31,24 @@ final class SteamLibraryGridViewModel: ObservableObject {
             base = base.filter { $0.name.lowercased().contains(q) || String($0.appID).contains(q) }
         }
 
-        // Installed games first, then alphabetical — so the handful you've
-        // installed are always at the top of a 300-game library.
         return base.sorted { a, b in
-            let ai = isInstalled(a, installedBottleIDs: installedBottleIDs)
-            let bi = isInstalled(b, installedBottleIDs: installedBottleIDs)
-            if ai != bi { return ai && !bi }
+            switch sortOrder {
+            case .installedFirst:
+                // So the handful you've installed are always at the top of a
+                // 300-game library.
+                let ai = isInstalled(a, installedBottleIDs: installedBottleIDs)
+                let bi = isInstalled(b, installedBottleIDs: installedBottleIDs)
+                if ai != bi { return ai }
+            case .name:
+                break
+            case .recentlyPlayed:
+                // Never-played games go last.
+                let ad = a.lastPlayed ?? .distantPast, bd = b.lastPlayed ?? .distantPast
+                if ad != bd { return ad > bd }
+            case .mostPlayed:
+                let am = a.playtimeMinutes ?? 0, bm = b.playtimeMinutes ?? 0
+                if am != bm { return am > bm }
+            }
             return a.name.localizedCaseInsensitiveCompare(b.name) == .orderedAscending
         }
     }

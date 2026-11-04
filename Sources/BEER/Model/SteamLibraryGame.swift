@@ -37,14 +37,6 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
         customImagePath.map { URL(fileURLWithPath: $0) }
     }
 
-    /// Steam-style play time, e.g. "43.4 hours". Nil when the account has never
-    /// played the game.
-    var playtimeDisplay: String? {
-        guard let minutes = playtimeMinutes, minutes > 0 else { return nil }
-        if minutes < 60 { return "\(minutes) minute\(minutes == 1 ? "" : "s")" }
-        return String(format: "%.1f hours", Double(minutes) / 60)
-    }
-
     var headerImage: URL? {
         if effectiveIsNonSteam { return customImageURL }
         return URL(string: headerImageURL ?? "https://cdn.akamai.steamstatic.com/steam/apps/\(appID)/header.jpg")

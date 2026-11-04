@@ -65,5 +65,10 @@ struct BEERApp: App {
                 }
         }
         .windowStyle(.titleBar)
+
+        Settings {
+            SettingsView()
+                .preferredColorScheme(.dark)
+        }
     }
 }

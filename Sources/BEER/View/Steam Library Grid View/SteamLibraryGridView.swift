@@ -15,17 +15,33 @@ struct SteamLibraryGridView: View {
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?
+    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle: LibraryCardStyle = .wide
+    @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = LibraryGridLayout.defaultCardWidth
+    @AppStorage(AppearancePreferences.captionKey) private var caption: LibraryCaption = .appID
+    @AppStorage(AppearancePreferences.showsNamesKey) private var showsNames = true
+    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat: PlaytimeFormat = .decimalHours
+    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat: LastPlayedFormat = .date
+    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder: LibrarySortOrder = .installedFirst
+    /// The scroll area's width, so no card is made wider than the view.
+    @State private var gridWidth: CGFloat = 0
 
-    private let columns: [GridItem] = [
-        GridItem(.adaptive(minimum: 220, maximum: 280), spacing: 18, alignment: .top)
-    ]
+    private var columns: [GridItem] {
+        if cardStyle == .list {
+            return [GridItem(.flexible())]
+        }
+        let width = LibraryGridLayout.cardWidth(style: cardStyle, chosen: cardWidth,
+                                                available: gridWidth - LibraryGridLayout.gridPadding * 2)
+        return [GridItem(.adaptive(minimum: width.lowerBound, maximum: width.upperBound),
+                         spacing: LibraryGridLayout.gridSpacing, alignment: .top)]
+    }
 
     var body: some View {
         let installedIDs = Set(bottles.bottles.map(\.id))
         let driveMissingIDs = Set(bottles.bottles.filter {
             $0.gameDrive != nil && bottles.installLocation(of: $0).missingDriveName != nil
         }.map(\.id))
-        let games = model.filteredGames(from: library.games, installedBottleIDs: installedIDs, installedOnly: installedOnly)
+        let games = model.filteredGames(from: library.games, installedBottleIDs: installedIDs, installedOnly: installedOnly,
+                                         sortOrder: sortOrder)
 
         VStack(spacing: 0) {
             LibraryToolbarView(
@@ -61,18 +77,24 @@ struct SteamLibraryGridView: View {
                 }
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, spacing: 18) {
+                    LazyVGrid(columns: columns,
+                              spacing: cardStyle == .list ? LibraryGridLayout.listSpacing : LibraryGridLayout.gridSpacing) {
                         ForEach(games) { game in
                             GameCardView(
                                 game: game,
                                 isInstalled: model.isInstalled(game, installedBottleIDs: installedIDs),
                                 isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
+                                style: cardStyle,
+                                cardWidth: cardWidth,
+                                caption: caption.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
+                                showsName: showsNames,
                                 action: { onSelectGame(game) }
                             )
                         }
                     }
-                    .padding(22)
+                    .padding(LibraryGridLayout.gridPadding)
                 }
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             }
         }
         .sheet(isPresented: Binding(get: { reviewingDriveID != nil }, set: { if !$0 { reviewingDriveID = nil } })) {

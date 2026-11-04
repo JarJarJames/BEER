@@ -7,6 +7,8 @@ struct LibraryToolbarView: View {
     var onAddNonSteamGame: () -> Void = {}
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var auth: SteamAuthStore
+    @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle: LibraryCardStyle = .wide
+    @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder: LibrarySortOrder = .installedFirst
 
     var body: some View {
         HStack(spacing: 10) {
@@ -18,6 +20,34 @@ struct LibraryToolbarView: View {
             Text(summary)
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            Picker(AppearanceStrings.cardStyle, selection: $cardStyle) {
+                ForEach(LibraryCardStyle.allCases) { style in
+                    Image(systemName: style.systemImage)
+                        .help(style.label)
+                        .tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            Menu {
+                Picker(AppearanceStrings.sortOrder, selection: $sortOrder) {
+                    ForEach(LibrarySortOrder.allCases) { Text($0.label).tag($0) }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Label(AppearanceStrings.sortOrder, systemImage: "arrow.up.arrow.down")
+                    .labelStyle(.iconOnly)
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
+            .help(AppearanceStrings.sortOrder)
+            // Opens the Settings window, where the rest of the look is set.
+            SettingsLink {
+                Label(AppearanceStrings.customize, systemImage: "paintbrush")
+            }
+            .labelStyle(.iconOnly)
+            .help(AppearanceStrings.customize)
             Button(action: onAddNonSteamGame) {
                 Label("Add Non-Steam Game", systemImage: "plus")
             }
