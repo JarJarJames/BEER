@@ -66,6 +66,10 @@ final class GameDetailViewModel: ObservableObject {
     @Published var moveIsError: Bool = false
     var installSpaceCheck = InstallSpaceCheck()
     @Published var isShowingShortcutIcon: Bool = false
+    @Published var isShowingArtwork: Bool = false
+    @Published var artworkError: String?
+    /// The installed game's folder size, once measured for the Size stat.
+    @Published var installedBytes: Int64?
     @Published var patchStatusMessage: String?
     @Published var patchStatusIsError: Bool = false
     @Published var isPatching: Bool = false

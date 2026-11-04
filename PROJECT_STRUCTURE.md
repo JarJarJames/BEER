@@ -89,7 +89,7 @@ These follow [Microsoft's C# coding conventions](https://learn.microsoft.com/dot
 
 ## Views (`View/`)
 
-Views mirror the **app's navigation**: `ContentView` is the shell (sidebar in `Main Shell View/`, `Library Pane/`, `Steam Account Bar/`), and each screen the shell presents gets a folder directly under `View/`.
+Views mirror the **app's navigation**: `ContentView` is the shell (top bar in `Main Shell View/`, with `Library Pane/`, `Steam Account Menu/` and `Downloads Toolbar Button/`; the Settings window is `Settings View/`), and each screen the shell presents gets a folder directly under `View/`.
 
 ```
 View/

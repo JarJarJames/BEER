@@ -5,8 +5,83 @@ struct GameHeroView: View {
 
     private var game: SteamLibraryGame { model.game }
 
+    @AppStorage(AppearancePreferences.bannerHeightKey) private var bannerHeight = AppearanceDefaults.bannerHeight
+    @AppStorage(AppearancePreferences.titleScaleKey) private var titleScale = AppearanceDefaults.titleScale
+    @AppStorage(AppearancePreferences.layoutKey) private var layout = AppearanceDefaults.layout
+    @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = AppearanceDefaults.shownStats
+    @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
+    @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
+
+    private var stats: [GameStat] {
+        GamePageStat.stats(GamePageStat.decode(shownStats), for: game, installedBytes: model.installedBytes,
+                           playtime: playtimeFormat, lastPlayed: lastPlayedFormat)
+    }
+
     var body: some View {
+        switch layout {
+        case .overlay: overlayHero
+        case .steam: steamHero
+        }
+    }
+
+    /// The original look: everything on the art, in a rounded card.
+    private var overlayHero: some View {
+        banner { details }
+            .clipped()
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay {
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.white.opacity(0.10), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
+    }
+
+    /// Like Steam's game pages: the art runs edge to edge and fades into the
+    /// page, and Play and the stats sit on a see-through strip across its
+    /// bottom, with the art still showing behind them. No card, no border.
+    private var steamHero: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            banner { logo.padding(.horizontal, GameBannerLayout.pageInset).padding(.vertical, 26) }
+            GameStatBar(model: model, stats: stats)
+        }
+        .background(alignment: .top) {
+            SteamHeroArtwork(game: game)
+                .overlay {
+                    // Just enough behind the logo to keep a light one readable.
+                    LinearGradient(colors: [.black.opacity(0.3), .clear], startPoint: .leading, endPoint: .center)
+                }
+                .mask {
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: GameBannerLayout.fadeStart),
+                            .init(color: .clear, location: 1)
+                        ],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                }
+        }
+        .clipped()
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// The banner's height from the slider, or taller if `content` needs it,
+    /// with `content` at its bottom left. The art is never a sibling here:
+    /// filling a shape other than its own, it's bigger than the banner, and in
+    /// a stack it would widen the banner past the window.
+    private func banner(@ViewBuilder _ content: () -> some View) -> some View {
         ZStack(alignment: .bottomLeading) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .aspectRatio(1 / CGFloat(bannerHeight), contentMode: .fit)
+            content()
+        }
+        .background { if layout == .overlay { artwork } }
+    }
+
+    private var artwork: some View {
+        ZStack {
             SteamHeroArtwork(game: game)
 
             LinearGradient(
@@ -24,44 +99,37 @@ struct GameHeroView: View {
                 startPoint: .leading,
                 endPoint: .trailing
             )
+        }
+    }
 
-            VStack(alignment: .leading, spacing: 10) {
-                SteamLibraryLogo(game: game)
-                    .frame(maxWidth: 420, maxHeight: 150, alignment: .leading)
+    private var logo: some View {
+        SteamLibraryLogo(game: game, scale: CGFloat(titleScale))
+            .frame(maxWidth: GameBannerLayout.logoMaxWidth * CGFloat(titleScale),
+                   maxHeight: GameBannerLayout.logoMaxHeight * CGFloat(titleScale), alignment: .leading)
+    }
 
-                HStack(spacing: 12) {
-                    if game.effectiveIsNonSteam {
-                        Label("Non-Steam", systemImage: "gamecontroller")
-                    } else {
-                        Label("appID \(game.appID)", systemImage: "number")
-                    }
-                    if let playtime = game.playtimeDisplay {
-                        Label(playtime, systemImage: "clock")
-                    }
-                    if model.installedBottle != nil {
-                        Label("Installed", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Label("Not installed", systemImage: "circle.dashed")
-                            .foregroundStyle(.white.opacity(0.78))
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.78))
+    private var details: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            logo
+            overlayStats
+            GameActionRow(model: model)
+        }
+        .padding(26)
+        .environment(\.colorScheme, .dark)
+    }
 
-                GameActionRow(model: model)
+    private var overlayStats: some View {
+        HStack(spacing: 12) {
+            ForEach(stats) { Label($0.inline, systemImage: $0.systemImage) }
+            if model.installedBottle != nil {
+                Label("Installed", systemImage: "checkmark.circle.fill")
+                    .foregroundStyle(.green)
+            } else {
+                Label("Not installed", systemImage: "circle.dashed")
+                    .foregroundStyle(.white.opacity(0.78))
             }
-            .padding(26)
-            .environment(\.colorScheme, .dark)
         }
-        .frame(maxWidth: .infinity)
-        .aspectRatio(1920.0 / 620.0, contentMode: .fit)
-        .clipped()
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay {
-            RoundedRectangle(cornerRadius: 12)
-                .stroke(.white.opacity(0.10), lineWidth: 1)
-        }
-        .shadow(color: .black.opacity(0.24), radius: 18, y: 8)
+        .font(.callout)
+        .foregroundStyle(.white.opacity(0.78))
     }
 }
