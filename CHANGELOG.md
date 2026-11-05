@@ -2,9 +2,26 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.8.0 — 2026-11-05
 
 ### Added
+- **Appearance settings.** A Settings window (⌘, or the paintbrush in the
+  library bar) has an Appearance tab. Library: card style (Wide, Cover or
+  List), a card size slider, what shows under each card, and sort order
+  (Installed First, Name, Recently Played, Most Played). Game page: an
+  Overlay or Steam-style layout, banner height and title size sliders, and
+  an optional blurred art backdrop. Each stat on the game page (App ID,
+  last played, play time, size on disk) can be turned on or off, and play
+  time and last-played have a choice of formats. Each section has Reset to
+  Defaults.
+- **Favorites.** Star a game from its card's right-click menu or the game
+  page's ⋯ menu. Favorites stay at the top of the library whatever the sort.
+- **Hide games.** Hidden games leave All Games and Installed. A Hidden
+  filter appears while any game is hidden.
+- **Custom artwork.** Pick your own cover, banner and logo for any game.
+  BEER keeps a copy, so moving or deleting the original doesn't lose it, and
+  **Use Steam's** puts Steam's back. Favorites, hidden games and artwork
+  survive library refreshes.
 - **GPTK 4 runtime, downloadable in BEER.** BEER now has its own GPTK
   build: CrossOver 26's open-source Wine with Apple's D3DMetal 4, plus
   GStreamer (game videos and audio), Wine Mono (.NET) and Wine Gecko. The
@@ -18,7 +35,29 @@ Notable changes to BEER. Versions follow the GitHub releases.
 - **Runtime downloads show progress.** A bar with the megabytes downloaded
   replaces the spinner, so a slow download no longer looks frozen.
 
+### Changed
+- **A new default look.** The library shows cover art with nothing under
+  it, and the game page is Steam-style: big art fading into the page, the
+  logo, Play, and last played and play time ("2 days ago", "99h 39m"), over a
+  blurred copy of the art. The old wide cards and overlay page are a click
+  away in Appearance.
+- **A top bar replaces the sidebar.** Downloads (with a progress ring while
+  installing) and your Steam account (status and Sign Out) sit in the
+  top-right corner. All Games, Installed and Hidden are a switch in the
+  library's own bar.
+- **Runtimes moved to Settings.** The Runtime Manager is now the Runtimes
+  tab of the Settings window, and places that pointed to the sidebar have an
+  **Open Runtimes…** button.
+- **One ⋯ menu on the game page.** A round ⋯ beside Play, on every game,
+  holds Favorite, Hide, custom artwork, and the existing file, shortcut and
+  uninstall items.
+
 ### Fixed
+- **Game page freezing with a mouse connected.** With a mouse, macOS gives
+  the scroll bar its own strip. At some window sizes, showing the bar made
+  the page short enough to hide it, and hiding it made the page tall enough
+  to show it again, forever, freezing BEER. The game page's scroll bar now
+  floats over the page, as it does with a trackpad.
 - **Adding found games with no runtime installed.** The Games Found sheet's
   Add button did nothing when no Wine runtime was installed. The sheet now
   says so, offers **Download GPTK**, and enables Add once it's installed.
