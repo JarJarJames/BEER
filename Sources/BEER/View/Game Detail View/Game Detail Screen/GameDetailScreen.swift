@@ -45,9 +45,6 @@ struct GameDetailScreen: View {
         .background {
             if showsBackdrop { GamePageBackdrop(game: model.game) }
         }
-        .background {
-            if showsBackdrop { GamePageBackdrop(game: model.game) }
-        }
         // Structured, so navigating away actually cancels the Steam query
         // instead of leaving a detached logon running to completion.
         .task(id: model.appID) { await model.loadDLC(force: false) }
