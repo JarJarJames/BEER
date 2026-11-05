@@ -2,6 +2,39 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Added
+- **GPTK 4 runtime, downloadable in BEER.** BEER now has its own GPTK
+  build: CrossOver 26's open-source Wine with Apple's D3DMetal 4, plus
+  GStreamer (game videos and audio), Wine Mono (.NET) and Wine Gecko. The
+  newer Wine fixes games GPTK 3.0 couldn't start, such as Unity games
+  needing newer mouse functions and some 32-bit games. On macOS 15 or later
+  it's listed first in the Runtimes tab and new games use it; older Macs
+  keep Gcenx's GPTK 3.0. `scripts/build_gptk_runtime.sh` builds it.
+- **Download a runtime from the game page.** When no runtime is installed,
+  the game page and the Add Non-Steam Game sheet offer **Download GPTK**
+  right there instead of sending you to Settings.
+- **Runtime downloads show progress.** A bar with the megabytes downloaded
+  replaces the spinner, so a slow download no longer looks frozen.
+
+### Fixed
+- **Adding found games with no runtime installed.** The Games Found sheet's
+  Add button did nothing when no Wine runtime was installed. The sheet now
+  says so, offers **Download GPTK**, and enables Add once it's installed.
+- **Games whose Wine runtime moved or disappeared.** A bottle remembered
+  its runtime's exact path, so a runtime re-downloaded with a different
+  folder layout broke every game on it with no explanation. Bottles now
+  follow their runtime when its files move within its folder (at startup,
+  after a download, and before every launch). When the runtime is gone
+  entirely, the game page says so in place of Play and offers to switch to
+  an installed runtime or download GPTK, and launching explains why it
+  can't start.
+
+### Removed
+- `scripts/install_gptk4.sh`, which put D3DMetal 4 on GPTK 3.0's older Wine.
+  The downloadable runtime replaces it.
+
 ## 0.7.0 — 2026-11-03
 
 ### Added

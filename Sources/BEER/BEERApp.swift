@@ -67,6 +67,11 @@ struct BEERApp: App {
                         )
                     }
                 }
+                // A runtime downloaded or moved while BEER is open: bottles
+                // whose runtime's files moved follow them.
+                .onChange(of: detector.candidates) {
+                    Task { await store.relinkMovedRuntimes() }
+                }
         }
         .windowStyle(.titleBar)
 
