@@ -38,6 +38,9 @@ struct GameDetailScreen: View {
                 .padding(GameBannerLayout.pageInset)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
+            // The page's height follows its width, so its scroll bar must
+            // never take width; see `OverlayScrollers`.
+            .background(OverlayScrollers())
         }
         .background {
             if showsBackdrop { GamePageBackdrop(game: model.game) }
