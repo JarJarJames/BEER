@@ -40,14 +40,17 @@ original author in the loop.
 ## Releases
 
 - Versions are tagged `vX.Y.Z` (loose semantic versioning).
-- **Every stable release has at least one nightly first.** A nightly is built
-  from `dev`, tagged `vX.Y.Z-nightly.N` (N counts up from 1 for each nightly
-  of that version), and published as a GitHub **pre-release** that is not
-  marked latest. Its notes open with a line saying it's a nightly and link the
-  current stable release.
-- **A stable release** happens after the nightly has been tested: merge `dev`
-  into `master` with a merge commit (not a squash), move the `## Unreleased`
-  changelog heading to `## X.Y.Z — <date>`, and tag `vX.Y.Z` on `master`.
+- **0.x releases go straight to stable.** Every 0.x version is already a
+  pre-release, so there are no nightlies before 1.0.0.
+- **A stable release:** merge `dev` into `master` with a merge commit (not a
+  squash), move the `## Unreleased` changelog heading to `## X.Y.Z — <date>`,
+  and tag `vX.Y.Z` on `master`.
+- **From 1.0.0 on, every stable release has at least one nightly first.** A
+  nightly is built from `dev`, tagged `vX.Y.Z-nightly.N` (N counts up from 1
+  for each nightly of that version), and published as a GitHub
+  **pre-release** that is not marked latest. Its notes open with a line saying
+  it's a nightly and link the current stable release. The stable release
+  follows once the nightly has been tested.
 - Both kinds are built with `./scripts/build_app.sh <version>` (compiles,
   bundles the CloudSync helper, ad-hoc signs, zips) and published via
   `gh release create` with the `BEER.zip` attached. Add `--prerelease

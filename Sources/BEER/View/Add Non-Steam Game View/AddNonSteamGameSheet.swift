@@ -99,9 +99,13 @@ struct AddNonSteamGameSheet: View {
             }
 
             if !model.hasRuntime {
-                Text("No Wine runtime available. Open Runtime Manager in the sidebar.")
-                    .font(.caption)
-                    .foregroundStyle(.orange)
+                HStack {
+                    Text(RuntimeStrings.noRuntime)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    InstallRuntimeButton()
+                        .controlSize(.small)
+                }
             }
 
             HStack {

@@ -135,9 +135,13 @@ sealed partial class PresenceSession
         stop.Cancel();
         await keepalive;
 
+        // Retract the game, but never set the persona Offline here. Persona
+        // state belongs to the account, not this session: Offline signs every
+        // device out of Friends & Chat, so quitting BEER knocked the user's
+        // Steam client and phone offline too. Logging off is enough; Steam
+        // drops this session and the others keep their status.
         SetPlaying(0);
-        _friends.SetPersonaState(EPersonaState.Offline);
-        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = "retracted and going offline" });
+        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = "retracted" });
         // Let the retraction reach the CM before the caller disconnects the
         // socket underneath it.
         await Task.Delay(TimeSpan.FromSeconds(1));

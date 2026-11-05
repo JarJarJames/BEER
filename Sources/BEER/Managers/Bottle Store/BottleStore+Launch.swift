@@ -10,6 +10,7 @@ extension BottleStore {
     /// `configureDisplayMode` applies the selected Wine Mac driver resolution
     /// mode before the game starts.
     func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
+        guard let bottle = await withAvailableRuntime(bottle) else { return }
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
         await installSteamRedistributables(bottle)
         await configureControllers(bottle)

@@ -19,7 +19,7 @@ struct RuntimeReleaseRow: View {
             }
             Spacer()
             if busy {
-                ProgressView().controlSize(.small)
+                RuntimeInstallProgress()
             } else if installed {
                 Label("Installed", systemImage: "checkmark.circle.fill")
                     .font(.caption).foregroundStyle(.green)

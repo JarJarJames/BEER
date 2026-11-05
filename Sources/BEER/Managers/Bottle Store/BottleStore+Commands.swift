@@ -23,6 +23,10 @@ extension BottleStore {
         workingDirectory: URL? = nil
     ) async -> Int32? {
         guard allowWhileActive || !activeBottleIDs.contains(bottle.id) else { return nil }
+        // Nothing can be running on a runtime that's gone, so stopping says nothing.
+        var quiet = false
+        if case .winebootKill = mode { quiet = true }
+        guard let bottle = await withAvailableRuntime(bottle, quiet: quiet) else { return nil }
 
         activeBottleIDs.insert(bottle.id)
         appendLog("\(operation)...", bottleID: bottle.id)

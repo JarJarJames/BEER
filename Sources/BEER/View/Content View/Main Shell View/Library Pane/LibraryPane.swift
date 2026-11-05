@@ -2,7 +2,7 @@ import SwiftUI
 
 struct LibraryPane: View {
     @Binding var selectedGameAppID: Int?
-    var installedOnly: Bool = false
+    @Binding var filter: LibraryFilter
     @EnvironmentObject private var library: SteamLibraryStore
 
     var body: some View {
@@ -15,7 +15,7 @@ struct LibraryPane: View {
         } else {
             SteamLibraryGridView(
                 onSelectGame: { selectedGameAppID = $0.appID },
-                installedOnly: installedOnly
+                filter: $filter
             )
         }
     }

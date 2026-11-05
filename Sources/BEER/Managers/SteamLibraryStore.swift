@@ -91,6 +91,9 @@ final class SteamLibraryStore: ObservableObject {
                 updated.installedBottleID = current.installedBottleID
                 updated.clientIconURL = current.clientIconURL
                 updated.shortcutIcon = current.shortcutIcon
+                updated.isFavorite = current.isFavorite
+                updated.isHidden = current.isHidden
+                updated.customArt = current.customArt
                 return updated
             }
             return fresh
@@ -188,6 +191,30 @@ final class SteamLibraryStore: ObservableObject {
         if let path = game.customImagePath {
             try? FileManager.default.removeItem(atPath: path)
         }
+        game.customArt?.paths.forEach { CustomArtFiles.remove(path: $0) }
+        persist()
+    }
+
+    func setFavorite(_ isFavorite: Bool, appID: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
+        games[index].isFavorite = isFavorite ? true : nil
+        persist()
+    }
+
+    func setHidden(_ isHidden: Bool, appID: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
+        games[index].isHidden = isHidden ? true : nil
+        persist()
+    }
+
+    /// Points one piece of a game's art at a copy in `AppPaths.customArtDirectory`,
+    /// or back to Steam's with nil. The copy it replaces is deleted.
+    func setCustomArt(_ path: String?, slot: GameArtSlot, appID: Int) {
+        guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
+        var art = games[index].customArt ?? CustomGameArt()
+        if let old = art.path(for: slot), old != path { CustomArtFiles.remove(path: old) }
+        art.setPath(path, for: slot)
+        games[index].customArt = art.isEmpty ? nil : art
         persist()
     }
 

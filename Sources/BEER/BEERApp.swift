@@ -13,6 +13,9 @@ struct BEERApp: App {
     @StateObject private var presence = SteamPresenceStore()
     @StateObject private var drives = InstallVolumeMonitor()
     @StateObject private var mover = GameMover()
+    /// Here rather than in the main window: the Settings window's Runtimes
+    /// tab needs it too.
+    @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
 
     var body: some Scene {
         WindowGroup {
@@ -26,6 +29,7 @@ struct BEERApp: App {
                 .environmentObject(presence)
                 .environmentObject(drives)
                 .environmentObject(mover)
+                .environmentObject(graphicsTranslator)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -63,7 +67,20 @@ struct BEERApp: App {
                         )
                     }
                 }
+                // A runtime downloaded or moved while BEER is open: bottles
+                // whose runtime's files moved follow them.
+                .onChange(of: detector.candidates) {
+                    Task { await store.relinkMovedRuntimes() }
+                }
         }
         .windowStyle(.titleBar)
+
+        Settings {
+            SettingsView()
+                .environmentObject(detector)
+                .environmentObject(runtimeInstaller)
+                .environmentObject(graphicsTranslator)
+                .preferredColorScheme(.dark)
+        }
     }
 }

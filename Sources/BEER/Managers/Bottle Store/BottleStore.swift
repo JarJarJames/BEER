@@ -46,6 +46,7 @@ final class BottleStore: ObservableObject {
             if metadataChanged { await save() }
 
             loadPersistedLogs()
+            await relinkMovedRuntimes()
         } catch {
             lastError = "Could not load bottles: \(error.localizedDescription)"
         }
@@ -240,6 +241,39 @@ final class BottleStore: ObservableObject {
         updated.updatedAt = Date()
         bottles[index] = updated
         await save()
+    }
+
+    /// Points bottles whose runtime moved within its Runtimes/ folder at where
+    /// it is now, so they keep working. Bottles whose runtime is gone are left
+    /// for the player to switch (the game page offers one).
+    func relinkMovedRuntimes(in runtimesDirectory: URL = AppPaths.runtimesDirectory) async {
+        var changed = false
+        for index in bottles.indices {
+            guard let runtime = bottles[index].movedRuntime(in: runtimesDirectory) else { continue }
+            bottles[index].useRuntime(runtime)
+            bottles[index].updatedAt = Date()
+            appendLog(RuntimeStrings.runtimeRelinked(runtime.displayName), bottleID: bottles[index].id)
+            changed = true
+        }
+        if changed { await save() }
+    }
+
+    /// `bottle` as it can run now: re-linked if its runtime moved. nil when its
+    /// runtime is gone, after saying so unless `quiet`.
+    func withAvailableRuntime(_ bottle: Bottle, quiet: Bool = false) async -> Bottle? {
+        guard bottle.runtimeIsMissing else { return bottle }
+        if let runtime = bottle.movedRuntime(in: AppPaths.runtimesDirectory) {
+            await relinkMovedRuntimes()   // the stored bottle too
+            var updated = bottle
+            updated.useRuntime(runtime)
+            return updated
+        }
+        if !quiet {
+            let message = RuntimeStrings.runtimeMissingError(bottle.steamGameName ?? bottle.name, runtime: bottle.runtimeLabel)
+            appendLog(message, bottleID: bottle.id, isError: true)
+            lastError = message
+        }
+        return nil
     }
 
     /// Schedule a control-originated mutation for the next main run-loop turn.

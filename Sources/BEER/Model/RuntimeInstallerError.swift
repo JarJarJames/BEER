@@ -2,7 +2,6 @@ import Foundation
 
 enum RuntimeInstallerError: LocalizedError {
     case releaseFetchFailed
-    case assetNotFound
     case downloadFailed
     case digestMismatch
     case extractionFailed(String)
@@ -13,8 +12,6 @@ enum RuntimeInstallerError: LocalizedError {
         switch self {
         case .releaseFetchFailed:
             "Could not fetch the latest GPTK release from GitHub."
-        case .assetNotFound:
-            "The latest GPTK release does not include a downloadable .tar.xz asset."
         case .downloadFailed:
             "The GPTK runtime download failed."
         case .digestMismatch:
