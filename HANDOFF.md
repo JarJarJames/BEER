@@ -96,6 +96,31 @@ swift build && swift run BEER      # dev
 - **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/BEER.app`. A paid Apple Developer ID + notarization would remove that step.
 - **Apple Silicon only** (helper is osx-arm64; GPTK is arm64).
 
+### Releasing a GPTK runtime
+
+BEER's own GPTK runtime (CrossOver's open-source Wine + Apple's D3DMetal,
+GStreamer, Wine Mono, Wine Gecko) is built locally and published to
+https://github.com/JarJarJames/BEER-runtimes, which the Runtimes tab reads
+(`RuntimeSources`). Builds need macOS 15+ to run; older Macs get Gcenx's GPTK.
+
+1. Download Apple's Game Porting Toolkit from developer.apple.com (needs an
+   Apple ID), open its disk image, then the "Evaluation environment for
+   Windows games" image inside it. Copy that image's `redist` folder,
+   `License.rtf` and `Acknowledgements.rtf` into one folder. Re-read
+   `License.rtf`: sharing is allowed only non-commercially (§2A(iii), §2C).
+2. Run `./scripts/build_gptk_runtime.sh <that folder>/redist`. It downloads
+   and checksums everything else, builds Wine (about 20 minutes), and writes
+   `.build/gptk-runtime/gptk-<d3dmetal>-winecx-<crossover>.tar.xz`. It needs
+   Homebrew's `bison gettext freetype gnutls mingw-w64`, `scripts/build_sdl.sh`
+   run once, and Gcenx's GPTK installed in BEER (its x86_64 libraries are reused).
+3. Test the unpacked runtime: copy it into `Runtimes/GPTK-<d3dmetal>-winecx-<crossover>`
+   and play a few games on it.
+4. Publish with the tag `<d3dmetal>-winecx-<crossover>` (e.g. `4.0b3-winecx-26.3.0`),
+   so it installs into the folder named in step 3:
+   `gh release create 4.0b3-winecx-26.3.0 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0.tar.xz --repo JarJarJames/BEER-runtimes`.
+   The release notes should link CodeWeavers' source (https://www.codeweavers.com/crossover/source)
+   for the LGPL.
+
 ## 9. Debugging entry points
 
 - **Cloud sync failures:** `CloudSaveBackups/<appid>/last-sync.log` — per-file `FAIL\t<name>\t<reason>` lines + a summary. This is the first place to look.

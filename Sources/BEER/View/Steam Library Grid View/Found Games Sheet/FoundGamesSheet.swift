@@ -5,15 +5,18 @@ struct FoundGamesSheet: View {
     let driveName: String
     let games: [FoundGame]
     let isAdding: Bool
+    /// Adding gives each game a bottle, which needs a Wine runtime.
+    let hasRuntime: Bool
     let onAdd: ([FoundGame]) -> Void
     let onCancel: () -> Void
     @State private var selected: Set<String>
 
-    init(driveName: String, games: [FoundGame], isAdding: Bool,
+    init(driveName: String, games: [FoundGame], isAdding: Bool, hasRuntime: Bool,
          onAdd: @escaping ([FoundGame]) -> Void, onCancel: @escaping () -> Void) {
         self.driveName = driveName
         self.games = games
         self.isAdding = isAdding
+        self.hasRuntime = hasRuntime
         self.onAdd = onAdd
         self.onCancel = onCancel
         _selected = State(initialValue: Set(games.filter(\.canAdd).map(\.id)))
@@ -51,6 +54,16 @@ struct FoundGamesSheet: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
+            if !hasRuntime {
+                HStack {
+                    Text(RuntimeStrings.noRuntime)
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                    InstallRuntimeButton()
+                        .controlSize(.small)
+                }
+            }
+
             HStack {
                 if isAdding {
                     ProgressView().controlSize(.small)
@@ -64,7 +77,7 @@ struct FoundGamesSheet: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .keyboardShortcut(.defaultAction)
-                .disabled(selected.isEmpty || isAdding)
+                .disabled(selected.isEmpty || isAdding || !hasRuntime)
             }
         }
         .padding(24)

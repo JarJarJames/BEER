@@ -107,6 +107,7 @@ struct SteamLibraryGridView: View {
             if let group = foundGames.byDrive.first(where: { $0.drive.id == reviewingDriveID }) {
                 FoundGamesSheet(
                     driveName: group.drive.name, games: group.games, isAdding: foundGames.isAdding,
+                    hasRuntime: detector.preferredGameRuntime != nil,
                     onAdd: { picked in
                         guard let runtime = detector.preferredGameRuntime else { return }
                         Task {

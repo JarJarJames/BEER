@@ -30,14 +30,18 @@ struct GameActionRow: View {
                     Text(InstallDriveStrings.filesMissing)
                         .foregroundStyle(.white.opacity(0.78))
                 default:
-                    Button(action: { model.launch(bottle) }) {
-                        Label("Play", systemImage: "play.fill")
-                            .font(.title3.bold())
-                            .frame(minWidth: 180, minHeight: 36)
+                    if bottle.runtimeIsMissing {
+                        MissingRuntimeNotice(bottle: bottle)
+                    } else {
+                        Button(action: { model.launch(bottle) }) {
+                            Label("Play", systemImage: "play.fill")
+                                .font(.title3.bold())
+                                .frame(minWidth: 180, minHeight: 36)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
+                        .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
                 }
             } else if let entry = model.download, entry.isActive {
                 HStack(spacing: 8) {
@@ -91,7 +95,7 @@ struct GameActionRow: View {
                     Text(RuntimeStrings.noRuntime)
                         .font(.caption)
                         .foregroundStyle(.orange)
-                    OpenRuntimesButton()
+                    InstallRuntimeButton()
                 }
             }
 

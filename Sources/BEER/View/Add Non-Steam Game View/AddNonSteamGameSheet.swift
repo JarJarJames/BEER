@@ -103,7 +103,7 @@ struct AddNonSteamGameSheet: View {
                     Text(RuntimeStrings.noRuntime)
                         .font(.caption)
                         .foregroundStyle(.orange)
-                    OpenRuntimesButton()
+                    InstallRuntimeButton()
                         .controlSize(.small)
                 }
             }

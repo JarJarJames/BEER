@@ -13,12 +13,22 @@ final class RuntimeInstaller: ObservableObject {
     /// The tag currently being downloaded/installed, so the UI can show progress
     /// on the right row.
     @Published private(set) var installingTag: String?
+    /// Bytes downloaded so far while the archive downloads; nil otherwise.
+    @Published private(set) var downloadProgress: ByteProgress?
     @Published private(set) var statusMessage = "Ready"
     @Published var lastError: String?
 
-    private let releaseURL = URL(string: "https://api.github.com/repos/Gcenx/game-porting-toolkit/releases/latest")!
-    private let releasesListURL = URL(string: "https://api.github.com/repos/Gcenx/game-porting-toolkit/releases?per_page=30")!
-    private let wineBuildsURL = URL(string: "https://api.github.com/repos/Gcenx/macOS_Wine_builds/releases?per_page=8")!
+    /// Fetches a GitHub API URL. Swappable so tests can answer without the network.
+    private let fetch: (URLRequest) async throws -> (Data, URLResponse)
+    private let macOSMajorVersion: Int
+
+    init(
+        fetch: @escaping (URLRequest) async throws -> (Data, URLResponse) = { try await URLSession.shared.data(for: $0) },
+        macOSMajorVersion: Int = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+    ) {
+        self.fetch = fetch
+        self.macOSMajorVersion = macOSMajorVersion
+    }
 
     func refresh() async {
         isRefreshing = true
@@ -26,11 +36,7 @@ final class RuntimeInstaller: ObservableObject {
 
         do {
             try AppPaths.ensureBaseDirectories()
-            availableReleases = try await fetchAllGPTKReleases()
-            latestGPTK = availableReleases.first
-            // Wine builds are a best-effort extra catalog — don't fail the whole
-            // refresh if that repo's API hiccups.
-            availableWineBuilds = (try? await fetchWineBuilds()) ?? availableWineBuilds
+            try await loadCatalog()
             installedRuntime = findManagedGPTRuntime()
             statusMessage = installedRuntime == nil ? "GPTK is not installed." : "GPTK runtime is installed."
         } catch {
@@ -39,23 +45,36 @@ final class RuntimeInstaller: ObservableObject {
         }
     }
 
+    /// The downloadable GPTK and Wine builds. Network only, no disk.
+    func loadCatalog() async throws {
+        // BEER's own builds lead (and so become `latestGPTK`, the one the game
+        // page offers) where this macOS can run them. They're a best-effort
+        // extra: Gcenx's list still loads if they can't.
+        var beerReleases: [RuntimeRelease] = []
+        if macOSMajorVersion >= RuntimeSources.beerGPTKMinimumMacOS {
+            beerReleases = (try? await fetchGPTKReleases(from: RuntimeSources.beerGPTKReleases)) ?? []
+        }
+        availableReleases = beerReleases + (try await fetchGPTKReleases(from: RuntimeSources.gcenxGPTKReleases))
+        latestGPTK = availableReleases.first
+        // Wine builds are a best-effort extra catalog — don't fail the whole
+        // refresh if that repo's API hiccups.
+        availableWineBuilds = (try? await fetchWineBuilds()) ?? availableWineBuilds
+    }
+
     /// Is this release already extracted into Application Support?
     func isInstalled(_ release: RuntimeRelease) -> Bool {
         findRuntime(in: installDirectory(for: release), displayName: release.managedDisplayName) != nil
     }
 
+    /// Installs the GPTK the game page offers when no runtime is installed:
+    /// BEER's own build where this macOS can run it, else Gcenx's newest.
     func installLatestGPTK() async {
-        let release: RuntimeRelease
-        if let latestGPTK {
-            release = latestGPTK
-        } else if let fetched = try? await fetchLatestGPTKRelease() {
-            latestGPTK = fetched
-            release = fetched
-        } else {
+        if latestGPTK == nil { await refresh() }
+        guard let latestGPTK else {
             statusMessage = "Could not fetch the latest GPTK release."
             return
         }
-        await install(release)
+        await install(latestGPTK)
     }
 
     /// Download + verify + extract a specific GPTK release into its own versioned
@@ -64,7 +83,7 @@ final class RuntimeInstaller: ObservableObject {
         guard !isInstalling else { return }
         isInstalling = true
         installingTag = release.tag
-        defer { isInstalling = false; installingTag = nil }
+        defer { isInstalling = false; installingTag = nil; downloadProgress = nil }
 
         do {
             try AppPaths.ensureBaseDirectories()
@@ -87,7 +106,9 @@ final class RuntimeInstaller: ObservableObject {
             }
 
             statusMessage = "Downloading \(release.assetName) (\(release.displaySize))..."
-            try await download(from: release.assetURL, to: archiveURL)
+            downloadProgress = ByteProgress(received: 0, expected: release.size)
+            try await download(from: release.assetURL, to: archiveURL, expectedSize: release.size)
+            downloadProgress = nil
 
             if let digest = release.digest, digest.hasPrefix("sha256:") {
                 statusMessage = "Verifying archive..."
@@ -125,13 +146,7 @@ final class RuntimeInstaller: ObservableObject {
     /// (stable / devel / staging) as separate assets — we flatten them so each
     /// is its own installable entry.
     private func fetchWineBuilds() async throws -> [RuntimeRelease] {
-        var request = URLRequest(url: wineBuildsURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
-            throw RuntimeInstallerError.releaseFetchFailed
-        }
-        let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
+        let releases = try await fetchReleases(from: RuntimeSources.gcenxWineBuilds)
         var out: [RuntimeRelease] = []
         for release in releases {
             guard let htmlURL = URL(string: release.htmlURL) else { continue }
@@ -155,15 +170,18 @@ final class RuntimeInstaller: ObservableObject {
         return out
     }
 
-    private func fetchAllGPTKReleases() async throws -> [RuntimeRelease] {
-        var request = URLRequest(url: releasesListURL)
+    private func fetchReleases(from url: URL) async throws -> [GitHubRelease] {
+        var request = URLRequest(url: url)
         request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        let (data, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await fetch(request)
         guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
             throw RuntimeInstallerError.releaseFetchFailed
         }
-        let releases = try JSONDecoder().decode([GitHubRelease].self, from: data)
-        return releases.compactMap { release in
+        return try JSONDecoder().decode([GitHubRelease].self, from: data)
+    }
+
+    private func fetchGPTKReleases(from url: URL) async throws -> [RuntimeRelease] {
+        try await fetchReleases(from: url).compactMap { release in
             guard let asset = release.assets.first(where: { $0.name.hasSuffix(".tar.xz") }),
                   let assetURL = URL(string: asset.browserDownloadURL),
                   let htmlURL = URL(string: release.htmlURL) else {
@@ -182,43 +200,17 @@ final class RuntimeInstaller: ObservableObject {
         }
     }
 
-    private func fetchLatestGPTKRelease() async throws -> RuntimeRelease {
-        var request = URLRequest(url: releaseURL)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-
-        let (data, response) = try await URLSession.shared.data(for: request)
-        guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
-            throw RuntimeInstallerError.releaseFetchFailed
+    private func download(from source: URL, to destination: URL, expectedSize: Int64) async throws {
+        let response = try await FileDownload.run(from: source, to: destination) { received, expected in
+            Task { @MainActor [weak self] in
+                // A report arriving after the download finished is dropped.
+                guard let self, self.downloadProgress != nil else { return }
+                self.downloadProgress = ByteProgress(received: received, expected: expected > 0 ? expected : expectedSize)
+            }
         }
-
-        let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
-        guard let asset = release.assets.first(where: { $0.name.hasSuffix(".tar.xz") }),
-              let assetURL = URL(string: asset.browserDownloadURL),
-              let htmlURL = URL(string: release.htmlURL) else {
-            throw RuntimeInstallerError.assetNotFound
-        }
-
-        return RuntimeRelease(
-            family: .gptk,
-            tag: release.tagName,
-            name: release.name.isEmpty ? release.tagName : release.name,
-            assetName: asset.name,
-            assetURL: assetURL,
-            size: Int64(asset.size),
-            digest: asset.digest,
-            htmlURL: htmlURL
-        )
-    }
-
-    private func download(from source: URL, to destination: URL) async throws {
-        let (temporaryURL, response) = try await URLSession.shared.download(from: source)
         guard let httpResponse = response as? HTTPURLResponse, 200..<300 ~= httpResponse.statusCode else {
             throw RuntimeInstallerError.downloadFailed
         }
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.moveItem(at: temporaryURL, to: destination)
     }
 
     private func extract(archiveURL: URL, destination: URL) async throws {

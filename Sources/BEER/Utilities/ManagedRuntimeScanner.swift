@@ -67,6 +67,14 @@ enum ManagedRuntimeScanner {
         return nil
     }
 
+    /// The manifest of the BEER-built runtime `wineBinary` belongs to
+    /// (`<root>/bin/wine64` → `<root>/beer-runtime.json`); nil for any other runtime.
+    static func manifest(forWineBinary wineBinary: String) -> BEERRuntimeManifest? {
+        let root = URL(fileURLWithPath: wineBinary).deletingLastPathComponent().deletingLastPathComponent()
+        guard let data = try? Data(contentsOf: root.appendingPathComponent(BEERRuntimeManifest.fileName)) else { return nil }
+        return try? JSONDecoder().decode(BEERRuntimeManifest.self, from: data)
+    }
+
     private static func hasSiblingWineserver(_ wineBinary: URL) -> Bool {
         let sibling = wineBinary.deletingLastPathComponent().appendingPathComponent("wineserver").path
         return FileManager.default.isExecutableFile(atPath: sibling)
