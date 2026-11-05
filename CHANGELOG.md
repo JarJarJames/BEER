@@ -12,8 +12,8 @@ Notable changes to BEER. Versions follow the GitHub releases.
   Overlay or Steam-style layout, banner height and title size sliders, and
   an optional blurred art backdrop. Each stat on the game page (App ID,
   last played, play time, size on disk) can be turned on or off, and play
-  time and last-played have a choice of formats. Every option starts at the
-  old look, and each section has Reset to Defaults.
+  time and last-played have a choice of formats. Each section has Reset to
+  Defaults.
 - **Favorites.** Star a game from its card's right-click menu or the game
   page's ⋯ menu. Favorites stay at the top of the library whatever the sort.
 - **Hide games.** Hidden games leave All Games and Installed. A Hidden
@@ -36,6 +36,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   replaces the spinner, so a slow download no longer looks frozen.
 
 ### Changed
+- **A new default look.** The library shows cover art with nothing under
+  it, and the game page is Steam-style: big art fading into the page, the
+  logo, Play, and last played and play time ("2 days ago", "99h 39m"), over a
+  blurred copy of the art. The old wide cards and overlay page are a click
+  away in Appearance.
 - **A top bar replaces the sidebar.** Downloads (with a progress ring while
   installing) and your Steam account (status and Sign Out) sit in the
   top-right corner. All Games, Installed and Hidden are a switch in the

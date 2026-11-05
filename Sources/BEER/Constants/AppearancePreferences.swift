@@ -1,7 +1,7 @@
 import Foundation
 
 /// UserDefaults keys for the Appearance settings. Read with `@AppStorage`; a
-/// missing or unknown value falls back to the original look.
+/// missing or unknown value falls back to `AppearanceDefaults`.
 enum AppearancePreferences {
     static let cardStyleKey = "library.cardStyle"
     /// A wide card's width in points, from the size slider.

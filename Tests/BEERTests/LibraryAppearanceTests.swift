@@ -122,4 +122,12 @@ final class LibraryAppearanceTests: XCTestCase {
     func testUnmeasuredWidthUsesTheChosenWidth() {
         XCTAssertEqual(LibraryGridLayout.cardWidth(style: .wide, chosen: 400, available: 0).lowerBound, 400)
     }
+
+    /// Reset to Defaults must land the sliders on a position they can show.
+    func testDefaultsSitInsideTheSliders() {
+        XCTAssertTrue(LibraryGridLayout.cardWidthRange.contains(AppearanceDefaults.cardWidth))
+        XCTAssertTrue(GameBannerLayout.heightRatioRange.contains(AppearanceDefaults.bannerHeight))
+        XCTAssertTrue(GameBannerLayout.titleScaleRange.contains(AppearanceDefaults.titleScale))
+        XCTAssertEqual(GamePageStat.decode(AppearanceDefaults.shownStats), [.lastPlayed, .playtime])
+    }
 }
