@@ -1,13 +1,16 @@
 import SwiftUI
 
-// Shown before a game downloads, like Steam's install dialog: the game's size
-// and where it can go with each place's free space, with Install turned off
-// when it won't fit.
+// Shown before a game downloads, like Steam's install dialog: the game's size,
+// the DLC that come with it, and where it can go with each place's free space,
+// with Install turned off when it won't fit.
 
 struct InstallSheet: View {
     let game: SteamLibraryGame
-    /// Nil while Steam is asked.
+    /// Nil while Steam is asked. Already less the DLC left out.
     let size: InstallSize?
+    /// The DLC (app IDs) left out of the download.
+    let skippedDLC: Set<Int>
+    let onSetDLC: (_ appID: Int, _ included: Bool) -> Void
     /// Free space at the chosen place; nil while it's looked up.
     let report: InstallSpaceReport?
     let options: [InstallTargetOption]
@@ -52,6 +55,11 @@ struct InstallSheet: View {
                 }
             }
             Divider()
+
+            if let dlc = size?.dlc, !dlc.isEmpty {
+                InstallDLCList(dlc: dlc, skipped: skippedDLC, onSet: onSetDLC)
+                Divider()
+            }
 
             Text(InstallSheetStrings.installTo)
                 .font(.headline)
