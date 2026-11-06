@@ -36,6 +36,7 @@ swift test                       # run the offline Swift tests
 swift run BEER                   # run the app (a human does this to test)
 ./scripts/build_cloudsync.sh     # build the CloudSync helper and install it to App Support
 ./scripts/build_app.sh [version] # build a distributable .app + zip (bundles the helper, ad-hoc signs)
+./scripts/build_windows_helpers.sh # build the launcher hook and F4SE starter (needs mingw-w64) and install them to App Support
 dotnet test Tools/CloudSync.Tests/CloudSync.Tests.csproj -c Release  # helper's offline tests
 ```
 
