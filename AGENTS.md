@@ -36,6 +36,7 @@ swift test                       # run the offline Swift tests
 swift run BEER                   # run the app (a human does this to test)
 ./scripts/build_cloudsync.sh     # build the CloudSync helper and install it to App Support
 ./scripts/build_app.sh [version] # build a distributable .app + zip (bundles the helper, ad-hoc signs)
+./scripts/build_windows_helpers.sh # build the launcher hook and F4SE starter (needs mingw-w64) and install them to App Support
 dotnet test Tools/CloudSync.Tests/CloudSync.Tests.csproj -c Release  # helper's offline tests
 ```
 
@@ -71,6 +72,7 @@ what a fake can't cover — not the first.
 | Network downloads (icons) | `GameShortcutStore.fetch`, `ShortcutIconViewModel`'s `fetch` | `GameShortcutTests`, `ShortcutIconViewModelTests` |
 | GitHub release lists, macOS version (runtimes) | `RuntimeInstaller(fetch:macOSMajorVersion:)`; `ToolchainDetector.preferredGameRuntime(in:macOSMajorVersion:manifest:)` | `RuntimeCatalogTests`, `PreferredRuntimeTests` |
 | Large file downloads (runtimes) | `FileDownload.run(configuration:)`, given a session whose `protocolClasses` serve the bytes | `FileDownloadTests` |
+| Rosetta installed | `BottleStore.rosettaInstalled` | `RosettaCheckTests` |
 | Custom art folder | `CustomArtFiles.copy(into:)` / `remove(in:)`, pointed at a temp folder | `LibraryOrganizeTests` |
 
 The helper has its own offline xUnit tests in `Tools/CloudSync.Tests/`.

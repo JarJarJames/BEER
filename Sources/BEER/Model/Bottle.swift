@@ -54,6 +54,9 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// the Steam emulator reads, so the game is told it owns them. Optional so
     /// bottles written before the DLC manager still decode.
     var installedDLC: [InstalledDLC]? = nil
+    /// Owned DLC the user left out when the game downloaded. A resumed
+    /// download leaves them out again, and the DLC manager fetches them later.
+    var skippedDLC: [InstallableDLC]? = nil
 
     // --- Display resolution ---
     // Retina mode makes Wine expose twice the macOS point dimensions to Windows

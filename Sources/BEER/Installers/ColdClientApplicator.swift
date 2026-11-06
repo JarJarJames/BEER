@@ -12,6 +12,9 @@ import Foundation
 //   • Steam2-era games built on `Steam.dll`. gbe_fork's steam_old_lib README
 //     injects its stand-in with ForceInjectSteamClient=1.
 //   • games with no steam_api.dll that load Steam's client library directly.
+// A launcher that starts one of these itself gets its start sent through the
+// loader (see ColdClientApplicator+Launcher). With a script extender installed,
+// the loader also loads BEER's starter for it (see ScriptExtender).
 // Per README.experimental_steamclient.md, the loader also wants
 // GameOverlayRenderer(64).dll on disk, and its settings beside steamclient.dll.
 //
@@ -42,6 +45,7 @@ enum ColdClientApplicator {
         plan: SteamClientLoaderPlan,
         loaderSource: URL,
         oldSteamLibrary: URL? = nil,
+        helpers: URL? = WindowsHelpers.directory,
         writeSettings: (URL) throws -> Void = { _ in }
     ) throws -> URL {
         let fm = FileManager.default
@@ -83,6 +87,18 @@ enum ColdClientApplicator {
             }
             try fm.copyItem(at: oldSteamLibrary, to: extraFolder.appendingPathComponent("Steam.dll"))
             loadOrder.append("Steam.dll")
+        }
+        // After the stub patch: the extender hooks the game it unwrapped.
+        if let prefix = plan.scriptExtender {
+            if let helpers {
+                try fm.copyItem(at: helpers.appendingPathComponent(WindowsHelpers.scriptExtenderStarter),
+                                to: extraFolder.appendingPathComponent(WindowsHelpers.scriptExtenderStarter))
+                try "prefix=\(prefix)\n".write(to: extraFolder.appendingPathComponent(WindowsHelpers.scriptExtenderConfig),
+                                                atomically: true, encoding: .utf8)
+                loadOrder.append(WindowsHelpers.scriptExtenderStarter)
+            } else {
+                Log.install.error("\(prefix, privacy: .public) is installed, but BEER's Windows helpers aren't (run scripts/build_windows_helpers.sh); the game runs without it.")
+            }
         }
         if !loadOrder.isEmpty {
             try (loadOrder.joined(separator: "\n") + "\n")

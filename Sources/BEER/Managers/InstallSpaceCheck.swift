@@ -20,6 +20,26 @@ struct InstallSize: Equatable {
     /// Why free space can't be checked (Steam lists no size, or couldn't be
     /// asked); nil when `bytes` is known.
     let uncheckedReason: String?
+    /// Owned DLC that come down with the game, which the user can leave out.
+    var dlc: [InstallableDLC] = []
+    /// Every depot the whole download fetches; empty when Steam didn't say.
+    var depotIDs: [Int] = []
+
+    /// The size without the DLC in `skipped`.
+    func leavingOut(_ skipped: Set<Int>) -> InstallSize {
+        let saved = dlc.filter { skipped.contains($0.appID) }.compactMap(\.bytes).reduce(0, +)
+        return InstallSize(bytes: bytes.map { max($0 - saved, 0) }, uncheckedReason: uncheckedReason,
+                           dlc: dlc, depotIDs: depotIDs)
+    }
+
+    /// The depots to hand DepotDownloader with `-depot` so it skips `leftOut`.
+    /// Nil when nothing is left out (or Steam didn't list the depots), so it
+    /// picks the depots itself, as it always has.
+    func depots(leavingOut leftOut: [InstallableDLC]) -> [Int]? {
+        let skipped = Set(leftOut.flatMap(\.depotIDs))
+        guard !skipped.isEmpty, !depotIDs.isEmpty else { return nil }
+        return depotIDs.filter { !skipped.contains($0) }
+    }
 }
 
 /// The check's result with the numbers the install sheet shows.
@@ -54,10 +74,12 @@ struct InstallSpaceCheck {
     /// drive only re-runs `assess`.
     func size(appIDs: [Int], account: SteamCloudAccount) async -> InstallSize {
         do {
-            let bytes = try await client.installSize(
+            let contents = try await client.installSize(
                 appIDs: appIDs, account: account.accountName, refreshToken: account.refreshToken
             )
-            return InstallSize(bytes: bytes, uncheckedReason: bytes == nil ? DiskSpaceStrings.unknownSize : nil)
+            return InstallSize(bytes: contents.bytes,
+                               uncheckedReason: contents.bytes == nil ? DiskSpaceStrings.unknownSize : nil,
+                               dlc: contents.dlc, depotIDs: contents.depotIDs)
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return InstallSize(bytes: nil, uncheckedReason: DiskSpaceStrings.sizeCheckFailed(msg))
