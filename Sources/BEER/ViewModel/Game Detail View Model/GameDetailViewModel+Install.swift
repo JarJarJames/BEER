@@ -12,6 +12,8 @@ extension GameDetailViewModel {
     /// downloads until confirmed.
     func requestInstall() {
         guard !game.effectiveIsNonSteam, !isStartingInstall, preferredDefaultRuntime != nil else { return }
+        // Ask before the sheet: a download Wine can't run is wasted.
+        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
@@ -49,6 +51,7 @@ extension GameDetailViewModel {
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
         guard let runtime = preferredDefaultRuntime else { return }
+        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
@@ -107,7 +110,8 @@ extension GameDetailViewModel {
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:
-            //   - Reuse any bottle already claimed for this appID (skips wineboot)
+            //   - Reuse any bottle already claimed for this appID (skips wineboot
+            //     unless its first one never finished)
             //   - Otherwise create a fresh bottle + claim it immediately
             // After this point the bottle is tagged with steamAppID +
             // gameInstallStatus = .installing and knows where its files go,
@@ -119,7 +123,8 @@ extension GameDetailViewModel {
                 bottle = existing
                 installDir = existing.downloadDirectory(gameName: game.name)
                 drive = existing.gameDrive
-                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game (skipping wineboot).")
+                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game.")
+                await bottles.initializeIfNeeded(existing)
                 // Defensive: clean up any other orphans for this appID.
                 await bottles.cleanupOrphans(forAppID: game.appID, keep: existing.id)
             } else {
