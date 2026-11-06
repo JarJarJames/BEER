@@ -15,7 +15,6 @@ BEER/
 ├── Tests/BEERTests/           Offline unit tests
 ├── Tools/CloudSync/           Native Steam-client helper (C# / .NET 9 / SteamKit2)
 ├── Tools/CloudSync.Tests/     Offline xUnit tests for the helper
-├── Tools/WindowsHelpers/      Small Windows programs BEER runs in a bottle: launcher hook, F4SE starter (C, mingw-w64)
 ├── .editorconfig              C# style rules, checked in CI
 ├── Plugins/CloudSyncPrebuild/ SwiftPM build-tool plugin that rebuilds the helper
 └── scripts/                   Build and dev helper scripts

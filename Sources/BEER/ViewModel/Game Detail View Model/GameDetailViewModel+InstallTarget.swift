@@ -57,15 +57,13 @@ extension GameDetailViewModel {
         }
     }
 
-    /// Re-check free space for the chosen place, with the size Steam gave
-    /// less the DLC left out.
+    /// Re-check free space for the chosen place, with the size Steam gave.
     func assessInstallTarget() async {
         guard let size = installSize, let target = installTarget else { return }
-        let skipped = skippedDLC
         let (destination, partial) = installDestination(for: target)
-        let report = await installSpaceCheck.assess(size.leavingOut(skipped), destination: destination, partialDownload: partial)
-        // The sheet closed, or another place or DLC was picked, while this ran.
-        guard isShowingInstallSheet, installTarget?.id == target.id, skippedDLC == skipped else { return }
+        let report = await installSpaceCheck.assess(size, destination: destination, partialDownload: partial)
+        // The sheet closed, or another place was picked, while this ran.
+        guard isShowingInstallSheet, installTarget?.id == target.id else { return }
         installSpaceReport = report
     }
 }

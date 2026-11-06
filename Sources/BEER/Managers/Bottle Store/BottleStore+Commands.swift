@@ -26,8 +26,6 @@ extension BottleStore {
         // Nothing can be running on a runtime that's gone, so stopping says nothing.
         var quiet = false
         if case .winebootKill = mode { quiet = true }
-        // Without Rosetta nothing can be running to stop either.
-        guard quiet ? rosettaInstalled() : requireRosetta() else { return nil }
         guard let bottle = await withAvailableRuntime(bottle, quiet: quiet) else { return nil }
 
         activeBottleIDs.insert(bottle.id)

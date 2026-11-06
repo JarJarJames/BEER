@@ -12,8 +12,6 @@ extension GameDetailViewModel {
     /// downloads until confirmed.
     func requestInstall() {
         guard !game.effectiveIsNonSteam, !isStartingInstall, preferredDefaultRuntime != nil else { return }
-        // Ask before the sheet: a download Wine can't run is wasted.
-        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
@@ -21,8 +19,6 @@ extension GameDetailViewModel {
         }
         installSpaceReport = nil
         installSize = nil
-        // A resumed download leaves out what was left out before.
-        skippedDLC = Set(bottles.findBottle(forAppID: game.appID)?.skippedDLC?.map(\.appID) ?? [])
         prepareInstallTargets()
         isShowingInstallSheet = true
 
@@ -37,37 +33,22 @@ extension GameDetailViewModel {
     func confirmInstall() {
         guard let target = installTarget else { return }
         let checked = installSpaceReport?.verdict
-        let leftOut = installSize?.dlc.filter { skippedDLC.contains($0.appID) } ?? []
-        let depots = installSize?.depots(leavingOut: leftOut)
         isShowingInstallSheet = false
         if bottles.findBottle(forAppID: game.appID) == nil {
             UserDefaults.standard.set(target.volume?.uuid, forKey: InstallPreferences.lastDriveKey)
         }
-        // Without the depot list nothing can be left out, so none is recorded.
-        startInstall(to: target, checked: checked, leavingOut: depots == nil ? [] : leftOut, depots: depots)
-    }
-
-    /// Tick or untick a DLC in the install sheet, and re-check the space.
-    func setDLC(_ appID: Int, included: Bool) {
-        if included { skippedDLC.remove(appID) } else { skippedDLC.insert(appID) }
-        installSpaceReport = nil
-        Task { await assessInstallTarget() }
+        startInstall(to: target, checked: checked)
     }
 
     /// `checked` is the install sheet's answer, so the size isn't asked for
     /// twice; without it the check runs here. A game that already has a bottle
-    /// goes where its files already are, whatever `target` says. `depots`, when
-    /// given, is exactly what to download: everything but the `leftOut` DLC.
-    func startInstall(
-        to target: InstallTarget, checked: InstallSpace? = nil,
-        leavingOut leftOut: [InstallableDLC] = [], depots: [Int]? = nil
-    ) {
+    /// goes where its files already are, whatever `target` says.
+    func startInstall(to target: InstallTarget, checked: InstallSpace? = nil) {
         guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
         guard let runtime = preferredDefaultRuntime else { return }
-        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
@@ -126,8 +107,7 @@ extension GameDetailViewModel {
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:
-            //   - Reuse any bottle already claimed for this appID (skips wineboot
-            //     unless its first one never finished)
+            //   - Reuse any bottle already claimed for this appID (skips wineboot)
             //   - Otherwise create a fresh bottle + claim it immediately
             // After this point the bottle is tagged with steamAppID +
             // gameInstallStatus = .installing and knows where its files go,
@@ -139,8 +119,7 @@ extension GameDetailViewModel {
                 bottle = existing
                 installDir = existing.downloadDirectory(gameName: game.name)
                 drive = existing.gameDrive
-                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game.")
-                await bottles.initializeIfNeeded(existing)
+                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game (skipping wineboot).")
                 // Defensive: clean up any other orphans for this appID.
                 await bottles.cleanupOrphans(forAppID: game.appID, keep: existing.id)
             } else {
@@ -156,9 +135,6 @@ extension GameDetailViewModel {
             }
             let bottleID = bottle.id
             library.markInstalled(appID: game.appID, bottleID: bottleID)
-            var chosen = bottles.live(bottle)
-            chosen.skippedDLC = leftOut.isEmpty ? nil : leftOut
-            await bottles.update(chosen)
 
             do {
                 let result = try await depotCtl.installGame(
@@ -166,7 +142,6 @@ extension GameDetailViewModel {
                     gameName: game.name,
                     installDir: installDir,
                     auth: steamAccount,
-                    depots: depots,
                     events: downloads.consume(appID: game.appID)
                 )
 

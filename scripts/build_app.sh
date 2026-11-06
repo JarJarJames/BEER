@@ -6,7 +6,6 @@ set -euo pipefail
 #   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
 #     the .app so a fresh machine needs no extra setup
 #   • builds the controller fix (needs mingw-w64) and bundles both halves
-#   • builds BEER's Windows helpers (needs mingw-w64)
 #   • ad-hoc code-signs the bundle so it launches
 #   • zips it for download (.build/BEER.zip)
 #
@@ -45,10 +44,6 @@ echo "==> Building SDL2 for Wine's controller driver…"
 # Data the app copies into runtimes, so it lives in Resources.
 # ControllerSupport.sdlLibraryURL looks there first.
 "$ROOT_DIR/scripts/build_sdl.sh" "$RESOURCES" >/dev/null
-
-echo "==> Building BEER's Windows helpers…"
-# Copied into games that need them; WindowsHelpers.directory looks here first.
-"$ROOT_DIR/scripts/build_windows_helpers.sh" "$RESOURCES" >/dev/null
 
 cat > "$CONTENTS/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

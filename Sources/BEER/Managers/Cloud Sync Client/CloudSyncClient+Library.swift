@@ -60,28 +60,11 @@ extension CloudSyncClient {
     /// Bytes a Windows install of `appIDs` takes on disk together, counting
     /// DLC content the account owns, or nil when Steam lists no size (see
     /// `InstallSize` in Tools/CloudSync/Steam). One Steam logon for the lot.
-    func installSize(appIDs: [Int], account: String, refreshToken: String) async throws -> InstallContents {
-        Self.installContents(from: try await runOnce(
+    func installSize(appIDs: [Int], account: String, refreshToken: String) async throws -> Int64? {
+        Self.installBytes(from: try await runOnce(
             args: ["installsize", "--appids", appIDs.map(String.init).joined(separator: ",")],
             account: account, refreshToken: refreshToken
         ))
-    }
-
-    static func installContents(from json: [String: Any]) -> InstallContents {
-        let dlc = (json["dlc"] as? [[String: Any]] ?? []).compactMap { d -> InstallableDLC? in
-            guard let appID = (d["appid"] as? NSNumber)?.intValue else { return nil }
-            return InstallableDLC(
-                appID: appID,
-                name: (d["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "DLC \(appID)",
-                bytes: installBytes(from: d),
-                depotIDs: depotIDs(d["depots"])
-            )
-        }
-        return InstallContents(bytes: installBytes(from: json), depotIDs: depotIDs(json["depots"]), dlc: dlc)
-    }
-
-    private static func depotIDs(_ value: Any?) -> [Int] {
-        (value as? [NSNumber] ?? []).map(\.intValue)
     }
 
     static func installBytes(from json: [String: Any]) -> Int64? {

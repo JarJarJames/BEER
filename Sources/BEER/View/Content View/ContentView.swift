@@ -51,14 +51,6 @@ struct ContentView: View {
         } message: {
             Text(store.lastError ?? runtimeInstaller.lastError ?? library.lastError ?? depot.lastError ?? "")
         }
-        .alert(RosettaStrings.title, isPresented: $store.isShowingRosettaPrompt) {
-            Button(RosettaStrings.install) {
-                Task { await store.installRosetta() }
-            }
-            Button(RosettaStrings.notNow, role: .cancel) {}
-        } message: {
-            Text(RosettaStrings.message)
-        }
         .task {
             await runtimeInstaller.refresh()
             if library.account.isLoggedIn {
