@@ -14,9 +14,6 @@ struct SteamClientLoaderPlan: Equatable {
     /// Keep the loader running until dismissed, for launchers that restart
     /// themselves and would otherwise come back to find no "Steam".
     let staysOpen: Bool
-    /// The script extender installed beside the exe (`f4se`), which BEER
-    /// starts in the game; see `ScriptExtender`.
-    var scriptExtender: String? = nil
 
     static func make(
         executable: URL,
@@ -35,8 +32,7 @@ struct SteamClientLoaderPlan: Equatable {
             patchesSteamStub: wrapped,
             injectsOldSteamLibrary: oldLibrary,
             injectsOverlay: injectsOverlay,
-            staysOpen: staysOpen,
-            scriptExtender: ScriptExtender.prefix(in: executable.deletingLastPathComponent())
+            staysOpen: staysOpen
         )
     }
 

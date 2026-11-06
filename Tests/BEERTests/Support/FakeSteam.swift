@@ -26,9 +26,6 @@ final class FakeSteam {
     /// What Steam lists as each app's install size. `installsize` reports the
     /// sum for the apps asked about, or no size when none of them is listed.
     var installSizes: [Int: Int64] = [:] { didSet { save() } }
-    /// The depots `installsize` lists for each app, and the owned DLC among them.
-    var installDepots: [Int: [Int]] = [:] { didSet { save() } }
-    var installDLC: [Int: [InstallableDLC]] = [:] { didSet { save() } }
     /// The hash of each app's Windows icon. `clienticon` reports none for an app missing here.
     var clientIcons: [Int: String] = [:] { didSet { save() } }
     /// Answer every command as Steam does for a revoked sign-in.
@@ -73,10 +70,6 @@ final class FakeSteam {
             "rejectedUploads": Array(rejectedUploads),
             "signInExpired": signInExpired,
             "installSizes": Dictionary(uniqueKeysWithValues: installSizes.map { (String($0.key), $0.value) }),
-            "installDepots": Dictionary(uniqueKeysWithValues: installDepots.map { (String($0.key), $0.value) }),
-            "installDLC": Dictionary(uniqueKeysWithValues: installDLC.map { app, dlc in
-                (String(app), dlc.map { ["appid": $0.appID, "name": $0.name, "bytes": $0.bytes as Any, "depots": $0.depotIDs] })
-            }),
             "clientIcons": Dictionary(uniqueKeysWithValues: clientIcons.map { (String($0.key), $0.value) }),
         ]
         // A test that can't set up its fake Steam can't mean anything.
@@ -117,9 +110,7 @@ final class FakeSteam {
         emit({"files": config["files"], "savefiles": []})
     elif cmd == "installsize":
         sizes = [config["installSizes"][str(a)] for a in call["appids"] if str(a) in config["installSizes"]]
-        emit({"bytes": sum(sizes) if sizes else None,
-              "depots": [d for a in call["appids"] for d in config["installDepots"].get(str(a), [])],
-              "dlc": [d for a in call["appids"] for d in config["installDLC"].get(str(a), [])]})
+        emit({"bytes": sum(sizes) if sizes else None})
     elif cmd == "clienticon":
         emit({"clienticon": config["clientIcons"].get(str(call["appids"][0]))})
     elif cmd == "batch":

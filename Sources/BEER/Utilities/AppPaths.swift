@@ -178,12 +178,6 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("SDL/libSDL2-2.0.0.dylib")
     }
 
-    /// BEER's Windows helpers, as `scripts/build_windows_helpers.sh`
-    /// installs them for a `swift run` build; see `WindowsHelpers`.
-    static var windowsHelpersDirectory: URL {
-        applicationSupport.appendingPathComponent("WindowsHelpers", isDirectory: true)
-    }
-
     // App-level GBE_Fork ("Goldberg") Steamworks emulator install. The Windows
     // release contains the steam_api*.dll stubs we drop into game directories
     // so games launch without a running Steam process.

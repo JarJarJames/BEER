@@ -81,9 +81,7 @@ struct GameDetailScreen: View {
         .sheet(isPresented: $model.isShowingInstallSheet) {
             InstallSheet(
                 game: model.game,
-                size: model.installSize?.leavingOut(model.skippedDLC),
-                skippedDLC: model.skippedDLC,
-                onSetDLC: { model.setDLC($0, included: $1) },
+                size: model.installSize,
                 report: model.installSpaceReport,
                 options: model.installOptions,
                 // A closure, not `set: model.selectInstallTarget`: Swift 6.3

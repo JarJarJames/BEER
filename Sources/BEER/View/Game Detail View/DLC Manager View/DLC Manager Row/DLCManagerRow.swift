@@ -13,7 +13,7 @@ struct DLCManagerRow: View {
                 Text(dlc.name).font(.callout.weight(.medium))
                 HStack(spacing: 8) {
                     Text("appID \(dlc.appID)")
-                    if !model.hasFiles(dlc) {
+                    if !dlc.hasDepots {
                         Text("No files to download")
                     }
                 }
@@ -48,7 +48,7 @@ struct DLCManagerRow: View {
                 .fixedSize()
                 .disabled(model.isBusy)
             } else {
-                Button(model.hasFiles(dlc) ? "Install" : "Enable") { model.install(dlc) }
+                Button(dlc.hasDepots ? "Install" : "Enable") { model.install(dlc) }
                     .controlSize(.small)
                     .disabled(model.isBusy)
             }

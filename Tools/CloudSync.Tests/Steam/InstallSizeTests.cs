@@ -91,28 +91,4 @@ public class InstallSizeTests
             new Depot("103", MaxSize: "9000", DlcAppId: "666"));
         Assert.Equal(1200UL, InstallSize.Estimate(app, new HashSet<uint> { 555 }));
     }
-
-    [Fact]
-    public void ListsEachFetchedDepotWithItsOwnedDlc()
-    {
-        var app = App(
-            new Depot("101", MaxSize: "1000"),
-            new Depot("102", OsList: "windows"),
-            new Depot("103", MaxSize: "200", DlcAppId: "555"),
-            new Depot("104", MaxSize: "9000", DlcAppId: "666"),
-            new Depot("105", MaxSize: "9000", OsList: "macos", DlcAppId: "555"));
-        var depots = InstallSize.Depots(app, new HashSet<uint> { 555 });
-        Assert.Equal(
-            new[] { new FetchedDepot(101, null, 1000), new FetchedDepot(102, null, null), new FetchedDepot(103, 555, 200) },
-            depots);
-        Assert.Equal(1200UL, InstallSize.Total(depots));
-    }
-
-    [Fact]
-    public void SkipsEmptyDepotSections()
-    {
-        var app = App(new Depot("101", MaxSize: "1000"));
-        app["depots"]["228980"] = new KeyValue("228980");
-        Assert.Equal(new[] { 101U }, InstallSize.Depots(app, NoneOwned).Select(d => d.Id));
-    }
 }

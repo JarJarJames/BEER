@@ -12,14 +12,8 @@ final class BottleStore: ObservableObject {
 
     @Published var lastError: String?
 
-    /// Wine needs Rosetta and it isn't installed; see `requireRosetta()`.
-    @Published var isShowingRosettaPrompt = false
-
     /// The mounted drives, for games whose files are on one.
     var volumes: VolumeCatalog = .system
-
-    /// Whether Rosetta is installed. Tests swap this out.
-    var rosettaInstalled: () -> Bool = RosettaInstaller.isInstalled
 
     func load() async {
         do {
@@ -113,19 +107,6 @@ final class BottleStore: ObservableObject {
             operation: "Initializing bottle",
             mode: .wineboot
         )
-    }
-
-    /// Run wineboot again for a bottle whose first one never finished: it
-    /// failed (on a Mac without Rosetta, say) and the download went on, so the
-    /// game installed into a prefix with no Windows user folder for its saves.
-    func initializeIfNeeded(_ bottle: Bottle) async {
-        guard !Self.isInitialized(prefix: AppPaths.prefixURL(for: bottle)) else { return }
-        await initializeBottle(bottle)
-    }
-
-    /// wineboot writes the registry; a prefix without it was never set up.
-    nonisolated static func isInitialized(prefix: URL) -> Bool {
-        FileManager.default.fileExists(atPath: prefix.appendingPathComponent("system.reg").path)
     }
 
     /// Record install metadata on a bottle (called by the Library install flow).
