@@ -7,6 +7,7 @@ enum InstallSheetStrings {
     static let installButton = "Install"
     static let cancelButton = "Cancel"
     static let unknownSize = "Size unknown"
+    static func dlc(included: Int, of total: Int) -> String { "DLC: \(included) of \(total)" }
 
     static func size(_ bytes: Int64) -> String { format(bytes) }
 

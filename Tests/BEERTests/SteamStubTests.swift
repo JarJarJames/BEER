@@ -295,7 +295,7 @@ final class SteamStubTests: XCTestCase {
 
     /// A minimal PE header: DOS stub pointing at a COFF header with no
     /// optional header, followed by the section table.
-    private static func peHeader(machine: UInt16, sections: [String]) -> Data {
+    static func peHeader(machine: UInt16, sections: [String]) -> Data {
         var bytes = [UInt8](repeating: 0, count: 0x80)
         bytes[0] = 0x4D; bytes[1] = 0x5A
         bytes[0x3C] = 0x80

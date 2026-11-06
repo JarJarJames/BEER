@@ -26,7 +26,9 @@ extension GameDetailViewModel {
     }
 
     /// What to run for `exe`: the exe itself, or for a Steam game that needs
-    /// it, the emulator's steamclient loader (see `SteamClientLoaderPlan`).
+    /// it, the emulator's steamclient loader (see `SteamClientLoaderPlan`), or
+    /// for a launcher that starts such a game, BEER's launcher that sends the
+    /// game's start through the loader.
     func steamClientLoaderExecutable(for exe: String, in bottle: Bottle) async throws -> String {
         guard !game.effectiveIsNonSteam, let installDir = bottle.resolvedInstallDirectory else { return exe }
         let mode = bottle.effectiveSteamClientLoaderMode
@@ -44,21 +46,43 @@ extension GameDetailViewModel {
         // window for seconds.
         return try await Task.detached {
             let exeURL = URL(fileURLWithPath: exe)
-            guard let plan = SteamClientLoaderPlan.make(
+            func prepare(_ executable: URL, _ plan: SteamClientLoaderPlan) throws -> URL {
+                guard let loaderSource else {
+                    throw GoldbergPatchError.coldClientMissing("steamclient_loader")
+                }
+                return try ColdClientApplicator.prepare(
+                    executable: executable, installDir: installDir, appID: appID, plan: plan,
+                    loaderSource: loaderSource, oldSteamLibrary: oldSteamLibrary,
+                    writeSettings: { folder in
+                        try GoldbergApplicator.writeSteamSettings(
+                            in: folder, appID: appID, account: accountName, steamID64: steamID64, dlc: dlc
+                        )
+                    }
+                )
+            }
+            if let plan = SteamClientLoaderPlan.make(
                 executable: exeURL, installDir: installDir,
                 mode: mode, injectsOverlay: injectsOverlay, staysOpen: staysOpen
-            ) else { return exe }
-            guard let loaderSource else {
-                throw GoldbergPatchError.coldClientMissing("steamclient_loader")
+            ) {
+                return try prepare(exeURL, plan).path
             }
-            return try ColdClientApplicator.prepare(
-                executable: exeURL, installDir: installDir, appID: appID, plan: plan,
-                loaderSource: loaderSource, oldSteamLibrary: oldSteamLibrary,
-                writeSettings: { folder in
-                    try GoldbergApplicator.writeSteamSettings(
-                        in: folder, appID: appID, account: accountName, steamID64: steamID64, dlc: dlc
-                    )
-                }
+
+            // A launcher that starts the game's wrapped exe itself: send that
+            // start through the loader (see ColdClientApplicator+Launcher).
+            // The hook is 64-bit, so it only goes into a 64-bit launcher.
+            guard mode != .off,
+                  PortableExecutable(contentsOf: exeURL)?.is64Bit == true,
+                  let game = ColdClientApplicator.wrappedGame(beside: exeURL),
+                  let gamePlan = SteamClientLoaderPlan.make(
+                      executable: game, installDir: installDir,
+                      mode: mode, injectsOverlay: injectsOverlay, staysOpen: staysOpen
+                  ) else { return exe }
+            guard let helpers = WindowsHelpers.directory else {
+                Log.install.error("\(exeURL.lastPathComponent, privacy: .public) starts a SteamStub-wrapped game, but BEER's Windows helpers aren't installed (run scripts/build_windows_helpers.sh).")
+                return exe
+            }
+            return try ColdClientApplicator.prepareLauncher(
+                exeURL, game: game, gameLoader: prepare(game, gamePlan), installDir: installDir, helpers: helpers
             ).path
         }.value
     }

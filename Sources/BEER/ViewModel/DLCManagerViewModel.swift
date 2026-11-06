@@ -51,6 +51,16 @@ final class DLCManagerViewModel: ObservableObject {
     /// access, so it must not be recomputed per row.
     var installedIDs: Set<Int> { Set(liveBottle.effectiveInstalledDLC.map(\.appID)) }
 
+    /// Left out when the game downloaded; its files come from the game's own depots.
+    func leftOut(_ dlc: CloudSyncClient.DLCInfo) -> InstallableDLC? {
+        liveBottle.skippedDLC?.first { $0.appID == dlc.appID }
+    }
+
+    /// Whether installing `dlc` downloads anything, or only declares it.
+    func hasFiles(_ dlc: CloudSyncClient.DLCInfo) -> Bool {
+        dlc.hasDepots || leftOut(dlc) != nil
+    }
+
     func activeDownload(for dlc: CloudSyncClient.DLCInfo) -> DownloadsStore.Entry? {
         downloads.entry(for: dlc.appID).flatMap { $0.isActive ? $0 : nil }
     }
@@ -95,12 +105,18 @@ final class DLCManagerViewModel: ObservableObject {
     /// Checks the whole batch at once, before any of it downloads: one Steam
     /// logon however many DLC, and no half-finished batch on a full disk.
     func hasRoom(for queue: [CloudSyncClient.DLCInfo], auth: SteamCloudAccount) async -> Bool {
-        let appIDs = queue.filter(\.hasDepots).map(\.appID)
-        guard !appIDs.isEmpty else { return true }
+        // Left-out DLC have their size from the game's download already.
+        let leftOutBytes = queue.compactMap { leftOut($0)?.bytes }.reduce(0, +)
+        let appIDs = queue.filter { $0.hasDepots && leftOut($0) == nil }.map(\.appID)
+        guard !appIDs.isEmpty || leftOutBytes > 0 else { return true }
         isCheckingSpace = true
         defer { isCheckingSpace = false }
 
-        switch await installSpaceCheck.run(appIDs: appIDs, account: auth, destination: installDir) {
+        let asked = appIDs.isEmpty
+            ? InstallSize(bytes: 0, uncheckedReason: nil)
+            : await installSpaceCheck.size(appIDs: appIDs, account: auth)
+        let size = InstallSize(bytes: asked.bytes.map { $0 + leftOutBytes }, uncheckedReason: asked.uncheckedReason)
+        switch await installSpaceCheck.assess(size, destination: installDir).verdict {
         case .fits:
             return true
         case .unchecked(let note):

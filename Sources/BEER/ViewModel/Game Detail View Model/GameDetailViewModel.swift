@@ -48,6 +48,8 @@ final class GameDetailViewModel: ObservableObject {
     @Published var installSpaceReport: InstallSpaceReport?
     /// Steam's size for the game; nil while it's asked.
     @Published var installSize: InstallSize?
+    /// The DLC (app IDs) unticked in the install sheet.
+    @Published var skippedDLC: Set<Int> = []
     /// The places the install sheet offers, and the one chosen.
     @Published var installOptions: [InstallTargetOption] = []
     @Published var installTarget: InstallTarget?

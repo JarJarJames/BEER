@@ -2,6 +2,30 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.8.1 — 2026-11-06
+
+### Added
+- **Leave DLC out of a download.** The install sheet has a fold-down DLC
+  checklist with each DLC's size. Unticking one lowers the download size and
+  re-checks free space. Games like Fallout 4 list their DLC with the game, so
+  before this every owned DLC came down with it, including the 62.6 GB High
+  Resolution Texture Pack. A resumed download skips the same DLC again, and
+  the DLC manager can install a left-out DLC later.
+- **F4SE.** With `f4se_loader.exe` beside Fallout 4, BEER starts F4SE with the
+  game, so F4SE plugins load. Other script extenders (SKSE64 etc.) aren't
+  supported yet.
+
+### Fixed
+- **"Bad CPU type in executable" on a new Mac.** GPTK's Wine needs Rosetta,
+  and macOS only offers to install it when an Intel app is opened from
+  Finder, so on a Mac that had never done that, installing a game failed.
+  BEER now asks to install Rosetta before installing or playing a game.
+  Games that an earlier install left half set up are repaired on Play.
+- **Fallout 4's Play button closed the game.** A game launcher that starts a
+  game wrapped in Steam's DRM now has that game started through the Steam
+  emulator's loader, so it finds "Steam" and stays open. The game keeps its
+  own name and nothing in its folder is renamed. 64-bit launchers only.
+
 ## 0.8.0 — 2026-11-05
 
 ### Added
