@@ -88,13 +88,14 @@ final class DepotDownloaderController: ObservableObject {
         gameName: String,
         installDir: URL,
         auth: SteamCloudAccount,
+        depots: [Int]? = nil,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
         // Say the drive is missing, rather than fail on a path that's gone.
         try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
-        try await download(appID: appID, into: installDir, auth: auth, events: events)
+        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
 
         guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
             throw DepotDownloaderError.launchExeNotFound
@@ -111,10 +112,14 @@ final class DepotDownloaderController: ObservableObject {
     /// dropped from it; a DLC depot downloaded for the first time has no
     /// previous manifest, so nothing existing is touched. That is what lets us
     /// add DLC without re-downloading the base game.
+    ///
+    /// A DLC whose files are among the game's own depots is fetched with the
+    /// game's `appID` and just those `depots`.
     func installDLC(
         appID: Int,
         installDir: URL,
         auth: SteamCloudAccount,
+        depots: [Int]? = nil,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         var isDirectory: ObjCBool = false
@@ -122,7 +127,7 @@ final class DepotDownloaderController: ObservableObject {
               isDirectory.boolValue else {
             throw DepotDownloaderError.installDirMissing(installDir.path)
         }
-        try await download(appID: appID, into: installDir, auth: auth, events: events)
+        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
     }
 
     // MARK: - Shared download
@@ -133,6 +138,7 @@ final class DepotDownloaderController: ObservableObject {
         appID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
+        depots: [Int]?,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
@@ -140,7 +146,7 @@ final class DepotDownloaderController: ObservableObject {
         }
 
         try await withAuthSession(auth: auth) {
-            try await self.runDownload(appID: appID, into: installDir, auth: auth, events: events)
+            try await self.runDownload(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
         }
     }
 
@@ -182,6 +188,7 @@ final class DepotDownloaderController: ObservableObject {
         appID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
+        depots: [Int]?,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         // Refcounted, not a Bool: a DLC install can overlap a base-game install,
@@ -191,7 +198,7 @@ final class DepotDownloaderController: ObservableObject {
 
         let args = Self.downloadArguments(
             appID: appID, installDir: installDir,
-            accountName: auth.accountName, loginID: Self.newLoginID())
+            accountName: auth.accountName, loginID: Self.newLoginID(), depots: depots)
 
         await MainActor.run { events(.status("Connecting to Steam…")) }
 
@@ -279,10 +286,14 @@ final class DepotDownloaderController: ObservableObject {
 
     // MARK: - Arguments
 
+    /// `depots`, when given, is exactly what to fetch. DepotDownloader then
+    /// skips its own OS and language filter, so pass the filtered list the
+    /// helper's `installsize` reports.
     static func downloadArguments(
-        appID: Int, installDir: URL, accountName: String, loginID: UInt32
+        appID: Int, installDir: URL, accountName: String, loginID: UInt32, depots: [Int]? = nil
     ) -> [String] {
-        [
+        let depotArguments = depots.map { ["-depot"] + $0.map(String.init) } ?? []
+        return [
             "-app", String(appID),
             "-dir", installDir.path,
             "-os", "windows",
@@ -290,7 +301,7 @@ final class DepotDownloaderController: ObservableObject {
             "-username", accountName,
             "-remember-password",
             "-loginid", String(loginID)
-        ]
+        ] + depotArguments
     }
 
     /// Steam ends any session on the account that logs on with a LoginID

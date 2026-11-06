@@ -88,15 +88,20 @@ final class DLCStore: ObservableObject {
     ) async {
         guard downloads.entry(for: dlc.appID)?.isActive != true else { return }
         message = nil
+        // Left out when the game downloaded: its files are among the game's
+        // own depots, so they come from the game's app, not the DLC's.
+        let leftOut = bottles.live(bottle).skippedDLC?.first { $0.appID == dlc.appID }
+        let hasFiles = dlc.hasDepots || leftOut != nil
 
         do {
-            if dlc.hasDepots {
+            if hasFiles {
                 downloads.start(appID: dlc.appID, name: dlc.name,
                                 bottleID: bottle.id, parentAppID: bottle.steamAppID)
                 try await controller.installDLC(
-                    appID: dlc.appID,
+                    appID: leftOut != nil ? bottle.steamAppID ?? dlc.appID : dlc.appID,
                     installDir: installDir,
                     auth: auth,
+                    depots: leftOut?.depotIDs,
                     events: downloads.consume(appID: dlc.appID)
                 )
             }
@@ -106,12 +111,12 @@ final class DLCStore: ObservableObject {
                     + [InstalledDLC(appID: dlc.appID, name: dlc.name, installedAt: Date())]
             }
 
-            if dlc.hasDepots { downloads.complete(appID: dlc.appID) }
-            message = .success(dlc.hasDepots
+            if hasFiles { downloads.complete(appID: dlc.appID) }
+            message = .success(hasFiles
                 ? "Installed \(dlc.name)."
                 : "Enabled \(dlc.name). It has no files to download — only the entitlement was needed.")
         } catch {
-            if dlc.hasDepots { downloads.fail(appID: dlc.appID, reason: error.localizedDescription) }
+            if hasFiles { downloads.fail(appID: dlc.appID, reason: error.localizedDescription) }
             message = .failure(error.localizedDescription)
         }
     }
@@ -148,6 +153,10 @@ final class DLCStore: ObservableObject {
         var updated = bottles.live(bottle)
         updated.installedDLC = transform(updated.effectiveInstalledDLC)
             .sorted { $0.appID < $1.appID }
+        // An installed DLC's files are on disk, so it's no longer left out.
+        let installedIDs = Set(updated.effectiveInstalledDLC.map(\.appID))
+        let stillSkipped = updated.skippedDLC?.filter { !installedIDs.contains($0.appID) } ?? []
+        updated.skippedDLC = stillSkipped.isEmpty ? nil : stillSkipped
         if updated.gameInstallDirectory == nil {
             updated.gameInstallDirectory = installDir.path
         }
