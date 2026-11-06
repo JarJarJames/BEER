@@ -12,8 +12,14 @@ final class BottleStore: ObservableObject {
 
     @Published var lastError: String?
 
+    /// Wine needs Rosetta and it isn't installed; see `requireRosetta()`.
+    @Published var isShowingRosettaPrompt = false
+
     /// The mounted drives, for games whose files are on one.
     var volumes: VolumeCatalog = .system
+
+    /// Whether Rosetta is installed. Tests swap this out.
+    var rosettaInstalled: () -> Bool = RosettaInstaller.isInstalled
 
     func load() async {
         do {

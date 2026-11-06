@@ -16,6 +16,8 @@ extension GameDetailViewModel {
             cloudSyncMessage = InstallDriveStrings.filesMissing
             return
         }
+        // Before the save pull and Discord, which would be for nothing.
+        guard bottles.requireRosetta() else { return }
         Task { [self] in
             if !game.effectiveIsNonSteam {
                 await adoptSteamLaunchConfigIfNeeded(installedBottle)

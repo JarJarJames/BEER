@@ -12,6 +12,8 @@ extension GameDetailViewModel {
     /// downloads until confirmed.
     func requestInstall() {
         guard !game.effectiveIsNonSteam, !isStartingInstall, preferredDefaultRuntime != nil else { return }
+        // Ask before the sheet: a download Wine can't run is wasted.
+        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
@@ -49,6 +51,7 @@ extension GameDetailViewModel {
         // still doing wineboot must be a no-op, not a fresh bottle.
         guard !isStartingInstall else { return }
         guard let runtime = preferredDefaultRuntime else { return }
+        guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
             isShowingCloudConnect = true
