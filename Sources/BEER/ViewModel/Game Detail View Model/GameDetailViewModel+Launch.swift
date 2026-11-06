@@ -19,6 +19,8 @@ extension GameDetailViewModel {
         // Before the save pull and Discord, which would be for nothing.
         guard bottles.requireRosetta() else { return }
         Task { [self] in
+            // Before the save pull, which needs the prefix's user folder.
+            await bottles.initializeIfNeeded(installedBottle)
             if !game.effectiveIsNonSteam {
                 await adoptSteamLaunchConfigIfNeeded(installedBottle)
             }

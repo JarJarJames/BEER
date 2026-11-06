@@ -56,4 +56,18 @@ final class RosettaCheckTests: XCTestCase {
         XCTAssertFalse(store.requireRosetta())
         XCTAssertTrue(store.isShowingRosettaPrompt)
     }
+
+    /// A bottle made before Rosetta was installed: wineboot failed, the game
+    /// downloaded anyway, and the prefix has no registry or user folder.
+    func testPrefixWithoutRegistryNeedsWineboot() throws {
+        let prefix = FileManager.default.temporaryDirectory
+            .appendingPathComponent("RosettaCheckTests-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: prefix) }
+        try FileManager.default.createDirectory(at: prefix.appendingPathComponent("drive_c/Games"),
+                                                withIntermediateDirectories: true)
+        XCTAssertFalse(BottleStore.isInitialized(prefix: prefix))
+
+        try Data().write(to: prefix.appendingPathComponent("system.reg"))
+        XCTAssertTrue(BottleStore.isInitialized(prefix: prefix))
+    }
 }

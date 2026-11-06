@@ -110,7 +110,8 @@ extension GameDetailViewModel {
             downloads.setStatus(appID: game.appID, phase: "Initializing bottle…")
 
             // Resolve the bottle for this Steam appID:
-            //   - Reuse any bottle already claimed for this appID (skips wineboot)
+            //   - Reuse any bottle already claimed for this appID (skips wineboot
+            //     unless its first one never finished)
             //   - Otherwise create a fresh bottle + claim it immediately
             // After this point the bottle is tagged with steamAppID +
             // gameInstallStatus = .installing and knows where its files go,
@@ -122,7 +123,8 @@ extension GameDetailViewModel {
                 bottle = existing
                 installDir = existing.downloadDirectory(gameName: game.name)
                 drive = existing.gameDrive
-                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game (skipping wineboot).")
+                downloads.append(appID: game.appID, log: "Reusing existing bottle for this game.")
+                await bottles.initializeIfNeeded(existing)
                 // Defensive: clean up any other orphans for this appID.
                 await bottles.cleanupOrphans(forAppID: game.appID, keep: existing.id)
             } else {

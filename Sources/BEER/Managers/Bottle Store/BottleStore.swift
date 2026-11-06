@@ -115,6 +115,19 @@ final class BottleStore: ObservableObject {
         )
     }
 
+    /// Run wineboot again for a bottle whose first one never finished: it
+    /// failed (on a Mac without Rosetta, say) and the download went on, so the
+    /// game installed into a prefix with no Windows user folder for its saves.
+    func initializeIfNeeded(_ bottle: Bottle) async {
+        guard !Self.isInitialized(prefix: AppPaths.prefixURL(for: bottle)) else { return }
+        await initializeBottle(bottle)
+    }
+
+    /// wineboot writes the registry; a prefix without it was never set up.
+    nonisolated static func isInitialized(prefix: URL) -> Bool {
+        FileManager.default.fileExists(atPath: prefix.appendingPathComponent("system.reg").path)
+    }
+
     /// Record install metadata on a bottle (called by the Library install flow).
     func recordGameInstall(
         _ bottle: Bottle,
