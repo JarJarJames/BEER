@@ -110,14 +110,19 @@ https://github.com/JarJarJames/BEER-runtimes, which the Runtimes tab reads
    `License.rtf`: sharing is allowed only non-commercially (§2A(iii), §2C).
 2. Run `./scripts/build_gptk_runtime.sh <that folder>/redist`. It downloads
    and checksums everything else, builds Wine (about 20 minutes), and writes
-   `.build/gptk-runtime/gptk-<d3dmetal>-winecx-<crossover>.tar.xz`. It needs
+   `.build/gptk-runtime/gptk-<d3dmetal>-winecx-<crossover>-<revision>.tar.xz`. It needs
    Homebrew's `bison gettext freetype gnutls mingw-w64`, `scripts/build_sdl.sh`
-   run once, and Gcenx's GPTK installed in BEER (its x86_64 libraries are reused).
-3. Test the unpacked runtime: copy it into `Runtimes/GPTK-<d3dmetal>-winecx-<crossover>`
-   and play a few games on it.
-4. Publish with the tag `<d3dmetal>-winecx-<crossover>` (e.g. `4.0b3-winecx-26.3.0`),
-   so it installs into the folder named in step 3:
-   `gh release create 4.0b3-winecx-26.3.0 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0.tar.xz --repo JarJarJames/BEER-runtimes`.
+   run once, Gcenx's GPTK installed in BEER (its x86_64 libraries are reused),
+   and the Command Line Tools' macOS 15 SDK. Wine builds against that SDK, not
+   the Mac's own: built against a newer one, it calls functions older macOS
+   lacks and crashes there (build 1 crashed on everything before macOS 27).
+   The script refuses to pack a runtime that calls anything macOS 15 lacks.
+3. Test the unpacked runtime: copy it into `Runtimes/GPTK-<d3dmetal>-winecx-<crossover>-<revision>`
+   and play a few games on it. A test on this Mac only covers this Mac's macOS.
+4. Bump `REVISION` in the script for any rebuild: BEER never re-downloads a tag
+   it has. Publish with the tag `<d3dmetal>-winecx-<crossover>-<revision>`
+   (e.g. `4.0b3-winecx-26.3.0-2`), so it installs into the folder named in step 3:
+   `gh release create 4.0b3-winecx-26.3.0-2 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0-2.tar.xz --repo JarJarJames/BEER-runtimes`.
    The release notes should link CodeWeavers' source (https://www.codeweavers.com/crossover/source)
    for the LGPL.
 

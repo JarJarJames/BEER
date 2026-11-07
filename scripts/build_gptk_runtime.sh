@@ -25,12 +25,21 @@
 #             lib folder of the Gcenx GPTK runtime BEER installs.
 #   WORK      Build folder (default: a temporary one). Must have no spaces,
 #             since Wine's build can't cope with them.
+#   SDKROOT   The macOS SDK Wine builds against (default: the Command Line
+#             Tools' macOS 15 SDK). Must be the oldest macOS the runtime
+#             supports, or configure turns on functions older Macs lack.
 #
 # x86_64, because GPTK's Wine runs under Rosetta. Needs Homebrew's bison,
 # gettext, freetype, gnutls and mingw-w64.
 set -euo pipefail
 
 CX_VERSION="26.3.0"
+# Bumped for a rebuild of the same Wine and D3DMetal, so BEER sees a new
+# release (it installs one folder per tag and never re-downloads a tag).
+REVISION="2"
+# Apple's D3DMetal 4 needs macOS 15. Wine is built against this macOS's SDK,
+# and every binary is checked against it before packing.
+MINIMUM_MACOS="15"
 CX_SHA256="ac99c8ca4b3848f3e81784135f023df266b61c2345726ea55a50b3e030dd6872"
 CX_URL="https://media.codeweavers.com/pub/crossover/source/crossover-sources-$CX_VERSION.tar.gz"
 CX_SOURCE_PAGE="https://www.codeweavers.com/crossover/source"
@@ -88,7 +97,14 @@ fetch() {
 
 D3DMETAL_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' \
     "$REDIST/lib/external/D3DMetal.framework/Versions/A/Resources/Info.plist")"
-NAME="gptk-$D3DMETAL_VERSION-winecx-$CX_VERSION"
+NAME="gptk-$D3DMETAL_VERSION-winecx-$CX_VERSION-$REVISION"
+
+# Built against the newest SDK, configure finds functions that only exist on
+# the newest macOS (pipe2 is macOS 27), and Wine calls them unguarded: on an
+# older macOS the import is null and every Wine process segfaults at startup.
+export SDKROOT="${SDKROOT:-/Library/Developer/CommandLineTools/SDKs/MacOSX$MINIMUM_MACOS.sdk}"
+[ -f "$SDKROOT/usr/lib/libSystem.B.tbd" ] \
+    || die "no macOS $MINIMUM_MACOS SDK at $SDKROOT (install the Command Line Tools, or set SDKROOT)"
 
 if [ -z "${WORK:-}" ]; then
     WORK="$(mktemp -d -t beer-gptk)"
@@ -209,8 +225,8 @@ done
 
 # --- Configure and build ---------------------------------------------------
 export PATH="$BREW/opt/bison/bin:$BREW/opt/gettext/bin:$BREW/bin:$PATH"
-export CC="clang -arch x86_64"
-export CXX="clang++ -arch x86_64"
+export CC="clang -arch x86_64 -isysroot $SDKROOT"
+export CXX="clang++ -arch x86_64 -isysroot $SDKROOT"
 export CFLAGS="-O2"
 export CROSSCFLAGS="-O2 -Wno-error=incompatible-pointer-types"
 export LDFLAGS="-L$WORK/deps -Wl,-headerpad_max_install_names -Wl,-rpath,@loader_path/../../"
@@ -370,9 +386,27 @@ cat > "$STAGE/beer-runtime.json" <<EOF
 {
   "d3dMetalVersion": "$D3DMETAL_VERSION",
   "crossOverSourceVersion": "$CX_VERSION",
-  "minimumMacOS": 15
+  "minimumMacOS": $MINIMUM_MACOS
 }
 EOF
+
+# Every system function the runtime calls must exist on its oldest macOS. A
+# missing one is a crash there (a weak import is null) or a refusal to load,
+# and the Mac this builds on never shows it. Checked against the macOS
+# $MINIMUM_MACOS SDK's libSystem, which is what every binary here links.
+echo "==> Checking the runtime against macOS $MINIMUM_MACOS…"
+cat "$SDKROOT"/usr/lib/libSystem.B.tbd "$SDKROOT"/usr/lib/system/*.tbd \
+    | grep -oE "[A-Za-z_][A-Za-z0-9_\$.]*" | sort -u > "$WORK/sdk-symbols.txt"
+: > "$WORK/too-new.txt"
+find "$STAGE" -type f | while read -r f; do
+    file -b "$f" | grep -q '^Mach-O' || continue
+    nm -m "$f" 2>/dev/null | awk '/\(undefined\)/ && /\(from libSystem\)/ { for (i = 1; i <= NF; i++) if ($i == "(from") print $(i - 1) }' \
+        | sort -u | comm -23 - "$WORK/sdk-symbols.txt" | sed "s|^|${f#$STAGE/}: |" >> "$WORK/too-new.txt"
+done
+if [ -s "$WORK/too-new.txt" ]; then
+    cat "$WORK/too-new.txt" >&2
+    die "these call functions macOS $MINIMUM_MACOS doesn't have"
+fi
 
 echo "==> Packing…"
 mkdir -p "$OUT"
