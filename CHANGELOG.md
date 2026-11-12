@@ -2,6 +2,37 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Added
+- **Game updates.** After each library refresh, BEER asks Steam whether
+  each installed game is behind. An outdated game gets a blue **UPDATE**
+  badge on its card, an **Update** button next to Play, and an "Update
+  first / Play anyway" prompt when you press Play. The badge only shows
+  when Update would actually download something: depots you don't own,
+  DLC you left out, other platforms and languages, and Steam's shared
+  redistributables don't count. A game installed by an older BEER gets
+  **Check for Updates** instead, which validates it once. Games on an
+  unplugged drive aren't checked.
+- **Pause and resume downloads.** Pause a download from the Downloads list
+  or the game page. Nothing already downloaded is lost: Resume checks the
+  files on disk and fetches only what's missing, in the same folder and
+  with the same DLC left out. A paused game download is still paused after
+  quitting BEER. A paused update shows Resume instead of Play, since the
+  game's files are half written.
+- **Download state on library cards.** A card now shows **DOWNLOADING
+  42%** or **PAUSED 30%** while a game downloads, and **NOT INSTALLED**
+  for a game whose download never finished. Before, a card said INSTALLED
+  as soon as its download started, and after a failed one.
+
+### Fixed
+- **GPTK 4 games didn't start on macOS 15 and 26.** The runtime was built
+  against the macOS 27 SDK and used a function older macOS doesn't have,
+  so every Wine process crashed at startup. Build 2
+  (`4.0b3-winecx-26.3.0-2`) is built against the macOS 15 SDK. Download it
+  from the Runtimes tab and new games use it; a game already set up on
+  build 1 keeps it until you pick build 2 in the game's Runtime setting.
+
 ## 0.8.1 — 2026-11-06
 
 ### Added
