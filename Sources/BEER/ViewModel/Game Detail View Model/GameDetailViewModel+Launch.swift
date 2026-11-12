@@ -1,7 +1,27 @@
 import Foundation
 
 extension GameDetailViewModel {
-    func launch(_ installedBottle: Bottle) {
+    /// Steam has a newer build, so Play asks whether to update first.
+    var offersUpdateBeforePlay: Bool {
+        !game.effectiveIsNonSteam && game.effectiveUpdateAvailable
+    }
+
+    /// The Play prompt's Update First: the same download as Reinstall / Validate,
+    /// which only fetches what changed.
+    func updateInsteadOfPlaying() {
+        updateBeforePlay = nil
+        startInstallOrLogin()
+    }
+
+    func playWithoutUpdating() {
+        guard let bottle = updateBeforePlay else { return }
+        updateBeforePlay = nil
+        launch(bottle, skippingUpdatePrompt: true)
+    }
+
+    /// `skippingUpdatePrompt` is for a launch the player already chose to make
+    /// on an out-of-date game.
+    func launch(_ installedBottle: Bottle, skippingUpdatePrompt: Bool = false) {
         guard installedBottle.gameLaunchExecutable != nil, !mover.isMoving(installedBottle.id) else { return }
         // A shortcut can ask while the drive is unplugged; the page says why.
         switch bottles.installLocation(of: installedBottle) {
@@ -14,6 +34,11 @@ extension GameDetailViewModel {
         case .missing:
             cloudSyncIsError = true
             cloudSyncMessage = InstallDriveStrings.filesMissing
+            return
+        }
+        // Before the save pull: saves from a newer build may not load in this one.
+        if !skippingUpdatePrompt, offersUpdateBeforePlay {
+            updateBeforePlay = installedBottle
             return
         }
         // Before the save pull and Discord, which would be for nothing.

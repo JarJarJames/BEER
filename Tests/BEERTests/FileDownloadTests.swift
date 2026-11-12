@@ -82,10 +82,15 @@ private final class Reports: @unchecked Sendable {
 }
 
 /// Answers every request with `answer`, sent in several chunks with its
-/// length, the way a real server streams a big file.
-private final class ChunkedServer: URLProtocol {
+/// length, the way a real server streams a big file. The chunks go out a few
+/// milliseconds apart: sent back to back, URLSession can write them as one,
+/// and a slow machine (CI) then sees a single progress report.
+private final class ChunkedServer: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var answer: (status: Int, body: Data) = (200, Data())
     private static let chunkSize = 100_000
+    private static let chunkGap: DispatchTimeInterval = .milliseconds(5)
+    private let queue = DispatchQueue(label: "ChunkedServer")
+    private var stopped = false
 
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
@@ -95,14 +100,21 @@ private final class ChunkedServer: URLProtocol {
         let response = HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: "HTTP/1.1",
                                        headerFields: ["Content-Length": "\(body.count)"])!
         client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-        var offset = 0
-        while offset < body.count {
-            let end = min(offset + Self.chunkSize, body.count)
-            client?.urlProtocol(self, didLoad: body.subdata(in: offset..<end))
-            offset = end
-        }
-        client?.urlProtocolDidFinishLoading(self)
+        queue.async { self.send(body, from: 0) }
     }
 
-    override func stopLoading() {}
+    private func send(_ body: Data, from offset: Int) {
+        guard !stopped else { return }
+        guard offset < body.count else {
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+        let end = min(offset + Self.chunkSize, body.count)
+        client?.urlProtocol(self, didLoad: body.subdata(in: offset..<end))
+        queue.asyncAfter(deadline: .now() + Self.chunkGap) { self.send(body, from: end) }
+    }
+
+    override func stopLoading() {
+        queue.async { self.stopped = true }
+    }
 }

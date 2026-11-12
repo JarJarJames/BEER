@@ -243,6 +243,9 @@ extension GameDetailViewModel {
                         )
                     }
                 }
+                // DepotDownloader just brought every depot up to date, and
+                // left its record in the folder for the next check.
+                library.applyUpdateCheck([game.appID: .current])
                 await createShortcutsChosenAtInstall(appID: game.appID)
                 downloads.complete(appID: game.appID)
             } catch DepotDownloaderError.sessionExpired {

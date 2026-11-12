@@ -41,6 +41,8 @@ final class GameDetailViewModel: ObservableObject {
     @Published var pendingRestore: PendingSaveRestore?
     @Published var restoreConflictPrompt: RestoreConflictPrompt?
     @Published var confirmRemoveNonSteamGame: Bool = false
+    /// Set while Play asks whether to update an out-of-date game first.
+    @Published var updateBeforePlay: Bottle?
     /// Set when an install was refused because the disk can't hold it.
     @Published var diskSpaceShortfall: DiskSpaceShortfall?
     @Published var isShowingInstallSheet: Bool = false

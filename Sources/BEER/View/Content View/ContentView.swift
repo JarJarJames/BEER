@@ -60,6 +60,8 @@ struct ContentView: View {
             Text(RosettaStrings.message)
         }
         .task {
+            // Before anything starts the helper, so a dev build never runs old helper code.
+            await DevHelperRebuild.runIfNeeded()
             await runtimeInstaller.refresh()
             if library.account.isLoggedIn {
                 // Bring the Steam session up before the library fetch: the
@@ -67,6 +69,7 @@ struct ContentView: View {
                 // is usable, not once a network round-trip finishes.
                 await presence.start(auth: cloudAuth)
                 await library.fetchLibrary(auth: cloudAuth)
+                await library.checkForUpdates(bottles: store, auth: cloudAuth)
             }
         }
         // Sign-in and sign-out both happen well after launch, so the session

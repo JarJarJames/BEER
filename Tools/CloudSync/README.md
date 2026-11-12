@@ -50,6 +50,7 @@ Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv
 | `upload --appid N --file F --in PATH [--mtime T]` | upload one file (begin → PUT blocks → commit) | **writes cloud** |
 | `batch --appid N --jobs JSON` | many downloads+uploads in ONE logon | local + cloud |
 | `prepare-depot-auth --depot-executable PATH` | bridge the existing token into DepotDownloader for one invocation | short-lived local credential cache |
+| `updatecheck --jobs JSON` | whether each installed game is behind Steam's public branch, from the DepotDownloader record in its folder (`{games:[{appid,status}]}`, status `current`/`update`/`untracked`/`unknown`) | no |
 
 `batch` jobs file: `{ "appid": N, "downloads":[{"filename","out"}], "uploads":[{"filename","in","mtime"}] }`.
 It runs up to four file transfers concurrently, reusing one HTTP connection pool,

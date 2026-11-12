@@ -14,6 +14,7 @@ final class SteamLibraryStore: ObservableObject {
     @Published var lastError: String?
 
     private let cloudClient = CloudSyncClient()
+    var updateCheck = GameUpdateCheck()
 
     func load() {
         guard let data = try? Data(contentsOf: AppPaths.steamLibraryStateURL),
@@ -94,6 +95,7 @@ final class SteamLibraryStore: ObservableObject {
                 updated.isFavorite = current.isFavorite
                 updated.isHidden = current.isHidden
                 updated.customArt = current.customArt
+                updated.updateStatus = current.updateStatus
                 return updated
             }
             return fresh
@@ -164,7 +166,47 @@ final class SteamLibraryStore: ObservableObject {
     func markUninstalled(appID: Int) {
         guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
         games[index].installedBottleID = nil
+        games[index].updateStatus = nil
         persist()
+    }
+
+    /// Ask Steam whether installed games have an update, and record each one's
+    /// status. Quiet on failure: statuses stay as the last check left them, and
+    /// a missed check never stops anyone playing.
+    func checkForUpdates(bottles: BottleStore, auth: SteamAuthStore?) async {
+        guard account.isLoggedIn, let acct = auth?.account, auth?.sessionExpired != true else { return }
+        let targets = GameUpdateCheck.targets(games: games, bottles: bottles.bottles) {
+            bottles.installLocation(of: $0).url
+        }
+        guard !targets.isEmpty else { return }
+        do {
+            applyUpdateCheck(try await updateCheck.run(targets: targets, account: acct))
+        } catch {
+            auth?.noteCloudError(error)
+            Log.install.error("Update check failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)")
+        }
+    }
+
+    /// Set the status of each game in `results`; others keep theirs.
+    func applyUpdateCheck(_ results: [Int: GameUpdateStatus]) {
+        guard let updated = Self.applying(updateCheck: results, to: games) else { return }
+        games = updated
+        persist()
+    }
+
+    /// `games` with each status in `results` set, or nil when nothing changes.
+    nonisolated static func applying(
+        updateCheck results: [Int: GameUpdateStatus], to games: [SteamLibraryGame]
+    ) -> [SteamLibraryGame]? {
+        var games = games
+        var changed = false
+        for (appID, status) in results where status != .unknown {
+            guard let index = games.firstIndex(where: { $0.appID == appID }),
+                  games[index].updateStatus != status else { continue }
+            games[index].updateStatus = status
+            changed = true
+        }
+        return changed ? games : nil
     }
 
     /// Add a game that lives outside Steam. Gets a negative placeholder appID,
