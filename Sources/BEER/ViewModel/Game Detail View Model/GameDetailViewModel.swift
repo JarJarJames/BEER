@@ -140,6 +140,13 @@ final class GameDetailViewModel: ObservableObject {
         downloads.entry(for: appID)
     }
 
+    /// The progress panel's Pause: nil unless DepotDownloader is running for
+    /// this game, since bottle setup and emulator patching can't be stopped.
+    var pauseDownload: (() -> Void)? {
+        guard depotCtl.pausableIDs.contains(appID) else { return nil }
+        return { [depotCtl, downloads, appID] in depotCtl.pause(appID, in: downloads) }
+    }
+
     var isSteamConnected: Bool {
         cloudAuth.account != nil && !cloudAuth.sessionExpired
     }

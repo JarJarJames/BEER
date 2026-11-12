@@ -32,6 +32,10 @@ struct GameActionRow: View {
                 default:
                     if bottle.runtimeIsMissing {
                         MissingRuntimeNotice(bottle: bottle)
+                    } else if model.download?.isPaused == true {
+                        // A paused update leaves the files half written, so
+                        // it finishes before the game can run.
+                        resumeButton
                     } else {
                         Button(action: { model.launch(bottle) }) {
                             Label("Play", systemImage: "play.fill")
@@ -62,6 +66,14 @@ struct GameActionRow: View {
                 .padding(.horizontal, 12)
                 .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
 
+                Button(role: .destructive) {
+                    model.cancelInstall(reason: "Cancelled.")
+                } label: {
+                    Label("Cancel", systemImage: "xmark.circle")
+                }
+                .controlSize(.large)
+            } else if model.download?.isPaused == true {
+                resumeButton
                 Button(role: .destructive) {
                     model.cancelInstall(reason: "Cancelled.")
                 } label: {
@@ -111,6 +123,25 @@ struct GameActionRow: View {
 
             GameMoreMenu(model: model)
         }
+    }
+
+    private var resumeButton: some View {
+        Button(action: model.resumeInstall) {
+            if model.isStartingInstall {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Starting…")
+                }
+                .frame(minWidth: 180, minHeight: 36)
+            } else {
+                Label(DownloadsStrings.resume, systemImage: "play.circle.fill")
+                    .font(.title3.bold())
+                    .frame(minWidth: 180, minHeight: 36)
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(model.isStartingInstall)
     }
 
     /// Update for a game Steam has a newer build of; Check for Updates for one

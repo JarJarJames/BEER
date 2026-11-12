@@ -3,13 +3,16 @@ import Foundation
 // Tracks active and recent game installs. The Downloads pane reads from
 // here; the game detail view reads its own entry to show install progress
 // inline. Lives in memory only — finished installs persist via the
-// SteamLibraryStore + BottleStore.
+// SteamLibraryStore + BottleStore, and a paused game download via its
+// bottle's `pausedDownload` (see `restorePaused`).
 @MainActor
 final class DownloadsStore: ObservableObject {
     @Published private(set) var entries: [Entry] = []
 
     var active: [Entry] { entries.filter(\.isActive) }
-    var recent: [Entry] { entries.filter { !$0.isActive }.sorted { $0.startedAt > $1.startedAt } }
+    /// Running or paused: the Downloads pane's top section.
+    var inProgress: [Entry] { entries.filter(\.isInProgress) }
+    var recent: [Entry] { entries.filter { !$0.isInProgress }.sorted { $0.startedAt > $1.startedAt } }
 
     /// How far along the running downloads are together, for the top bar.
     /// Nil when nothing is downloading.
@@ -67,9 +70,14 @@ final class DownloadsStore: ObservableObject {
         if entries[idx].logTail.count > 80 { entries[idx].logTail.removeFirst() }
     }
 
+    /// Ignored once the entry is pausing, paused or done: DepotDownloader's
+    /// last lines can arrive after Pause and would otherwise undo it.
     func setStatus(appID: Int, phase: String) {
         guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
-        entries[idx].status = .running(phase)
+        switch entries[idx].status {
+        case .queued, .running: entries[idx].status = .running(phase)
+        default: return
+        }
     }
 
     func setProgress(appID: Int, fraction: Double, downloaded: Int64?, total: Int64?) {
@@ -83,6 +91,32 @@ final class DownloadsStore: ObservableObject {
         guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
         entries[idx].status = .completed
         entries[idx].fraction = 1
+    }
+
+    func markPausing(appID: Int) {
+        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        entries[idx].status = .pausing
+    }
+
+    /// DepotDownloader has exited; the progress bar stays where it stopped.
+    func pause(appID: Int) {
+        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        entries[idx].status = .paused
+    }
+
+    /// Rows for game downloads paused before BEER last quit. A game that
+    /// already has a row (one started since) keeps it.
+    func restorePaused(from bottles: [Bottle]) {
+        for bottle in bottles {
+            guard let appID = bottle.steamAppID, let paused = bottle.pausedDownload,
+                  entry(for: appID) == nil else { continue }
+            entries.append(
+                Entry(id: appID, name: bottle.steamGameName ?? bottle.name, bottleID: bottle.id,
+                      status: .paused, fraction: paused.fraction,
+                      downloadedBytes: nil, totalBytes: nil,
+                      logTail: [], startedAt: paused.pausedAt)
+            )
+        }
     }
 
     func fail(appID: Int, reason: String) {

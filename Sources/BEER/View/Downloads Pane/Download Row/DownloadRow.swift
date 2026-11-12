@@ -2,6 +2,9 @@ import SwiftUI
 
 struct DownloadRow: View {
     let entry: DownloadsStore.Entry
+    /// Each nil while that button doesn't apply.
+    var onPause: (() -> Void)? = nil
+    var onResume: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -11,8 +14,17 @@ struct DownloadRow: View {
                 Text(entry.phaseText)
                     .font(.caption)
                     .foregroundStyle(statusColor)
+                if let onPause {
+                    Button(DownloadsStrings.pause, systemImage: "pause.fill", action: onPause)
+                        .controlSize(.small)
+                }
+                if let onResume {
+                    Button(DownloadsStrings.resume, systemImage: "play.fill", action: onResume)
+                        .controlSize(.small)
+                        .help(DownloadsStrings.resumeHelp)
+                }
             }
-            if entry.isActive {
+            if entry.isInProgress {
                 ProgressView(value: entry.fraction).progressViewStyle(.linear)
                 HStack {
                     Text(String(format: "%.0f%%", entry.fraction * 100))

@@ -8,7 +8,7 @@ extension GameDetailViewModel {
             return GameMoveStrings.blockedDriveMissing(name)
         }
         if bottles.activeBottleIDs.contains(bottle.id) { return GameMoveStrings.blockedRunning }
-        if download?.isActive == true { return GameMoveStrings.blockedDownloading }
+        if download?.isInProgress == true { return GameMoveStrings.blockedDownloading }
         if cloudSync.isSyncing { return GameMoveStrings.blockedSyncing }
         if isPatching { return GameMoveStrings.blockedPatching }
         return nil

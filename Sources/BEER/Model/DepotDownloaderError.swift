@@ -9,6 +9,8 @@ enum DepotDownloaderError: LocalizedError {
     case launchExeNotFound
     case installDirMissing(String)
     case appNotOwned(String)
+    /// Stopped by Pause. Not a failure: Resume carries on from what's on disk.
+    case paused
 
     var errorDescription: String? {
         switch self {
@@ -28,6 +30,8 @@ enum DepotDownloaderError: LocalizedError {
             return "The game's install folder is missing at \(path). Reinstall the game before adding DLC."
         case .appNotOwned(let name):
             return "\(name) isn't available on this Steam account. If you bought it recently, sign out and back in so Steam re-sends your licences."
+        case .paused:
+            return DownloadsStrings.paused
         }
     }
 }

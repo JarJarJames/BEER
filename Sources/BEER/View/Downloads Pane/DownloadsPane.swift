@@ -3,6 +3,7 @@ import SwiftUI
 struct DownloadsPane: View {
     @EnvironmentObject private var downloads: DownloadsStore
     @EnvironmentObject private var depotCtl: DepotDownloaderController
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         ScrollView {
@@ -12,11 +13,16 @@ struct DownloadsPane: View {
                 if !depotCtl.isBusy && downloads.entries.isEmpty {
                     emptyView
                 } else {
-                    if !downloads.active.isEmpty {
+                    if !downloads.inProgress.isEmpty {
                         sectionHeader("Active")
                         VStack(spacing: 10) {
-                            ForEach(downloads.active) { entry in
-                                DownloadRow(entry: entry)
+                            ForEach(downloads.inProgress) { entry in
+                                DownloadRow(
+                                    entry: entry,
+                                    onPause: depotCtl.pausableIDs.contains(entry.id)
+                                        ? { depotCtl.pause(entry.id, in: downloads) } : nil,
+                                    onResume: entry.isPaused ? { resume(entry) } : nil
+                                )
                             }
                         }
                     }
@@ -33,6 +39,13 @@ struct DownloadsPane: View {
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+
+    /// On the game's page, which can ask to reconnect Steam or report a full
+    /// disk; this list can't.
+    private func resume(_ entry: DownloadsStore.Entry) {
+        dismiss()
+        GameLinkRouter.shared.resume(entry)
     }
 
     private var emptyView: some View {

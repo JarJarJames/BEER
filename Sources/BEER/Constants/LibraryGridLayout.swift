@@ -8,6 +8,12 @@ enum LibraryGridLayout {
     static let cornerRadius: CGFloat = 8
     static let captionPadding: CGFloat = 10
     static let badgeInset: CGFloat = 8
+    /// How far a badge's text may shrink to fit a narrow card.
+    static let badgeMinimumScale: CGFloat = 0.6
+    /// The unfilled part of a download badge, dark so white text reads on art.
+    static let badgeTrackOpacity: Double = 0.6
+    /// Room a badge leaves for the favorite star in the opposite corner.
+    static let favoriteClearance: CGFloat = 26
     static let hoverScale: CGFloat = 1.02
     static let listRowSpacing: CGFloat = 12
     static let listRowHorizontalPadding: CGFloat = 12

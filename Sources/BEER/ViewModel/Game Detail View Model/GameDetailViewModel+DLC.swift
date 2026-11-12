@@ -27,4 +27,20 @@ extension GameDetailViewModel {
     func reloadDLC() {
         Task { [self] in await loadDLC(force: true) }
     }
+
+    /// Run a paused DLC download again. DepotDownloader keeps what it already
+    /// has, so this carries on rather than starting over.
+    func resumeDLC(_ dlcAppID: Int) {
+        guard let bottle = installedBottle, let installDir = bottle.resolvedInstallDirectory,
+              let auth = cloudAuth.account else { return }
+        Task { [self] in
+            await loadDLC(force: false)
+            guard case .loaded(let found) = dlcStore.state(for: appID),
+                  let dlc = found.first(where: { $0.appID == dlcAppID }) else { return }
+            await dlcStore.install(
+                dlc, bottle: bottle, installDir: installDir, auth: auth,
+                controller: depotCtl, downloads: downloads, bottles: bottles
+            )
+        }
+    }
 }

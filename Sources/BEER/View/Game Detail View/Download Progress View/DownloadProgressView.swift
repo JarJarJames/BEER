@@ -2,6 +2,8 @@ import SwiftUI
 
 struct DownloadProgressView: View {
     let entry: DownloadsStore.Entry
+    /// Nil while there's nothing Pause can stop. Resume is on the action row.
+    var onPause: (() -> Void)? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -9,6 +11,10 @@ struct DownloadProgressView: View {
                 Text(entry.phaseText).font(.callout.bold())
                 Spacer()
                 Text(entry.fraction.percentString).font(.callout.monospacedDigit())
+                if let onPause {
+                    Button(DownloadsStrings.pause, systemImage: "pause.fill", action: onPause)
+                        .controlSize(.small)
+                }
             }
             ProgressView(value: entry.fraction)
                 .progressViewStyle(.linear)
