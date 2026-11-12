@@ -41,6 +41,16 @@ struct GameActionRow: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
+
+                        if let update = updateButton {
+                            Button(action: model.startInstallOrLogin) {
+                                Label(update.title, systemImage: "arrow.down.circle")
+                            }
+                            .controlSize(.large)
+                            .help(update.help)
+                            .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id)
+                                      || model.isStartingInstall)
+                        }
                     }
                 }
             } else if let entry = model.download, entry.isActive {
@@ -101,5 +111,15 @@ struct GameActionRow: View {
 
             GameMoreMenu(model: model)
         }
+    }
+
+    /// Update for a game Steam has a newer build of; Check for Updates for one
+    /// BEER can't judge yet. Both run the Reinstall / Validate download.
+    private var updateButton: (title: String, help: String)? {
+        if model.offersUpdateBeforePlay { return (GameUpdateStrings.updateButton, GameUpdateStrings.updateHelp) }
+        if !model.game.effectiveIsNonSteam, model.game.isUpdateUntracked {
+            return (GameUpdateStrings.checkButton, GameUpdateStrings.checkHelp)
+        }
+        return nil
     }
 }

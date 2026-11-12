@@ -69,6 +69,7 @@ struct ContentView: View {
                 // is usable, not once a network round-trip finishes.
                 await presence.start(auth: cloudAuth)
                 await library.fetchLibrary(auth: cloudAuth)
+                await library.checkForUpdates(bottles: store, auth: cloudAuth)
             }
         }
         // Sign-in and sign-out both happen well after launch, so the session

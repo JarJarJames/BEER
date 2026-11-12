@@ -88,7 +88,8 @@ extension GameDetailViewModel {
             }
             switch prompt.retry {
             case .sync(let pull, let push): syncSaves(for: prompt.bottle, pull: pull, push: push)
-            case .launch: launch(prompt.bottle)
+            // The player already chose to play this version.
+            case .launch: launch(prompt.bottle, skippingUpdatePrompt: true)
             }
         }
     }

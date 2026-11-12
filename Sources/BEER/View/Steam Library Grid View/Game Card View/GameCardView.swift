@@ -38,7 +38,9 @@ struct GameCardView: View {
     }
 
     @ViewBuilder private var card: some View {
-        let badge = isInstalled ? InstalledBadge(isDriveMissing: isDriveMissing) : nil
+        let badge = isInstalled
+            ? InstalledBadge(isDriveMissing: isDriveMissing, hasUpdate: game.effectiveUpdateAvailable)
+            : nil
         switch style {
         case .wide:
             WideGameCard(game: game, caption: caption, showsName: showsName, badge: badge)

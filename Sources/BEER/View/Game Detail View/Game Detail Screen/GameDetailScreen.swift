@@ -139,6 +139,17 @@ struct GameDetailScreen: View {
             }
         }
         .confirmationDialog(
+            GameUpdateStrings.beforePlayTitle(model.game.name),
+            isPresented: Binding(get: { model.updateBeforePlay != nil },
+                                 set: { if !$0 { model.updateBeforePlay = nil } })
+        ) {
+            Button(GameUpdateStrings.updateFirst, action: model.updateInsteadOfPlaying)
+            Button(GameUpdateStrings.playAnyway, action: model.playWithoutUpdating)
+            Button(GameUpdateStrings.cancel, role: .cancel) {}
+        } message: {
+            Text(GameUpdateStrings.beforePlayMessage)
+        }
+        .confirmationDialog(
             "Remove \(model.game.name)?",
             isPresented: $model.confirmRemoveNonSteamGame
         ) {

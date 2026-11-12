@@ -3,7 +3,7 @@ import Foundation
 
 /// A fake Steam for tests: a script that runs in place of the CloudSync helper,
 /// so tests can drive a whole sync or install check without Steam. It answers
-/// `enumerate`, `batch`, `installsize` and `clienticon` from what the test sets here, writes
+/// `enumerate`, `batch`, `installsize`, `clienticon` and `updatecheck` from what the test sets here, writes
 /// the files it "downloads", and records every call it gets, so a test can
 /// check what reached Steam and in what order.
 @MainActor
@@ -13,8 +13,11 @@ final class FakeSteam {
         let command: String
         let downloads: [(filename: String, out: String)]
         let uploads: [(filename: String, mtime: Date)]
-        /// The apps an `installsize` or `clienticon` call asked about.
+        /// The apps an `installsize`, `clienticon` or `updatecheck` call asked about.
         let appIDs: [Int]
+        /// The game folders an `updatecheck` call asked about, and each one's left-out depots.
+        var directories: [String] = []
+        var leftOutDepots: [[Int]] = []
     }
 
     /// What Steam lists for the game.
@@ -31,6 +34,8 @@ final class FakeSteam {
     var installDLC: [Int: [InstallableDLC]] = [:] { didSet { save() } }
     /// The hash of each app's Windows icon. `clienticon` reports none for an app missing here.
     var clientIcons: [Int: String] = [:] { didSet { save() } }
+    /// What `updatecheck` reports for each installed game. A game missing here is `unknown`.
+    var gameUpdates: [Int: GameUpdateStatus] = [:] { didSet { save() } }
     /// Answer every command as Steam does for a revoked sign-in.
     var signInExpired = false { didSet { save() } }
 
@@ -60,7 +65,8 @@ final class FakeSteam {
                  mtime: Date(timeIntervalSince1970: ($0["mtime"] as? NSNumber)?.doubleValue ?? 0))
             }
             return Call(command: obj["cmd"] as? String ?? "", downloads: downloads, uploads: uploads,
-                        appIDs: obj["appids"] as? [Int] ?? [])
+                        appIDs: obj["appids"] as? [Int] ?? [], directories: obj["dirs"] as? [String] ?? [],
+                        leftOutDepots: obj["leftout"] as? [[Int]] ?? [])
         }
     }
 
@@ -78,6 +84,7 @@ final class FakeSteam {
                 (String(app), dlc.map { ["appid": $0.appID, "name": $0.name, "bytes": $0.bytes as Any, "depots": $0.depotIDs] })
             }),
             "clientIcons": Dictionary(uniqueKeysWithValues: clientIcons.map { (String($0.key), $0.value) }),
+            "gameUpdates": Dictionary(uniqueKeysWithValues: gameUpdates.map { (String($0.key), $0.value.rawValue) }),
         ]
         // A test that can't set up its fake Steam can't mean anything.
         try! JSONSerialization.data(withJSONObject: config).write(to: directory.appendingPathComponent("fakesteam.json"))
@@ -107,6 +114,12 @@ final class FakeSteam {
         call["appids"] = [int(a) for a in args[args.index("--appids") + 1].split(",")]
     if cmd == "clienticon":
         call["appids"] = [int(args[args.index("--appid") + 1])]
+    if cmd == "updatecheck":
+        with open(args[args.index("--jobs") + 1]) as f:
+            jobs = json.load(f)
+        call["appids"] = [j["appid"] for j in jobs]
+        call["dirs"] = [j["dir"] for j in jobs]
+        call["leftout"] = [j.get("leftout", []) for j in jobs]
     with open(os.path.join(here, "calls.jsonl"), "a") as log:
         log.write(json.dumps(call) + "\n")
 
@@ -122,6 +135,8 @@ final class FakeSteam {
               "dlc": [d for a in call["appids"] for d in config["installDLC"].get(str(a), [])]})
     elif cmd == "clienticon":
         emit({"clienticon": config["clientIcons"].get(str(call["appids"][0]))})
+    elif cmd == "updatecheck":
+        emit({"games": [{"appid": a, "status": config["gameUpdates"].get(str(a), "unknown")} for a in call["appids"]]})
     elif cmd == "batch":
         for d in call["downloads"]:
             content = config["contents"].get(d["filename"])

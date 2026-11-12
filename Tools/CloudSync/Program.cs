@@ -25,6 +25,7 @@ namespace CloudSync;
 //   launchinfo --appid N
 //   installsize --appids N,N,...  (disk a Windows install of them needs; bytes or null)
 //   clienticon --appid N    (hash of the app's Windows .ico, or null)
+//   updatecheck --jobs <path to JSON [{appid, dir}]>  (current/update/untracked/unknown per installed game)
 //   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
@@ -92,6 +93,7 @@ static class Program
                         await InstallSizeCommand.RunAsync(session, CliArgs.Require(args, "appids")
                             .Split(',', StringSplitOptions.RemoveEmptyEntries).Select(uint.Parse).ToList());
                         break;
+                    case "updatecheck": await UpdateCheckCommand.RunAsync(session, CliArgs.Require(args, "jobs")); break;
                     case "presence":
                         await new PresenceSession(session, ulong.Parse(CliArgs.Require(args, "steamid"))).RunAsync();
                         break;

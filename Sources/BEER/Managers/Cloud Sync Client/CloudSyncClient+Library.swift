@@ -105,3 +105,36 @@ extension CloudSyncClient {
         return URL(string: "https://cdn.cloudflare.steamstatic.com/steamcommunity/public/images/apps/\(appID)/\(hash).ico")
     }
 }
+
+extension CloudSyncClient {
+    /// Whether each installed game has an update on Steam's public branch,
+    /// judged from DepotDownloader's record in the game's folder (see
+    /// `UpdateCheckCommand` in Tools/CloudSync/Commands). One Steam logon for
+    /// every game. A game missing from the answer is unknown.
+    func updateCheck(
+        games: [GameUpdateCheck.Target], account: String, refreshToken: String
+    ) async throws -> [Int: GameUpdateStatus] {
+        guard !games.isEmpty else { return [:] }
+        let jobsFile = FileManager.default.temporaryDirectory
+            .appendingPathComponent("gn-update-jobs-\(UUID().uuidString).json")
+        let jobs = games.map {
+            ["appid": $0.appID, "dir": $0.directory.path, "leftout": $0.leftOutDepots] as [String: Any]
+        }
+        try JSONSerialization.data(withJSONObject: jobs).write(to: jobsFile, options: .atomic)
+        defer { try? FileManager.default.removeItem(at: jobsFile) }
+
+        return Self.updateStatuses(from: try await runOnceArray(
+            "games", args: ["updatecheck", "--jobs", jobsFile.path],
+            account: account, refreshToken: refreshToken
+        ))
+    }
+
+    static func updateStatuses(from rows: [[String: Any]]) -> [Int: GameUpdateStatus] {
+        var statuses: [Int: GameUpdateStatus] = [:]
+        for row in rows {
+            guard let appID = (row["appid"] as? NSNumber)?.intValue else { continue }
+            statuses[appID] = (row["status"] as? String).flatMap(GameUpdateStatus.init(rawValue:)) ?? .unknown
+        }
+        return statuses
+    }
+}
