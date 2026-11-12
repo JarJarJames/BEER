@@ -60,6 +60,8 @@ struct ContentView: View {
             Text(RosettaStrings.message)
         }
         .task {
+            // Before anything starts the helper, so a dev build never runs old helper code.
+            await DevHelperRebuild.runIfNeeded()
             await runtimeInstaller.refresh()
             if library.account.isLoggedIn {
                 // Bring the Steam session up before the library fetch: the
