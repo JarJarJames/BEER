@@ -86,6 +86,15 @@ final class InstallDLCChoiceTests: XCTestCase {
         XCTAssertFalse(args.contains("-depot"))
     }
 
+    func testSizeCarriesEachDepotsOwnSize() async {
+        fakeSteam.installDepotBytes = [11: 30 * gb, 12: 0, 21: 5 * gb, 31: 50 * gb, 32: 8 * gb]
+        let size = await check(freeBytes: 500 * gb).size(appIDs: [10], account: account)
+
+        XCTAssertEqual(size.depotBytes, [11: 30 * gb, 21: 5 * gb, 31: 50 * gb, 32: 8 * gb],
+                       "a depot listed with no size is left out")
+        XCTAssertEqual(size.leavingOut([30]).depotBytes, size.depotBytes)
+    }
+
     func testOlderHelperOutputHasNoDLC() {
         let contents = CloudSyncClient.installContents(from: ["bytes": NSNumber(value: 5 * gb)])
         XCTAssertEqual(contents, CloudSyncClient.InstallContents(bytes: 5 * gb, depotIDs: [], dlc: []))

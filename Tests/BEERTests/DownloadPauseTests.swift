@@ -25,6 +25,32 @@ final class DownloadPauseTests: XCTestCase {
         XCTAssertEqual(entry?.fraction ?? -1, 0.4, accuracy: 0.0001, "the bar stays where it stopped")
     }
 
+    /// A resumed download checks the files on disk first and its progress
+    /// climbs back from 0; the bar stays where it was paused until it passes.
+    func testResumeKeepsThePausedProgress() {
+        let store = DownloadsStore()
+        store.start(appID: 1, name: "One", bottleID: UUID())
+        store.setProgress(appID: 1, fraction: 0.4, downloaded: nil, total: nil)
+        store.pause(appID: 1)
+
+        store.start(appID: 1, name: "One", bottleID: UUID())
+        XCTAssertEqual(store.entry(for: 1)?.fraction ?? -1, 0.4, accuracy: 0.0001)
+        store.setProgress(appID: 1, fraction: 0.1, downloaded: nil, total: nil)
+        XCTAssertEqual(store.entry(for: 1)?.fraction ?? -1, 0.4, accuracy: 0.0001)
+        store.setProgress(appID: 1, fraction: 0.5, downloaded: nil, total: nil)
+        XCTAssertEqual(store.entry(for: 1)?.fraction ?? -1, 0.5, accuracy: 0.0001)
+    }
+
+    func testRetryAfterAFailureStartsFromZero() {
+        let store = DownloadsStore()
+        store.start(appID: 1, name: "One", bottleID: UUID())
+        store.setProgress(appID: 1, fraction: 0.4, downloaded: nil, total: nil)
+        store.fail(appID: 1, reason: "Disk full")
+
+        store.start(appID: 1, name: "One", bottleID: UUID())
+        XCTAssertEqual(store.entry(for: 1)?.fraction, 0)
+    }
+
     func testPausedDownloadIsListedAsInProgressNotRecent() {
         let store = DownloadsStore()
         store.start(appID: 1, name: "One", bottleID: UUID())

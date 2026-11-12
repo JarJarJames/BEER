@@ -13,7 +13,8 @@ static class InstallSizeCommand
     //
     // Also lists what that download is made of, so the install sheet can leave
     // DLC out: `depots` is every depot it fetches, and `dlc` the owned DLC
-    // among them, each with its own depots and size.
+    // among them, each with its own depots and size. `depotBytes` is each
+    // depot's own size, for the download's progress bar.
     public static async Task RunAsync(SteamSession s, IReadOnlyList<uint> appids)
     {
         if (appids.Count == 0) throw new Exception("installsize requires --appids");
@@ -50,6 +51,7 @@ static class InstallSizeCommand
         {
             ["bytes"] = InstallSize.Total(depots),
             ["depots"] = depots.Select(d => d.Id).ToList(),
+            ["depotBytes"] = InstallSize.BytesByDepot(depots),
             ["dlc"] = dlc,
         });
     }

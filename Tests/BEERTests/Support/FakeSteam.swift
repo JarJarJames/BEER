@@ -32,6 +32,8 @@ final class FakeSteam {
     /// The depots `installsize` lists for each app, and the owned DLC among them.
     var installDepots: [Int: [Int]] = [:] { didSet { save() } }
     var installDLC: [Int: [InstallableDLC]] = [:] { didSet { save() } }
+    /// Each depot's own size, which `installsize` lists as `depotBytes`.
+    var installDepotBytes: [Int: Int64] = [:] { didSet { save() } }
     /// The hash of each app's Windows icon. `clienticon` reports none for an app missing here.
     var clientIcons: [Int: String] = [:] { didSet { save() } }
     /// What `updatecheck` reports for each installed game. A game missing here is `unknown`.
@@ -80,6 +82,7 @@ final class FakeSteam {
             "signInExpired": signInExpired,
             "installSizes": Dictionary(uniqueKeysWithValues: installSizes.map { (String($0.key), $0.value) }),
             "installDepots": Dictionary(uniqueKeysWithValues: installDepots.map { (String($0.key), $0.value) }),
+            "installDepotBytes": Dictionary(uniqueKeysWithValues: installDepotBytes.map { (String($0.key), $0.value) }),
             "installDLC": Dictionary(uniqueKeysWithValues: installDLC.map { app, dlc in
                 (String(app), dlc.map { ["appid": $0.appID, "name": $0.name, "bytes": $0.bytes as Any, "depots": $0.depotIDs] })
             }),
@@ -132,6 +135,9 @@ final class FakeSteam {
         sizes = [config["installSizes"][str(a)] for a in call["appids"] if str(a) in config["installSizes"]]
         emit({"bytes": sum(sizes) if sizes else None,
               "depots": [d for a in call["appids"] for d in config["installDepots"].get(str(a), [])],
+              "depotBytes": {str(d): config["installDepotBytes"][str(d)]
+                             for a in call["appids"] for d in config["installDepots"].get(str(a), [])
+                             if str(d) in config["installDepotBytes"]},
               "dlc": [d for a in call["appids"] for d in config["installDLC"].get(str(a), [])]})
     elif cmd == "clienticon":
         emit({"clienticon": config["clientIcons"].get(str(call["appids"][0]))})
