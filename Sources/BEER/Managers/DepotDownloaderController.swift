@@ -22,6 +22,11 @@ final class DepotDownloaderController: ObservableObject {
 
     var isBusy: Bool { activeDownloads > 0 }
 
+    /// Downloads Pause can stop right now, by Downloads entry: DepotDownloader
+    /// is running for them. Not during bottle setup or emulator patching.
+    @Published private(set) var pausableIDs: Set<Int> = []
+    private var stoppers: [Int: ProcessStopper] = [:]
+
     private let cloudClient = CloudSyncClient()
     private var authSessionDepth = 0
     private var authCacheURL: URL?
@@ -95,7 +100,7 @@ final class DepotDownloaderController: ObservableObject {
         try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
-        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+        try await download(appID: appID, downloadID: appID, into: installDir, auth: auth, depots: depots, events: events)
 
         guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
             throw DepotDownloaderError.launchExeNotFound
@@ -114,9 +119,11 @@ final class DepotDownloaderController: ObservableObject {
     /// add DLC without re-downloading the base game.
     ///
     /// A DLC whose files are among the game's own depots is fetched with the
-    /// game's `appID` and just those `depots`.
+    /// game's `appID` and just those `depots`; `downloadID` is still the DLC's
+    /// own, so Pause stops this run and not the game's.
     func installDLC(
         appID: Int,
+        downloadID: Int,
         installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]? = nil,
@@ -127,7 +134,7 @@ final class DepotDownloaderController: ObservableObject {
               isDirectory.boolValue else {
             throw DepotDownloaderError.installDirMissing(installDir.path)
         }
-        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+        try await download(appID: appID, downloadID: downloadID, into: installDir, auth: auth, depots: depots, events: events)
     }
 
     // MARK: - Shared download
@@ -136,6 +143,7 @@ final class DepotDownloaderController: ObservableObject {
     /// Steam token in for the lifetime of the process.
     private func download(
         appID: Int,
+        downloadID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
@@ -146,7 +154,7 @@ final class DepotDownloaderController: ObservableObject {
         }
 
         try await withAuthSession(auth: auth) {
-            try await self.runDownload(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+            try await self.runDownload(appID: appID, downloadID: downloadID, into: installDir, auth: auth, depots: depots, events: events)
         }
     }
 
@@ -186,6 +194,7 @@ final class DepotDownloaderController: ObservableObject {
 
     private func runDownload(
         appID: Int,
+        downloadID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
@@ -195,6 +204,14 @@ final class DepotDownloaderController: ObservableObject {
         // and whichever finished first used to clear the flag for both.
         activeDownloads += 1
         defer { activeDownloads -= 1 }
+
+        let stopper = ProcessStopper()
+        stoppers[downloadID] = stopper
+        pausableIDs.insert(downloadID)
+        defer {
+            stoppers[downloadID] = nil
+            pausableIDs.remove(downloadID)
+        }
 
         let args = Self.downloadArguments(
             appID: appID, installDir: installDir,
@@ -218,7 +235,7 @@ final class DepotDownloaderController: ObservableObject {
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
 
-        let exit = try await runDepotDownloader(args: args) { line in
+        let exit = try await runDepotDownloader(args: args, stopper: stopper) { line in
             // Skip per-chunk progress lines; everything else (logon, licence and
             // ownership messages) is what a failed run needs.
             if parseProgressFraction(line) == nil {
@@ -267,6 +284,11 @@ final class DepotDownloaderController: ObservableObject {
             }
         }
 
+        // Whatever it printed on the way out, it stopped because it was told to.
+        if stopper.wasStopped {
+            throw DepotDownloaderError.paused
+        }
+
         if sessionExpired.value {
             throw DepotDownloaderError.sessionExpired
         }
@@ -282,6 +304,17 @@ final class DepotDownloaderController: ObservableObject {
         guard exit == 0 else {
             throw DepotDownloaderError.downloadFailed(exit, tail.value.suffix(15).joined(separator: "\n"))
         }
+    }
+
+    // MARK: - Pause
+
+    /// Stop the DepotDownloader run for Downloads entry `id`. The install
+    /// that started it then ends with `DepotDownloaderError.paused`, once the
+    /// process has exited; what came down stays for Resume.
+    func pause(_ id: Int, in downloads: DownloadsStore) {
+        guard let stopper = stoppers[id] else { return }
+        downloads.markPausing(appID: id)
+        stopper.stop()
     }
 
     // MARK: - Arguments
@@ -320,6 +353,7 @@ final class DepotDownloaderController: ObservableObject {
 
     private func runDepotDownloader(
         args: [String],
+        stopper: ProcessStopper,
         lineHandler: @escaping @Sendable (String) -> Void
     ) async throws -> Int32 {
         let exe = AppPaths.depotDownloaderExecutableURL.path
@@ -336,6 +370,7 @@ final class DepotDownloaderController: ObservableObject {
                     "DOTNET_NOLOGO": "1"
                 ],
                 currentDirectory: AppPaths.depotDownloaderDirectory,
+                stopper: stopper,
                 outputHandler: { chunk in
                     let combined = leftover.value + chunk
                     var lines = combined.components(separatedBy: "\n")

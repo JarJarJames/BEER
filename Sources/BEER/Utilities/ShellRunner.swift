@@ -48,6 +48,7 @@ enum ShellRunner {
         arguments: [String],
         environment: [String: String],
         currentDirectory: URL? = nil,
+        stopper: ProcessStopper? = nil,
         outputHandler: @escaping @Sendable (String) -> Void
     ) async throws -> ProcessResult {
         try await withCheckedThrowingContinuation { continuation in
@@ -99,6 +100,7 @@ enum ShellRunner {
 
             do {
                 try process.run()
+                stopper?.attach(process)
             } catch {
                 pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)

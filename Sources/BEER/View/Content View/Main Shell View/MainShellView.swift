@@ -63,6 +63,9 @@ struct MainShellView: View {
         .onReceive(drives.$drives) { _ in
             Task { await drivesChanged() }
         }
+        // Downloads paused before BEER last quit. The bottles load after
+        // this view appears, and a row already showing is left alone.
+        .onReceive(store.$bottles) { downloads.restorePaused(from: $0) }
         .onChange(of: store.bottles.count) { _, _ in
             Task { await foundGames.scan(drives: drives.drives, bottles: store.bottles, library: library.games) }
         }

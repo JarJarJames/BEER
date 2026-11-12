@@ -99,6 +99,7 @@ final class DLCStore: ObservableObject {
                                 bottleID: bottle.id, parentAppID: bottle.steamAppID)
                 try await controller.installDLC(
                     appID: leftOut != nil ? bottle.steamAppID ?? dlc.appID : dlc.appID,
+                    downloadID: dlc.appID,
                     installDir: installDir,
                     auth: auth,
                     depots: leftOut?.depotIDs,
@@ -115,6 +116,9 @@ final class DLCStore: ObservableObject {
             message = .success(hasFiles
                 ? "Installed \(dlc.name)."
                 : "Enabled \(dlc.name). It has no files to download — only the entitlement was needed.")
+        } catch DepotDownloaderError.paused {
+            // Kept for this session only; Resume runs this install again.
+            downloads.pause(appID: dlc.appID)
         } catch {
             if hasFiles { downloads.fail(appID: dlc.appID, reason: error.localizedDescription) }
             message = .failure(error.localizedDescription)
