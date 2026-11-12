@@ -50,9 +50,28 @@ sealed partial class PresenceSession
             _friends.SetPersonaState(_currentState);
             lock (_announceGate)
             {
+                // Steam only re-sends the playing state after logon if another
+                // device is playing. A block from before the drop may have
+                // cleared while we were away, so count it as clearing now: the
+                // cooldown still applies, and a live block is re-reported.
+                _playingLock.Update(blocked: false, DateTime.UtcNow);
                 if (_currentApp != 0) Announce(_currentApp);
             }
             JsonOutput.Emit(new Dictionary<string, object?> { ["reconnected"] = true });
+        });
+
+        // Another device on the account started or stopped playing.
+        _session.Subscribe<SteamUser.PlayingSessionStateCallback>(cb =>
+        {
+            lock (_announceGate)
+            {
+                _playingLock.Update(cb.PlayingBlocked, DateTime.UtcNow);
+            }
+            JsonOutput.Emit(new Dictionary<string, object?>
+            {
+                ["playing_blocked"] = cb.PlayingBlocked,
+                ["playing_app"] = cb.PlayingAppID,
+            });
         });
 
         // Steam's own view of this persona, pushed on every change. This is

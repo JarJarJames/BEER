@@ -8,7 +8,6 @@ sealed partial class PresenceSession
     async Task KeepaliveAsync(CancellationToken token)
     {
         var attempts = 0;
-        var ticks = 0;
         var lastPump = -1L;
         while (!token.IsCancellationRequested)
         {
@@ -45,12 +44,11 @@ sealed partial class PresenceSession
                     if (_currentApp != 0) Announce(_currentApp);
                 }
 
-                // Persona state is last-writer-wins across an account's
-                // sessions, exactly like games-played, so it needs the same
-                // periodic defence — but far less often, since nothing else
-                // asserts it continuously and Steam pushes the real value
-                // back unprompted whenever it changes.
-                if (++ticks % 12 == 0) _friends.SetPersonaState(_currentState);
+                // Persona state is deliberately not re-sent here. It belongs
+                // to the account, so re-asserting it every minute undid any
+                // status the user set on their PC or phone — and with Offline,
+                // signed those devices out of Friends again and again. It is
+                // sent when the user picks it and after each logon, no more.
                 continue;
             }
 

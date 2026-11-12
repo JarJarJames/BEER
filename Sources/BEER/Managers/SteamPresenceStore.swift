@@ -31,8 +31,13 @@ final class SteamPresenceStore: ObservableObject {
 
     func load() {
         guard let data = try? Data(contentsOf: AppPaths.presenceStateURL),
-              let stored = try? JSONDecoder().decode(Stored.self, from: data) else { return }
-        desiredState = stored.desiredState
+              let state = Self.storedState(from: data) else { return }
+        desiredState = state
+    }
+
+    /// The saved status, made safe to send.
+    nonisolated static func storedState(from data: Data) -> SteamPersonaState? {
+        (try? JSONDecoder().decode(Stored.self, from: data))?.desiredState.assertable
     }
 
     /// Bring the session up. Safe to call repeatedly; a live session is kept.
@@ -68,7 +73,8 @@ final class SteamPresenceStore: ObservableObject {
 
     // MARK: - Commands
 
-    func setState(_ state: SteamPersonaState) {
+    func setState(_ requested: SteamPersonaState) {
+        let state = requested.assertable
         desiredState = state
         persist()
         process?.send("state \(state.rawValue)")

@@ -84,6 +84,7 @@ What we actually do:
 - **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. The old manual full-Steam-bottle workflow was removed; use DepotDownloader's per-game path.
 - **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
 - **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
+- **Fighting the user's other Steam devices (#65):** persona state is account-wide. Sending Offline signs every device out of Friends & Chat, and re-sending the status on a timer undoes whatever the user set on their PC. Games-played must not be announced while Steam reports another device playing (`ClientPlayingSessionState`), or for 60 s after it stops, or that device gets kicked with `LoggedInElsewhere`. See `PersonaPolicy` / `PlayingLock` in the helper.
 
 ## 8. Build, run, release
 

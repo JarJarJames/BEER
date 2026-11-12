@@ -13,7 +13,7 @@ namespace CloudSync.Commands.Presence;
 // gameplay would fight this one. One session, driven by commands.
 //
 // Commands arrive on stdin, one per line:
-//   state <Online|Away|Invisible|Offline>
+//   state <Online|Away|Invisible>   (Offline is sent as Invisible; see PersonaPolicy)
 //   play <appid>
 //   stop
 //
@@ -36,6 +36,9 @@ sealed partial class PresenceSession
     // announces again afterwards.
     readonly object _announceGate = new();
 
+    // Guarded by _announceGate, like _currentApp.
+    readonly PlayingLock _playingLock = new();
+
     // Set when Steam ends the session because the account logged on
     // somewhere else. Reconnecting then would start a kick war with that
     // other client, so we stop and let the app tell the user instead.
@@ -55,7 +58,8 @@ sealed partial class PresenceSession
         // Keep the announcement alive. Any other session on the account — the
         // real Steam client above all — broadcasts its own games-played, and
         // the last writer wins; re-sending is how the real client makes its own
-        // status stick. Also surfaces a dropped connection rather than letting
+        // status stick. It never claims over another device that is playing,
+        // though: see PlayingLock. Also surfaces a dropped connection rather than letting
         // us sit on a dead socket believing we are still being counted.
         var stop = new CancellationTokenSource();
         var keepalive = Task.Run(() => KeepaliveAsync(stop.Token));
@@ -99,14 +103,23 @@ sealed partial class PresenceSession
                     case "state":
                         if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
                         {
-                            _currentState = wanted;
-                            _friends.SetPersonaState(wanted);
+                            _currentState = PersonaPolicy.Assertable(wanted);
+                            _friends.SetPersonaState(_currentState);
                         }
                         break;
 
                     case "play":
-                        SetPlaying(uint.Parse(parts[1]));
-                        JsonOutput.Emit(new Dictionary<string, object?> { ["playing"] = _currentApp });
+                        bool blocked;
+                        lock (_announceGate)
+                        {
+                            SetPlaying(uint.Parse(parts[1]));
+                            blocked = !_playingLock.MayClaim(DateTime.UtcNow);
+                        }
+                        JsonOutput.Emit(new Dictionary<string, object?>
+                        {
+                            ["playing"] = _currentApp,
+                            ["blocked_by_other_session"] = blocked,
+                        });
                         break;
 
                     case "stop":
@@ -162,8 +175,13 @@ sealed partial class PresenceSession
     // be playing; the real Steam client has no special privilege here. That is
     // what lets BEER record hours for a game it launches through Wine, and it
     // is the same mechanism GameNative uses on Android.
+    //
+    // Callers hold _announceGate. While another device is playing, or just
+    // after it stopped, the announcement is held back (see PlayingLock); the
+    // keepalive sends it once claiming is safe.
     void Announce(uint appid)
     {
+        if (appid != 0 && !_playingLock.MayClaim(DateTime.UtcNow)) return;
         var msg = new ClientMsgProtobuf<CMsgClientGamesPlayed>(EMsg.ClientGamesPlayedWithDataBlob);
         if (appid != 0)
             msg.Body.games_played.Add(new CMsgClientGamesPlayed.GamePlayed { game_id = appid });
