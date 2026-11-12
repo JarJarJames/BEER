@@ -28,8 +28,10 @@ final class DownloadsStore: ObservableObject {
 
     func start(appID: Int, name: String, bottleID: UUID, parentAppID: Int? = nil) {
         if let idx = entries.firstIndex(where: { $0.id == appID }) {
+            // A resumed download checks what's on disk first and climbs back
+            // from 0; the bar holds where it was paused until it passes that.
+            if !entries[idx].isPaused { entries[idx].fraction = 0 }
             entries[idx].status = .running("Connecting…")
-            entries[idx].fraction = 0
             entries[idx].startedAt = Date()
             entries[idx].logTail = []
         } else {
@@ -80,9 +82,10 @@ final class DownloadsStore: ObservableObject {
         }
     }
 
+    /// Only moves the bar forward; `start` is what sets it back to 0.
     func setProgress(appID: Int, fraction: Double, downloaded: Int64?, total: Int64?) {
         guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
-        entries[idx].fraction = fraction
+        entries[idx].fraction = max(entries[idx].fraction, fraction)
         if let downloaded { entries[idx].downloadedBytes = downloaded }
         if let total, total > 0 { entries[idx].totalBytes = total }
     }

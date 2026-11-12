@@ -77,11 +77,22 @@ extension CloudSyncClient {
                 depotIDs: depotIDs(d["depots"])
             )
         }
-        return InstallContents(bytes: installBytes(from: json), depotIDs: depotIDs(json["depots"]), dlc: dlc)
+        return InstallContents(bytes: installBytes(from: json), depotIDs: depotIDs(json["depots"]), dlc: dlc,
+                               depotBytes: depotBytes(json["depotBytes"]))
     }
 
     private static func depotIDs(_ value: Any?) -> [Int] {
         (value as? [NSNumber] ?? []).map(\.intValue)
+    }
+
+    /// `{"<depot id>": bytes}`; older helpers don't send it.
+    private static func depotBytes(_ value: Any?) -> [Int: Int64] {
+        var bytes: [Int: Int64] = [:]
+        for (key, size) in value as? [String: NSNumber] ?? [:] {
+            guard let id = Int(key), size.int64Value > 0 else { continue }
+            bytes[id] = size.int64Value
+        }
+        return bytes
     }
 
     static func installBytes(from json: [String: Any]) -> Int64? {

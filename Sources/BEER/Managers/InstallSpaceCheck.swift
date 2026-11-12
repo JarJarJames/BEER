@@ -24,12 +24,15 @@ struct InstallSize: Equatable {
     var dlc: [InstallableDLC] = []
     /// Every depot the whole download fetches; empty when Steam didn't say.
     var depotIDs: [Int] = []
+    /// Each depot's own size, for the download's progress bar (see
+    /// `DepotDownloadProgress`); depots Steam lists no size for are missing.
+    var depotBytes: [Int: Int64] = [:]
 
     /// The size without the DLC in `skipped`.
     func leavingOut(_ skipped: Set<Int>) -> InstallSize {
         let saved = dlc.filter { skipped.contains($0.appID) }.compactMap(\.bytes).reduce(0, +)
         return InstallSize(bytes: bytes.map { max($0 - saved, 0) }, uncheckedReason: uncheckedReason,
-                           dlc: dlc, depotIDs: depotIDs)
+                           dlc: dlc, depotIDs: depotIDs, depotBytes: depotBytes)
     }
 
     /// The depots to hand DepotDownloader with `-depot` so it skips `leftOut`.
@@ -79,7 +82,7 @@ struct InstallSpaceCheck {
             )
             return InstallSize(bytes: contents.bytes,
                                uncheckedReason: contents.bytes == nil ? DiskSpaceStrings.unknownSize : nil,
-                               dlc: contents.dlc, depotIDs: contents.depotIDs)
+                               dlc: contents.dlc, depotIDs: contents.depotIDs, depotBytes: contents.depotBytes)
         } catch {
             let msg = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
             return InstallSize(bytes: nil, uncheckedReason: DiskSpaceStrings.sizeCheckFailed(msg))

@@ -109,6 +109,26 @@ public class InstallSizeTests
     }
 
     [Fact]
+    public void ListsEachDepotsOwnSizeWhenSteamGivesOne()
+    {
+        var app = App(
+            new Depot("101", MaxSize: "1000"),
+            new Depot("102"),
+            new Depot("103", ManifestSize: "200", DlcAppId: "555"));
+        var depots = InstallSize.Depots(app, new HashSet<uint> { 555 });
+        Assert.Equal(
+            new Dictionary<string, ulong> { ["101"] = 1000, ["103"] = 200 },
+            InstallSize.BytesByDepot(depots));
+    }
+
+    [Fact]
+    public void ADepotListedTwiceIsSizedOnce()
+    {
+        var depots = new[] { new FetchedDepot(101, null, 1000), new FetchedDepot(101, null, 1000) };
+        Assert.Equal(new Dictionary<string, ulong> { ["101"] = 1000 }, InstallSize.BytesByDepot(depots));
+    }
+
+    [Fact]
     public void SkipsEmptyDepotSections()
     {
         var app = App(new Depot("101", MaxSize: "1000"));

@@ -44,7 +44,8 @@ extension GameDetailViewModel {
             UserDefaults.standard.set(target.volume?.uuid, forKey: InstallPreferences.lastDriveKey)
         }
         // Without the depot list nothing can be left out, so none is recorded.
-        startInstall(to: target, checked: checked, leavingOut: depots == nil ? [] : leftOut, depots: depots)
+        startInstall(to: target, checked: checked, leavingOut: depots == nil ? [] : leftOut, depots: depots,
+                     depotBytes: installSize?.depotBytes ?? [:])
     }
 
     /// Tick or untick a DLC in the install sheet, and re-check the space.
@@ -58,9 +59,12 @@ extension GameDetailViewModel {
     /// twice; without it the check runs here. A game that already has a bottle
     /// goes where its files already are, whatever `target` says. `depots`, when
     /// given, is exactly what to download: everything but the `leftOut` DLC.
+    /// `depotBytes` comes from the same size lookup as `checked`, and sizes
+    /// each depot's share of the progress bar.
     func startInstall(
         to target: InstallTarget, checked: InstallSpace? = nil,
-        leavingOut leftOut: [InstallableDLC] = [], depots: [Int]? = nil
+        leavingOut leftOut: [InstallableDLC] = [], depots: [Int]? = nil,
+        depotBytes: [Int: Int64] = [:]
     ) {
         guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
@@ -85,14 +89,14 @@ extension GameDetailViewModel {
 
             // Before any bottle exists, so a refused install leaves nothing behind.
             let space: InstallSpace
+            var depotBytes = depotBytes
             if let checked {
                 space = checked
             } else {
                 let (destination, partial) = installDestination(for: target)
-                space = await installSpaceCheck.run(
-                    appIDs: [game.appID], account: steamAccount,
-                    destination: destination, partialDownload: partial
-                )
+                let size = await installSpaceCheck.size(appIDs: [game.appID], account: steamAccount)
+                space = await installSpaceCheck.assess(size, destination: destination, partialDownload: partial).verdict
+                depotBytes = size.depotBytes
             }
             switch space {
             case .fits:
@@ -168,6 +172,7 @@ extension GameDetailViewModel {
                     installDir: installDir,
                     auth: steamAccount,
                     depots: depots,
+                    depotBytes: depotBytes,
                     events: downloads.consume(appID: game.appID)
                 )
 
@@ -302,7 +307,8 @@ extension GameDetailViewModel {
                 requestInstall()
                 return
             }
-            startInstall(to: target, checked: space.verdict, leavingOut: leftOut, depots: depots)
+            startInstall(to: target, checked: space.verdict, leavingOut: leftOut, depots: depots,
+                         depotBytes: size.depotBytes)
         }
     }
 

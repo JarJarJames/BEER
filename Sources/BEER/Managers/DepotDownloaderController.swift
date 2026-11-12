@@ -12,7 +12,8 @@ import Foundation
 //
 // Output streamed from DepotDownloader is parsed for:
 //   • " Pre-allocating ", " Validating ", percentage lines       → status phases
-//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress
+//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress,
+//     made one bar for the whole run by DepotDownloadProgress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
 @MainActor
@@ -88,19 +89,23 @@ final class DepotDownloaderController: ObservableObject {
     // MARK: - Game install
 
     /// `installDir` is the game's folder, inside its bottle or on a drive.
+    /// `depotBytes` is each depot's size from the install sheet's lookup, so
+    /// a big depot takes up more of the progress bar than a small one.
     func installGame(
         appID: Int,
         gameName: String,
         installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]? = nil,
+        depotBytes: [Int: Int64] = [:],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
         // Say the drive is missing, rather than fail on a path that's gone.
         try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
-        try await download(appID: appID, downloadID: appID, into: installDir, auth: auth, depots: depots, events: events)
+        try await download(appID: appID, downloadID: appID, into: installDir, auth: auth,
+                           depots: depots, depotBytes: depotBytes, events: events)
 
         guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
             throw DepotDownloaderError.launchExeNotFound
@@ -134,7 +139,9 @@ final class DepotDownloaderController: ObservableObject {
               isDirectory.boolValue else {
             throw DepotDownloaderError.installDirMissing(installDir.path)
         }
-        try await download(appID: appID, downloadID: downloadID, into: installDir, auth: auth, depots: depots, events: events)
+        // No size lookup for a DLC: its depots share the progress bar equally.
+        try await download(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
+                           depots: depots, depotBytes: [:], events: events)
     }
 
     // MARK: - Shared download
@@ -147,6 +154,7 @@ final class DepotDownloaderController: ObservableObject {
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
+        depotBytes: [Int: Int64],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
@@ -154,7 +162,8 @@ final class DepotDownloaderController: ObservableObject {
         }
 
         try await withAuthSession(auth: auth) {
-            try await self.runDownload(appID: appID, downloadID: downloadID, into: installDir, auth: auth, depots: depots, events: events)
+            try await self.runDownload(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
+                                       depots: depots, depotBytes: depotBytes, events: events)
         }
     }
 
@@ -198,6 +207,7 @@ final class DepotDownloaderController: ObservableObject {
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
+        depotBytes: [Int: Int64],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         // Refcounted, not a Bool: a DLC install can overlap a base-game install,
@@ -230,6 +240,7 @@ final class DepotDownloaderController: ObservableObject {
         // Mutable scratch for the stdout parser thread.
         let tail = Box<[String]>([])
         let lastEmittedProgress = Box<Double>(-1)
+        let progress = Box(DepotDownloadProgress(depotBytes: depotBytes))
         let status = Box(DepotDownloaderStatus())
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
@@ -250,9 +261,9 @@ final class DepotDownloaderController: ObservableObject {
                 Task { @MainActor in events(.status(phase)) }
             }
 
-            // Progress
-            if let fraction = parseProgressFraction(line),
-               abs(fraction - lastEmittedProgress.value) > 0.001 {
+            // Progress, for the whole download rather than the depot it's on
+            if let fraction = progress.value.update(with: line),
+               fraction - lastEmittedProgress.value > 0.001 || fraction == 1 {
                 lastEmittedProgress.value = fraction
                 Task { @MainActor in events(.progress(fraction)) }
             }
