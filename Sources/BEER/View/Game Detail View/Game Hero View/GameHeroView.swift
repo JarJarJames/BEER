@@ -121,7 +121,8 @@ struct GameHeroView: View {
     private var overlayStats: some View {
         HStack(spacing: 12) {
             ForEach(stats) { Label($0.inline, systemImage: $0.systemImage) }
-            if model.installedBottle != nil {
+            // A bottle with no launch executable is a download that hasn't finished.
+            if model.installedBottle?.gameLaunchExecutable != nil {
                 Label("Installed", systemImage: "checkmark.circle.fill")
                     .foregroundStyle(.green)
             } else {

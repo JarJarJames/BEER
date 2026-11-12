@@ -4,7 +4,7 @@ import SwiftUI
 struct GameListRow: View {
     let game: SteamLibraryGame
     let caption: String?
-    let badge: InstalledBadge?
+    let badge: InstalledBadge
     let iconSize: CGFloat
 
     var body: some View {
@@ -21,7 +21,8 @@ struct GameListRow: View {
 
             GameCardCaption(name: game.name, caption: caption)
             if game.effectiveIsFavorite { FavoriteMark() }
-            badge
+            // A row has the room: the name truncates, never the badge.
+            badge.fixedSize()
         }
         .padding(.horizontal, LibraryGridLayout.listRowHorizontalPadding)
         .padding(.vertical, LibraryGridLayout.listRowVerticalPadding)
