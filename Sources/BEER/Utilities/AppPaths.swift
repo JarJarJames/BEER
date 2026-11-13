@@ -119,6 +119,12 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("presence-state.json")
     }
 
+    /// The ID BEER's Steam session gives Steam for this device, made once per
+    /// install so Steam doesn't take BEER for this Mac's own Steam client.
+    static var steamDeviceIDURL: URL {
+        applicationSupport.appendingPathComponent("steam-device-id")
+    }
+
     /// Everything the current/last play-session helper printed. First stop
     /// when Steam play time or in-game presence doesn't show up.
     static var playSessionLogURL: URL {

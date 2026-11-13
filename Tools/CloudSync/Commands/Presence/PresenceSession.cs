@@ -5,17 +5,21 @@ using SteamKit2.Internal;
 
 namespace CloudSync.Commands.Presence;
 
-// One long-lived session for the whole time BEER is open: persona state,
-// game announcements and play-time reads all share it.
+// BEER's one Steam session, logged on for the whole time BEER is open. Status,
+// game announcements, play time, and every request the app makes (library,
+// cloud saves, achievements, update checks…) all go through this one logon.
 //
-// Sharing matters. Steam's games-played and persona state are both
-// last-writer-wins across an account's sessions, so a second logon for
-// gameplay would fight this one. One session, driven by commands.
+// One logon matters. Every extra session on the account is another chance to
+// collide with the user's own Steam clients, and a burst of logons gets the
+// account rate-limited.
 //
-// Commands arrive on stdin, one per line:
+// stdin, one per line:
 //   state <Online|Away|Invisible|Offline>
 //   play <appid>
 //   stop
+//   {"id": N, "cmd": "<command>", "args": {"<name>": "<value>", …}}
+//     — any command CommandDispatch runs. Requests run concurrently; every
+//       line one emits carries its id, and it ends with {"id": N, "done": true}.
 //
 // EOF ends the session. BEER holds the write end of that pipe, so EOF
 // arrives if BEER dies by any means, including SIGKILL — macOS has no
@@ -24,10 +28,15 @@ namespace CloudSync.Commands.Presence;
 sealed partial class PresenceSession
 {
     readonly SteamSession _session;
-    readonly ulong _steamId;
     readonly SteamFriends _friends;
     uint _currentApp;
-    EPersonaState _currentState = EPersonaState.Online;
+
+    // Until the app picks a status, this session stays out of Friends.
+    // Offline keeps it out for good, the way ArchiSteamFarm runs on a main
+    // account: it never sets a status, so it can't change what the user's own
+    // Steam clients show, and play time still counts.
+    volatile EPersonaState _currentState = EPersonaState.Offline;
+    volatile bool _inFriends;
 
     // The keepalive thread re-announces while the command thread can be
     // retracting. Unsynchronised, a re-announce that read `_currentApp`
@@ -39,15 +48,14 @@ sealed partial class PresenceSession
     // Guarded by _announceGate, like _currentApp.
     readonly PlayingLock _playingLock = new();
 
-    // Set when Steam ends the session because the account logged on
-    // somewhere else. Reconnecting then would start a kick war with that
-    // other client, so we stop and let the app tell the user instead.
+    // Set when another logon took this session's LoginID — almost always a
+    // second copy of BEER. Reconnecting would start a kick war with it, so we
+    // stop and let the app tell the user instead.
     volatile bool _displaced;
 
-    public PresenceSession(SteamSession session, ulong steamId)
+    public PresenceSession(SteamSession session)
     {
         _session = session;
-        _steamId = steamId;
         _friends = session.Client.GetHandler<SteamFriends>()!;
     }
 
@@ -90,22 +98,20 @@ sealed partial class PresenceSession
         string? line;
         while ((line = await Task.Run(() => Console.In.ReadLine())) != null)
         {
+            if (line.StartsWith('{'))
+            {
+                Serve(line);
+                continue;
+            }
             var parts = line.Trim().Split(' ', 2);
             if (parts.Length == 0 || parts[0].Length == 0) continue;
             try
             {
                 switch (parts[0])
                 {
-                    // A fresh SteamKit logon's persona starts Offline, and Steam
-                    // does not broadcast a game for an offline persona — so the
-                    // app sends this before anything else, or nobody ever sees
-                    // the game.
                     case "state":
                         if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
-                        {
-                            _currentState = wanted;
-                            _friends.SetPersonaState(wanted);
-                        }
+                            ApplyState(wanted);
                         break;
 
                     case "play":
@@ -129,7 +135,7 @@ sealed partial class PresenceSession
                         // before re-reading the total.
                         await Task.Delay(TimeSpan.FromSeconds(2));
                         long? minutes = null;
-                        try { minutes = await OwnedGamesCommand.PlaytimeMinutesAsync(_session, _steamId, finished); }
+                        try { minutes = await OwnedGamesCommand.PlaytimeMinutesAsync(_session, _session.Client.SteamID!.ConvertToUInt64(), finished); }
                         catch (Exception ex) { Console.Error.WriteLine($"play time re-read failed: {ex.Message}"); }
                         JsonOutput.Emit(new Dictionary<string, object?>
                         {
@@ -158,6 +164,43 @@ sealed partial class PresenceSession
         // Let the retraction reach the CM before the caller disconnects the
         // socket underneath it.
         await Task.Delay(TimeSpan.FromSeconds(1));
+    }
+
+    void Serve(string line)
+    {
+        long id = 0;
+        try
+        {
+            var request = SessionRequest.Parse(line);
+            id = request.Id;
+            _ = Task.Run(() => CommandDispatch.ServeAsync(_session, request.Id, request.Command, request.Args));
+        }
+        catch (Exception ex)
+        {
+            // A request that won't parse still has to end, or the app waits on it.
+            JsonOutput.Emit(new Dictionary<string, object?> { ["id"] = id, ["error"] = $"bad request: {ex.Message}" });
+            JsonOutput.Emit(new Dictionary<string, object?> { ["id"] = id, ["done"] = true });
+        }
+    }
+
+    // Persona state belongs to the account, so this session only ever sets
+    // one the user picked in BEER. Offline is never sent: leaving Friends is
+    // done by dropping this session's presence, not by telling Steam the
+    // account is Offline, which signs every device out of Friends & Chat.
+    void ApplyState(EPersonaState wanted)
+    {
+        _currentState = wanted;
+        if (wanted != EPersonaState.Offline)
+        {
+            _friends.SetPersonaState(wanted);
+            _inFriends = true;
+        }
+        else if (_inFriends)
+        {
+            // A logon starts outside Friends; the keepalive logs back on.
+            _inFriends = false;
+            _session.Client.Disconnect();
+        }
     }
 
     void SetPlaying(uint appid)

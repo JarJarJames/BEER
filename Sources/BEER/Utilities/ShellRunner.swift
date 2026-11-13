@@ -7,7 +7,8 @@ enum ShellRunner {
         executable: String,
         arguments: [String],
         environment: [String: String],
-        outputHandler: @escaping @Sendable (String) -> Void
+        outputHandler: @escaping @Sendable (String) -> Void,
+        onExit: (@Sendable () -> Void)? = nil
     ) throws -> SpawnedProcess {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -32,6 +33,12 @@ enum ShellRunner {
         }
         process.terminationHandler = { _ in
             pipe.fileHandleForReading.readabilityHandler = nil
+            // Whatever the child wrote last may not have been read yet, and
+            // for a caller waiting on its final line that is the line that
+            // matters.
+            let rest = pipe.fileHandleForReading.readDataToEndOfFile()
+            if !rest.isEmpty, let chunk = String(data: rest, encoding: .utf8) { outputHandler(chunk) }
+            onExit?()
         }
 
         do {

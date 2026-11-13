@@ -10,8 +10,16 @@ sealed partial class PresenceSession
     {
         _session.Subscribe<SteamUser.LoggedOffCallback>(cb =>
         {
-            if (cb.Result is EResult.LoggedInElsewhere or EResult.LogonSessionReplaced)
+            // Another BEER took this session's LoginID: reconnecting would
+            // just take it back, and the two would trade it forever.
+            if (cb.Result == EResult.LogonSessionReplaced)
                 _displaced = true;
+            // Another device took the playing slot from us. Reconnecting is
+            // safe — the request work and status don't depend on the slot —
+            // but count the slot as taken, so the reconnect can't grab it back
+            // before Steam says the other game has stopped.
+            if (cb.Result == EResult.LoggedInElsewhere)
+                lock (_announceGate) _playingLock.Update(blocked: true, DateTime.UtcNow);
             JsonOutput.Emit(new Dictionary<string, object?>
             {
                 ["logged_off"] = cb.Result.ToString(),
@@ -47,7 +55,11 @@ sealed partial class PresenceSession
                 });
                 return;
             }
-            _friends.SetPersonaState(_currentState);
+            if (_currentState != EPersonaState.Offline)
+            {
+                _friends.SetPersonaState(_currentState);
+                _inFriends = true;
+            }
             lock (_announceGate)
             {
                 // Steam only re-sends the playing state after logon if another

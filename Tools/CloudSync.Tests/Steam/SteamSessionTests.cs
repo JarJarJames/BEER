@@ -5,8 +5,8 @@ namespace CloudSync.Tests.Steam;
 
 public class SteamSessionTests
 {
-    // Regression for #65: a legacy-chat logon signed the user's own Steam
-    // clients out of Friends whenever BEER opened.
+    // The user's own Steam clients use new chat, as do ArchiSteamFarm,
+    // GameNative and node-steam-user; SteamKit's default is legacy chat.
     [Fact]
     public void LogsOnAsANewChatClient() =>
         Assert.Equal(SteamUser.ChatMode.NewSteamChat,

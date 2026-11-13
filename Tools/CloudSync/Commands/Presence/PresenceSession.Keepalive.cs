@@ -51,14 +51,14 @@ sealed partial class PresenceSession
                 continue;
             }
 
-            // Displaced by another logon on this account — almost always
-            // the real Steam client. Reconnecting would just kick that one
+            // Displaced by another logon using this session's LoginID —
+            // another copy of BEER. Reconnecting would just kick that one
             // back, and the two would trade the account indefinitely.
             if (_displaced)
             {
                 JsonOutput.Emit(new Dictionary<string, object?>
                 {
-                    ["error"] = "Steam signed this session out because the account logged on somewhere else. Reopen BEER to restore status and play-time tracking.",
+                    ["error"] = "Steam signed BEER out because another copy of BEER logged on to this account. Quit the other one and reopen BEER.",
                     ["fatal"] = true,
                 });
                 // Nothing this process can still do is useful, and the app

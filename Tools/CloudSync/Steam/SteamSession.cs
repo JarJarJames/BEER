@@ -44,7 +44,8 @@ sealed class SteamSession : IDisposable
 
     static SteamSession StartPump()
     {
-        var client = new SteamClient();
+        var client = new SteamClient(SteamConfiguration.Create(b => b
+            .WithMachineInfoProvider(BeerDevice.Current)));
         var cb = new CallbackManager(client);
         var session = new SteamSession(client, cb);
         client.AddHandler(session.UserStats);
@@ -107,10 +108,10 @@ sealed class SteamSession : IDisposable
     // commands evicting the long-lived presence session, and the user's real
     // Steam client evicting both.
     //
-    // The presence session gets a fixed id so its own reconnects keep one
-    // identity; every other command gets a random one, so a library refresh or
-    // a cloud sync can't knock presence offline mid-game.
-    public const uint PresenceLoginID = 0x42454552; // "BEER"
+    // The app's one `session` gets a fixed id so its own reconnects keep one
+    // identity; a command run by hand gets a random one, so it can't knock
+    // that session offline.
+    public const uint SessionLoginID = 0x42454552; // "BEER"
     public static readonly uint CommandLoginID = (uint)Random.Shared.Next(1, int.MaxValue);
 
     /// Log on, retrying a connection that drops before the logon completes.
@@ -147,15 +148,9 @@ sealed class SteamSession : IDisposable
         throw last!;
     }
 
-    /// What every BEER logon sends.
-    // ChatMode: left at SteamKit's default, the logon declares the legacy
-    // (pre-2018) chat, and the user's own Steam clients use the new one. With
-    // BEER logged on that way, Steam never counted BEER and the user's Steam
-    // client in Friends at the same time (online_session_instances stayed at
-    // 1), and whichever joined last signed the other out — the user's client
-    // on the Mac and on their PC lost Friends whenever BEER opened. Every other
-    // SteamKit-family client declares new chat: ArchiSteamFarm, GameNative,
-    // node-steam-user.
+    /// What every BEER logon sends. New chat is what the user's own Steam
+    /// clients use, and what ArchiSteamFarm, GameNative and node-steam-user
+    /// declare; SteamKit's default is the legacy (pre-2018) chat.
     internal static SteamUser.LogOnDetails LogOnDetails(string account, string refreshToken, uint loginID) => new()
     {
         Username = account,
