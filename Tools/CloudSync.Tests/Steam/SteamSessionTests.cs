@@ -13,6 +13,10 @@ public class SteamSessionTests
             SteamSession.LogOnDetails("someone", "token", 1234).ChatMode);
 
     [Fact]
+    public void LogsOnUnderTheNameItSignsInWith() =>
+        Assert.Equal(SteamSession.MachineName, SteamSession.LogOnDetails("someone", "token", 1234).MachineName);
+
+    [Fact]
     public void KeepsItsOwnLoginID() =>
         Assert.Equal(1234u, SteamSession.LogOnDetails("someone", "token", 1234).LoginID);
 

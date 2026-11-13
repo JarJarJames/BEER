@@ -170,7 +170,13 @@ sealed class SteamSession : IDisposable
         ShouldRememberPassword = true,
         LoginID = loginID,
         ChatMode = SteamUser.ChatMode.NewSteamChat,
+        MachineName = MachineName,
     };
+
+    /// The name BEER gives Steam for this device, at sign-in and at every
+    /// logon, as GameNative uses its device's own name. SteamKit2's default
+    /// is "<host> (SteamKit2)".
+    internal static string MachineName => $"BEER on {Environment.MachineName}";
 
     static async Task<SteamSession> LogOnOnceAsync(string account, string refreshToken, uint loginID)
     {
