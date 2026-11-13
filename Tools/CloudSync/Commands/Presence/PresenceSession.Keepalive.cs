@@ -46,9 +46,8 @@ sealed partial class PresenceSession
 
                 // Persona state is deliberately not re-sent here. It belongs
                 // to the account, so re-asserting it every minute undid any
-                // status the user set on their PC or phone — and with Offline,
-                // signed those devices out of Friends again and again. It is
-                // sent when the user picks it and after each logon, no more.
+                // status the user set on their PC or phone. It is sent when
+                // the user picks it in BEER and after each logon, no more.
                 continue;
             }
 

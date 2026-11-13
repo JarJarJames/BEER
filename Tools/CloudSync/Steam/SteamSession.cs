@@ -147,6 +147,24 @@ sealed class SteamSession : IDisposable
         throw last!;
     }
 
+    /// What every BEER logon sends.
+    // ChatMode: left at SteamKit's default, the logon declares the legacy
+    // (pre-2018) chat, and the user's own Steam clients use the new one. With
+    // BEER logged on that way, Steam never counted BEER and the user's Steam
+    // client in Friends at the same time (online_session_instances stayed at
+    // 1), and whichever joined last signed the other out — the user's client
+    // on the Mac and on their PC lost Friends whenever BEER opened. Every other
+    // SteamKit-family client declares new chat: ArchiSteamFarm, GameNative,
+    // node-steam-user.
+    internal static SteamUser.LogOnDetails LogOnDetails(string account, string refreshToken, uint loginID) => new()
+    {
+        Username = account,
+        AccessToken = refreshToken,
+        ShouldRememberPassword = true,
+        LoginID = loginID,
+        ChatMode = SteamUser.ChatMode.NewSteamChat,
+    };
+
     static async Task<SteamSession> LogOnOnceAsync(string account, string refreshToken, uint loginID)
     {
         var session = StartPump();
@@ -164,13 +182,7 @@ sealed class SteamSession : IDisposable
         session._cb.Subscribe<SteamClient.ConnectedCallback>(_ =>
         {
             Console.Error.WriteLine("connected; logging on…");
-            user.LogOn(new SteamUser.LogOnDetails
-            {
-                Username = account,
-                AccessToken = refreshToken,
-                ShouldRememberPassword = true,
-                LoginID = loginID,
-            });
+            user.LogOn(LogOnDetails(account, refreshToken, loginID));
         });
         session._cb.Subscribe<SteamClient.DisconnectedCallback>(_ =>
         {

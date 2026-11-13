@@ -59,7 +59,7 @@ struct SteamAccountMenu: View {
                 get: { presence.desiredState },
                 set: { presence.setState($0) }
             )) {
-                ForEach(SteamPersonaState.choices) { state in
+                ForEach(SteamPersonaState.allCases) { state in
                     Text(state.caption.map { "\(state.label) — \($0)" } ?? state.label)
                         .tag(state)
                 }

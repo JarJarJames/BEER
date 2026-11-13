@@ -13,7 +13,7 @@ namespace CloudSync.Commands.Presence;
 // gameplay would fight this one. One session, driven by commands.
 //
 // Commands arrive on stdin, one per line:
-//   state <Online|Away|Invisible>   (Offline is sent as Invisible; see PersonaPolicy)
+//   state <Online|Away|Invisible|Offline>
 //   play <appid>
 //   stop
 //
@@ -103,8 +103,8 @@ sealed partial class PresenceSession
                     case "state":
                         if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
                         {
-                            _currentState = PersonaPolicy.Assertable(wanted);
-                            _friends.SetPersonaState(_currentState);
+                            _currentState = wanted;
+                            _friends.SetPersonaState(wanted);
                         }
                         break;
 
