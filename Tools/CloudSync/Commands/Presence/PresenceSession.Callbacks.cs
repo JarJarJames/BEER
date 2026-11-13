@@ -55,13 +55,9 @@ sealed partial class PresenceSession
                 });
                 return;
             }
-            if (_currentState != EPersonaState.Offline)
-            {
-                _friends.SetPersonaState(_currentState);
-                _inFriends = true;
-            }
             lock (_announceGate)
             {
+                if (_currentState is { } state) _session.Client.Send(PersonaStatus.Message(state));
                 // Steam only re-sends the playing state after logon if another
                 // device is playing. A block from before the drop may have
                 // cleared while we were away, so count it as clearing now: the

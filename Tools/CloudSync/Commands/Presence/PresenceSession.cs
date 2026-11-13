@@ -31,12 +31,10 @@ sealed partial class PresenceSession
     readonly SteamFriends _friends;
     uint _currentApp;
 
-    // Until the app picks a status, this session stays out of Friends.
-    // Offline keeps it out for good, the way ArchiSteamFarm runs on a main
-    // account: it never sets a status, so it can't change what the user's own
-    // Steam clients show, and play time still counts.
-    volatile EPersonaState _currentState = EPersonaState.Offline;
-    volatile bool _inFriends;
+    // The status the user picked in BEER; null until the app sends one, and
+    // until then this session sets none. Guarded by _announceGate: the
+    // command thread writes it and a reconnect re-sends it.
+    EPersonaState? _currentState;
 
     // The keepalive thread re-announces while the command thread can be
     // retracting. Unsynchronised, a re-announce that read `_currentApp`
@@ -183,24 +181,12 @@ sealed partial class PresenceSession
         }
     }
 
-    // Persona state belongs to the account, so this session only ever sets
-    // one the user picked in BEER. Offline is never sent: leaving Friends is
-    // done by dropping this session's presence, not by telling Steam the
-    // account is Offline, which signs every device out of Friends & Chat.
+    // Persona state belongs to the account, so this session only ever sends
+    // the one the user picked in BEER, exactly as they picked it.
     void ApplyState(EPersonaState wanted)
     {
-        _currentState = wanted;
-        if (wanted != EPersonaState.Offline)
-        {
-            _friends.SetPersonaState(wanted);
-            _inFriends = true;
-        }
-        else if (_inFriends)
-        {
-            // A logon starts outside Friends; the keepalive logs back on.
-            _inFriends = false;
-            _session.Client.Disconnect();
-        }
+        lock (_announceGate) _currentState = wanted;
+        _session.Client.Send(PersonaStatus.Message(wanted));
     }
 
     void SetPlaying(uint appid)

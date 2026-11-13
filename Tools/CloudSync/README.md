@@ -48,8 +48,9 @@ concurrently, every line one emits carries its `id`, and each ends with
 `{"id": N, "done": true}`. Lines with no `id` belong to the session itself:
 `presence_ready`, status and play reports, and a failed logon's `{error, …}`.
 Status and play commands are plain lines: `state <Online|Away|Invisible|Offline>`,
-`play <appid>`, `stop`. Offline means the session never sets a status, so it stays
-out of Friends. Run by hand, each command logs on for itself.
+`play <appid>`, `stop`. A status is sent exactly as picked, marked as set by the
+user (`PersonaStatus`): without that flag Steam signed the user's own Steam clients
+out of Friends (#65). Run by hand, each command logs on for itself.
 
 | Command | What it does | Writes anything? |
 |---|---|---|
