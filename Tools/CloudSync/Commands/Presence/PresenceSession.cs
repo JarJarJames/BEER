@@ -55,7 +55,6 @@ sealed partial class PresenceSession
     {
         _session = session;
         _friends = session.Client.GetHandler<SteamFriends>()!;
-        session.Client.AddHandler(new SelfPersonaTrace());
     }
 
     public async Task RunAsync()

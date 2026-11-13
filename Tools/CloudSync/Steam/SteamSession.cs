@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using CloudSync.Commands.Presence;
 using SteamKit2;
 using SteamKit2.Internal;
 
@@ -50,7 +51,11 @@ sealed class SteamSession : IDisposable
             .WithMachineInfoProvider(BeerDevice.Current)));
         var cb = new CallbackManager(client);
         var session = new SteamSession(client, cb);
+        // Handlers go in before the connection opens: SteamKit2 walks its
+        // handler list on the network thread for every message, unlocked, and
+        // one added mid-session broke that walk and stopped all delivery.
         client.AddHandler(session.UserStats);
+        client.AddHandler(new SelfPersonaTrace());
         var token = session._pump.Token;
         _ = Task.Run(() =>
         {
