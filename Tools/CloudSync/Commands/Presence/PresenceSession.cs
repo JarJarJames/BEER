@@ -187,6 +187,7 @@ sealed partial class PresenceSession
     {
         lock (_announceGate) _currentState = wanted;
         _session.Client.Send(PersonaStatus.Message(wanted));
+        JsonOutput.Emit(new Dictionary<string, object?> { ["status_sent"] = wanted.ToString() });
     }
 
     void SetPlaying(uint appid)
