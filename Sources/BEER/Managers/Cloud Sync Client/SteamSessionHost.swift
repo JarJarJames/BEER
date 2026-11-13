@@ -218,6 +218,11 @@ final class SteamSessionHost: @unchecked Sendable {
         guard let id = (obj["id"] as? NSNumber)?.intValue else {
             // Session-level: status and play reports, or the logon failing.
             if !isTest { PlaySessionLog.append(line) }
+            // BEER_STEAM_DIAGNOSE=1 (see PresenceSession): the steps go to the
+            // terminal BEER was started from, for the person watching.
+            if let step = obj["diagnose"] as? String {
+                print("[Steam diagnose \(Date().formatted(date: .omitted, time: .standard))] \(step)")
+            }
             if obj["error"] != nil { fatal.value = obj }
             lock.withLock { presenceListener }?(obj)
             return

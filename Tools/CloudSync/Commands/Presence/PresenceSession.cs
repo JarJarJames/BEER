@@ -70,12 +70,15 @@ sealed partial class PresenceSession
         var stop = new CancellationTokenSource();
         var keepalive = Task.Run(() => KeepaliveAsync(stop.Token));
 
+        await DiagnoseStepAsync(1, "logged on; nothing else sent yet");
+
         // Declare "playing nothing" up front. Steam keeps the last games-played
         // it was told, so a previous session that died without retracting — a
         // crash, a force quit, a killed helper — leaves the account showing
         // in-game indefinitely, and no later session clears it because none of
         // them ever mention the stale game. This makes every launch self-healing.
         SetPlaying(0);
+        await DiagnoseStepAsync(2, "sent the empty \"playing nothing\" message");
 
         JsonOutput.Emit(new Dictionary<string, object?> { ["presence_ready"] = true });
 
@@ -89,6 +92,8 @@ sealed partial class PresenceSession
                 | EClientPersonaStateFlag.Status
                 | EClientPersonaStateFlag.GameExtraInfo
                 | EClientPersonaStateFlag.Presence);
+        await DiagnoseStepAsync(3, "asked Steam for your profile (name, avatar)");
+        var statusStepDone = !Diagnosing;
 
         // Console reads are synchronous underneath on Unix — ReadLineAsync
         // hands back an already-completed task after blocking. Push it onto a
@@ -110,6 +115,12 @@ sealed partial class PresenceSession
                     case "state":
                         if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
                             ApplyState(wanted);
+                        if (!statusStepDone)
+                        {
+                            statusStepDone = true;
+                            await DiagnoseStepAsync(4, $"sent your status ({parts[1]})");
+                            JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = "done: library, cloud and the rest run now" });
+                        }
                         break;
 
                     case "play":
@@ -162,6 +173,19 @@ sealed partial class PresenceSession
         // Let the retraction reach the CM before the caller disconnects the
         // socket underneath it.
         await Task.Delay(TimeSpan.FromSeconds(1));
+    }
+
+    // BEER_STEAM_DIAGNOSE=1: space out everything the session sends at launch
+    // so a person watching their other Steam clients can see which step, if
+    // any, signs them out of Friends. Requests wait until the steps are done.
+    static readonly bool Diagnosing = Environment.GetEnvironmentVariable("BEER_STEAM_DIAGNOSE") == "1";
+    static readonly TimeSpan DiagnosePause = TimeSpan.FromSeconds(15);
+
+    static async Task DiagnoseStepAsync(int step, string what)
+    {
+        if (!Diagnosing) return;
+        JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = $"step {step}/4: {what}. Waiting {DiagnosePause.TotalSeconds:0} s…" });
+        await Task.Delay(DiagnosePause);
     }
 
     void Serve(string line)
