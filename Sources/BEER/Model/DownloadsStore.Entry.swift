@@ -16,15 +16,22 @@ extension DownloadsStore {
 
         var isActive: Bool {
             switch status {
-            case .queued, .running: return true
+            case .queued, .running, .pausing: return true
             default: return false
             }
         }
+
+        var isPaused: Bool { status == .paused }
+
+        /// Not finished yet: running, or paused for Resume.
+        var isInProgress: Bool { isActive || isPaused }
 
         var phaseText: String {
             switch status {
             case .queued: return "Queued"
             case .running(let phase): return phase
+            case .pausing: return DownloadsStrings.pausing
+            case .paused: return DownloadsStrings.paused
             case .completed: return "Installed"
             case .failed(let reason): return reason
             }
@@ -33,7 +40,7 @@ extension DownloadsStore {
         /// The phase with how far along it is, for places without their own
         /// percentage, e.g. "Downloading… 52%".
         var phaseWithPercent: String {
-            guard isActive, fraction > 0 else { return phaseText }
+            guard isInProgress, fraction > 0 else { return phaseText }
             return "\(phaseText) \(fraction.percentString)"
         }
     }

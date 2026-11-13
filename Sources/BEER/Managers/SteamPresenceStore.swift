@@ -1,17 +1,10 @@
 import Foundation
 import SwiftUI
 
-// BEER's live Steam session.
-//
-// One helper process, logged on for as long as the app is open, owns everything
-// that has to be asserted to Steam in real time: the account's online status,
-// which game is running, and the play time that comes back when it stops.
-//
-// It is deliberately *one* session. Steam resolves both persona state and
-// games-played as last-writer-wins across an account's logons, so a second
-// session opened just for gameplay would fight this one — and a session that
-// never sets its persona online is ignored outright, which is why a game
-// launched by BEER used to leave no trace on Steam at all.
+// What BEER asserts to Steam in real time — the status the user picked, which
+// game is running, and the play time that comes back when it stops — on
+// BEER's one Steam session (`SteamSessionHost`), the same logon every other
+// Steam call uses.
 
 @MainActor
 final class SteamPresenceStore: ObservableObject {
@@ -24,7 +17,7 @@ final class SteamPresenceStore: ObservableObject {
     @Published var lastError: String?
 
     private let client = CloudSyncClient()
-    private var process: SpawnedProcess?
+    private var session: SteamSessionHost?
     private let inbox = PresenceInbox()
 
     // MARK: - Lifecycle
@@ -37,32 +30,29 @@ final class SteamPresenceStore: ObservableObject {
 
     /// Bring the session up. Safe to call repeatedly; a live session is kept.
     func start(auth: SteamAuthStore) async {
-        guard process == nil, let account = auth.account, !auth.sessionExpired else { return }
+        guard session == nil, let account = auth.account, !auth.sessionExpired else { return }
 
         do {
-            let handle = try client.startPresence(
-                steamID64: account.steamID64,
-                account: account.accountName,
-                refreshToken: account.refreshToken,
-                onLine: { [inbox] obj in inbox.accept(obj) }
-            )
-            process = handle
+            let shared = try client.session(account: account.accountName, refreshToken: account.refreshToken)
+            shared.listen { [inbox] obj in inbox.accept(obj) }
+            session = shared
+            // The session stays out of Friends until it's told a status, and
+            // Steam won't show a game for a session that isn't in Friends.
+            try shared.sendPresence("state \(desiredState.rawValue)")
             isConnected = true
-            // A fresh logon's persona is Offline and Steam will not broadcast a
-            // game for an offline persona, so this has to go out first.
-            handle.send("state \(desiredState.rawValue)")
             pump()
         } catch {
             lastError = "Couldn't connect to Steam: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)"
         }
     }
 
+    /// End the session: on sign-out.
     func stop() async {
-        guard let process else { return }
-        self.process = nil
+        guard session != nil else { return }
+        session = nil
         isConnected = false
         persona = nil
-        await process.end()
+        await client.endSession()
         PlaySessionRegistry.clear()
     }
 
@@ -71,11 +61,11 @@ final class SteamPresenceStore: ObservableObject {
     func setState(_ state: SteamPersonaState) {
         desiredState = state
         persist()
-        process?.send("state \(state.rawValue)")
+        try? session?.sendPresence("state \(state.rawValue)")
     }
 
     func beginPlaying(appID: Int) {
-        process?.send("play \(appID)")
+        try? session?.sendPresence("play \(appID)")
         setCurrentApp(appID)
     }
 
@@ -83,9 +73,9 @@ final class SteamPresenceStore: ObservableObject {
     /// credited the session. Nil if there is no session, or Steam had not
     /// caught up within the timeout.
     func stopPlaying(appID: Int) async -> Int? {
-        guard let process else { return nil }
+        guard let session else { return nil }
         inbox.clearPlaytime()
-        process.send("stop")
+        try? session.sendPresence("stop")
 
         let deadline = Date().addingTimeInterval(15)
         while inbox.playtime == nil, Date() < deadline {
@@ -114,37 +104,40 @@ final class SteamPresenceStore: ObservableObject {
     /// onto published state.
     private func pump() {
         Task { [weak self] in
-            while let self, let process = self.process {
+            while let self, let session = self.session {
                 if let update = self.inbox.takePersona() { self.apply(update) }
                 if let failure = self.inbox.takeError() { self.lastError = failure }
 
-                // The helper exiting on its own means Steam refused or dropped
-                // the session. Reflect that instead of leaving the UI claiming
-                // a status nobody is asserting — and don't respawn in a loop,
-                // which against a rejected token would hammer Steam's logon
-                // rate limit.
-                if !process.isRunning {
-                    PlaySessionLog.append("helper \(process.exitDescription)")
-                    // Unless the helper said why, the account bar would keep
-                    // looking fine while games go unannounced and uncounted.
-                    if self.lastError == nil {
-                        self.lastError = "Lost the Steam session, so play time isn't being counted. Restart BEER to reconnect."
+                // The session ending means Steam refused or dropped it. Reflect
+                // that instead of leaving the UI claiming a status nobody is
+                // asserting. Nothing here restarts it: the next thing that needs
+                // Steam (a play, a sync, a refresh) does, once, and a refused
+                // token or a rate limit is never retried in a loop.
+                let running = session.isRunning
+                if running != self.isConnected {
+                    self.isConnected = running
+                    if running {
+                        if self.lastError == Self.lostSession { self.lastError = nil }
+                    } else {
+                        // Unless the helper said why, the account bar would keep
+                        // looking fine while games go unannounced and uncounted.
+                        if self.lastError == nil { self.lastError = Self.lostSession }
+                        self.persona = nil
+                        PlaySessionRegistry.clear()
                     }
-                    self.process = nil
-                    self.isConnected = false
-                    self.persona = nil
-                    PlaySessionRegistry.clear()
-                    break
                 }
                 try? await Task.sleep(nanoseconds: 300_000_000)
             }
         }
     }
 
+    private static let lostSession =
+        "Lost the Steam session, so play time isn't being counted. BEER reconnects the next time it needs Steam."
+
     private func apply(_ update: PresenceInbox.PersonaUpdate) {
         persona = SteamPersona(
             name: update.name,
-            state: SteamPersonaState(rawValue: update.state) ?? desiredState,
+            state: SteamPersonaState(rawValue: update.state) ?? persona?.state ?? desiredState,
             avatarHash: update.avatarHash,
             currentAppID: update.appID == 0 ? nil : update.appID
         )

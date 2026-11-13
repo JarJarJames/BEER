@@ -37,10 +37,17 @@ struct SteamLibraryGame: Identifiable, Codable, Hashable {
     var isHidden: Bool?
     /// Cover, banner and logo the player picked, used in place of Steam's.
     var customArt: CustomGameArt?
+    /// Whether the installed copy matches what Steam serves, as of the last
+    /// library refresh (see `GameUpdateCheck`). Nil until checked. Kept apart
+    /// from the bottle's install status, which other code reads as
+    /// "installed or not".
+    var updateStatus: GameUpdateStatus?
 
     var effectiveIsNonSteam: Bool { isNonSteam ?? false }
     var effectiveIsFavorite: Bool { isFavorite ?? false }
     var effectiveIsHidden: Bool { isHidden ?? false }
+    var effectiveUpdateAvailable: Bool { updateStatus == .update }
+    var isUpdateUntracked: Bool { updateStatus == .untracked }
 
     private var customImageURL: URL? {
         customImagePath.map { URL(fileURLWithPath: $0) }

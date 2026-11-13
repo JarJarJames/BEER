@@ -2,6 +2,86 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## 0.9.0 — 2026-11-13
+
+### Added
+- **Game updates.** After each library refresh, BEER asks Steam whether
+  each installed game is behind. An outdated game gets a blue **UPDATE**
+  badge on its card, an **Update** button next to Play, and an "Update
+  first / Play anyway" prompt when you press Play. The badge only shows
+  when Update would actually download something: depots you don't own,
+  DLC you left out, other platforms and languages, and Steam's shared
+  redistributables don't count. A game installed by an older BEER gets
+  **Check for Updates** instead, which validates it once. Games on an
+  unplugged drive aren't checked.
+- **Pause and resume downloads.** Pause a download from the Downloads list
+  or the game page. Nothing already downloaded is lost: Resume checks the
+  files on disk and fetches only what's missing, in the same folder and
+  with the same DLC left out. A paused game download is still paused after
+  quitting BEER. A paused update shows Resume instead of Play, since the
+  game's files are half written.
+- **Download state on library cards.** A card now shows **DOWNLOADING
+  42%** or **PAUSED 30%** while a game downloads, and **NOT INSTALLED**
+  for a game whose download never finished. Before, a card said INSTALLED
+  as soon as its download started, and after a failed one.
+- **Version in the window title** (#51). The title bar shows the version you're
+  running, like **BEER 0.8.1**, so you can tell which build you have when
+  reporting a bug. Built from source with `swift run`, it reads
+  **BEER dev**.
+
+### Changed
+- **One Steam sign-in.** BEER logs on to Steam once and keeps that
+  connection for everything: your status, the library, update checks, cloud
+  saves, achievements, install-size checks and icons. Before, it logged on
+  separately for each, three or four times just to open. Downloads still log
+  on by themselves.
+- **Library art loads faster** (#72). Cover art is saved to disk the first
+  time it downloads, so a card that scrolls back into view, or the library
+  after a restart, shows its art at once instead of downloading it again.
+  Art for the cards just below is downloaded ahead, except while a game is
+  running. A card still waiting for its art shows the game's name instead of
+  a blank grey square. The saved art lives in BEER's Caches folder, which
+  macOS can clear, and is kept under 100 MB. BEER's own memory use doesn't
+  grow with the size of your library.
+
+### Fixed
+- **Download progress started over for each part of a game** (#92). A game
+  made of several depots filled its bar to 100% once per depot, dropping
+  back to 0 each time. The Downloads list, the game page, the toolbar ring
+  and the library card now show one bar for the whole game that only goes
+  up, with each part counted by its size.
+- **A refused Steam sign-in could say "BEER's Steam session ended
+  unexpectedly"** instead of asking you to sign in again, and BEER then logged
+  on again with the refused token, which counts toward Steam's rate limit.
+  BEER could notice the session had closed before reading its last message,
+  the one saying why. It now reads everything the session said first. This
+  also made a CI test fail now and then.
+- **Opening BEER signed your Steam client out of Friends** on your other
+  computers. At launch BEER asked Steam for your own profile including your
+  status; Steam answered "Offline", and Steam's client takes that as your
+  status and signs itself out of Friends. BEER no longer asks for it.
+- **Signing out of BEER lost your installed games.** After signing back in,
+  every installed game showed as not installed and favorites and hidden games
+  were reset, though the games and saves were untouched. Signing out now
+  keeps your library, and BEER relinks installed games when it opens, which
+  also repairs a library this already happened to.
+- **BEER overrode the status you set elsewhere.** It re-sent its own status
+  every minute, undoing what you picked in Steam on another device. It now
+  sends one only when you pick it in BEER.
+- **Playing in BEER could sign another device out.** BEER took the account's
+  "playing" slot while a game was running elsewhere, and Steam kicked the
+  other device. BEER now waits until Steam says that game has stopped, plus a
+  minute, before announcing its own.
+- **GPTK 4 games didn't start on macOS 15 and 26.** The runtime was built
+  against the macOS 27 SDK and used a function older macOS doesn't have,
+  so every Wine process crashed at startup. Build 2
+  (`4.0b3-winecx-26.3.0-2`) is built against the macOS 15 SDK. Download it
+  from the Runtimes tab and new games use it; a game already set up on
+  build 1 keeps it until you pick build 2 in the game's Runtime setting.
+- **`build_app.sh`'s header described the removed controller fix** (#45).
+  It now says the script builds BEER's SDL2 and bundles it in Resources.
+  The build example in `HANDOFF.md` uses `<version>` instead of `0.7.0`.
+
 ## 0.8.1 — 2026-11-06
 
 ### Added

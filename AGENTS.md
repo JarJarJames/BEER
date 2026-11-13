@@ -70,6 +70,7 @@ what a fake can't cover — not the first.
 | Mounted drives | `Tests/BEERTests/Support/FakeDrives.swift`, handed in as a `VolumeCatalog` | `InstallLocationTests`, `CloudSyncDriveTests` |
 | Same-volume check for moves | `GameMove.isSameVolume` | `GameMoveTests` |
 | Network downloads (icons) | `GameShortcutStore.fetch`, `ShortcutIconViewModel`'s `fetch` | `GameShortcutTests`, `ShortcutIconViewModelTests` |
+| Network downloads (library art), the art cache folder | `GameArtStore(fetch:disk:)`, with a `GameArtDiskCache` pointed at a temp folder | `GameArtStoreTests` |
 | GitHub release lists, macOS version (runtimes) | `RuntimeInstaller(fetch:macOSMajorVersion:)`; `ToolchainDetector.preferredGameRuntime(in:macOSMajorVersion:manifest:)` | `RuntimeCatalogTests`, `PreferredRuntimeTests` |
 | Large file downloads (runtimes) | `FileDownload.run(configuration:)`, given a session whose `protocolClasses` serve the bytes | `FileDownloadTests` |
 | Rosetta installed | `BottleStore.rosettaInstalled` | `RosettaCheckTests` |
@@ -84,7 +85,8 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placemen
 - Apple Silicon + macOS 14+ only. The runtime is Apple GPTK Wine (`winemac.drv`).
 - App state lives in `~/Library/Application Support/BEER/` (see `AppPaths.swift`).
 - When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log`
-  first, then the bottle's `beer.log`.
+  first, then `play-session.log` (the Steam session's own output), then the
+  bottle's `beer.log`.
 
 ## Working agreement
 

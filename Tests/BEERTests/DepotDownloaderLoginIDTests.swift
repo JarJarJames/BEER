@@ -16,7 +16,7 @@ final class DepotDownloaderLoginIDTests: XCTestCase {
     }
 
     func testLoginIDNeverCollidesWithPresenceSession() {
-        let presenceLoginID: UInt32 = 0x42454552 // CloudSync's SteamSession.PresenceLoginID
+        let presenceLoginID: UInt32 = 0x42454552 // CloudSync's SteamSession.SessionLoginID
         for _ in 0..<1000 {
             let id = DepotDownloaderController.newLoginID()
             XCTAssertNotEqual(id, 0)

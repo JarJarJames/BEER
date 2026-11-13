@@ -40,6 +40,8 @@ struct SteamLibraryGridView: View {
         let driveMissingIDs = Set(bottles.bottles.filter {
             $0.gameDrive != nil && bottles.installLocation(of: $0).missingDriveName != nil
         }.map(\.id))
+        // Downloads that never finished: their bottles have no game in them.
+        let incompleteIDs = Set(bottles.bottles.filter { $0.gameLaunchExecutable == nil }.map(\.id))
         let games = model.filteredGames(from: library.games, installedBottleIDs: installedIDs, filter: filter,
                                          sortOrder: sortOrder)
         let hasHidden = library.games.contains(where: \.effectiveIsHidden)
@@ -85,6 +87,7 @@ struct SteamLibraryGridView: View {
                                 game: game,
                                 isInstalled: model.isInstalled(game, installedBottleIDs: installedIDs),
                                 isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
+                                isComplete: !(game.installedBottleID.map(incompleteIDs.contains) ?? false),
                                 style: cardStyle,
                                 cardWidth: cardWidth,
                                 caption: cardLabel.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
@@ -92,6 +95,9 @@ struct SteamLibraryGridView: View {
                                 action: { onSelectGame(game) }
                             )
                             .contextMenu { GameOrganizeMenuItems(game: game) }
+                            .onAppear {
+                                GameArtStore.shared.prefetch(model.artToPrefetch(after: game, in: games, style: cardStyle))
+                            }
                         }
                     }
                     .padding(LibraryGridLayout.gridPadding)

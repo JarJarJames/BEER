@@ -49,7 +49,7 @@ Two halves:
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
   - `SteamAuthStore.swift` — QR sign-in **via the helper**; holds the account and keeps the refresh token in the Keychain; `sessionExpired` flag + `noteCloudError`.
-  - `CloudSyncClient` (`Managers/Cloud Sync Client/`) — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
+  - `CloudSyncClient` (`Managers/Cloud Sync Client/`) — Swift wrapper around the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`. Every Steam call goes through `SteamSessionHost`: one helper `session` process, logged on once, that takes each call as a request. Session output is in `play-session.log`.
   - `CloudSyncEngine` (`Managers/Cloud Sync Engine/`) — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
 - `SteamLibraryStore.swift` — owned games, fetched through the helper after `signInWithQR(auth:)`.
 - `DepotDownloaderSetupView.swift` / `SteamSignInView.swift` — first-run installation and QR onboarding.
@@ -59,7 +59,7 @@ Two halves:
 ## 4. Cloud saves — how it works
 
 1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**, which is stored in the Keychain. Builds that kept it in `steam-cloud-auth.json` have it migrated to the Keychain and the file deleted on load. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
-2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
+2. **Sync:** `CloudSyncEngine` runs `enumerate` → computes download/upload lists in Swift → one **`batch`** request does all file transfers, both on BEER's one Steam session. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
 3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side; when timestamps differ but Steam's SHA-1 matches the local content, the unchanged file is skipped. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
 4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
 
@@ -84,13 +84,14 @@ What we actually do:
 - **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. The old manual full-Steam-bottle workflow was removed; use DepotDownloader's per-game path.
 - **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
 - **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
+- **Signing the user's other Steam clients out of Friends (#65):** never request the account's own persona with `EClientPersonaStateFlag.Status` (`PresenceSession.ProfileFlags`). Steam answers with an update saying Offline, and Steam's own client applies any update for its account that carries Status, signing itself out of Friends. Valve's client never asks for it. Also: persona state is account-wide, so don't re-send it on a timer (it undoes what the user set elsewhere), and don't announce games-played while Steam reports another device playing, or for 60 s after (`PlayingLock`), or that device gets kicked with `LoggedInElsewhere`. BEER logs on once (`SteamSessionHost` → the helper's `session`); don't add a logon.
 
 ## 8. Build, run, release
 
 ```bash
 swift build && swift run BEER      # dev
 ./scripts/build_cloudsync.sh                # (re)build + install the helper to App Support
-./scripts/build_app.sh 0.7.0                # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
+./scripts/build_app.sh <version>            # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
 ```
 - Work lands in **`dev`**; a release merges `dev` into `master` and is tagged there. Distributed via `gh release` at https://github.com/JarJarJames/BEER/releases. The full release steps are in `GOVERNANCE.md`.
 - **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/BEER.app`. A paid Apple Developer ID + notarization would remove that step.
@@ -110,14 +111,19 @@ https://github.com/JarJarJames/BEER-runtimes, which the Runtimes tab reads
    `License.rtf`: sharing is allowed only non-commercially (§2A(iii), §2C).
 2. Run `./scripts/build_gptk_runtime.sh <that folder>/redist`. It downloads
    and checksums everything else, builds Wine (about 20 minutes), and writes
-   `.build/gptk-runtime/gptk-<d3dmetal>-winecx-<crossover>.tar.xz`. It needs
+   `.build/gptk-runtime/gptk-<d3dmetal>-winecx-<crossover>-<revision>.tar.xz`. It needs
    Homebrew's `bison gettext freetype gnutls mingw-w64`, `scripts/build_sdl.sh`
-   run once, and Gcenx's GPTK installed in BEER (its x86_64 libraries are reused).
-3. Test the unpacked runtime: copy it into `Runtimes/GPTK-<d3dmetal>-winecx-<crossover>`
-   and play a few games on it.
-4. Publish with the tag `<d3dmetal>-winecx-<crossover>` (e.g. `4.0b3-winecx-26.3.0`),
-   so it installs into the folder named in step 3:
-   `gh release create 4.0b3-winecx-26.3.0 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0.tar.xz --repo JarJarJames/BEER-runtimes`.
+   run once, Gcenx's GPTK installed in BEER (its x86_64 libraries are reused),
+   and the Command Line Tools' macOS 15 SDK. Wine builds against that SDK, not
+   the Mac's own: built against a newer one, it calls functions older macOS
+   lacks and crashes there (build 1 crashed on everything before macOS 27).
+   The script refuses to pack a runtime that calls anything macOS 15 lacks.
+3. Test the unpacked runtime: copy it into `Runtimes/GPTK-<d3dmetal>-winecx-<crossover>-<revision>`
+   and play a few games on it. A test on this Mac only covers this Mac's macOS.
+4. Bump `REVISION` in the script for any rebuild: BEER never re-downloads a tag
+   it has. Publish with the tag `<d3dmetal>-winecx-<crossover>-<revision>`
+   (e.g. `4.0b3-winecx-26.3.0-2`), so it installs into the folder named in step 3:
+   `gh release create 4.0b3-winecx-26.3.0-2 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0-2.tar.xz --repo JarJarJames/BEER-runtimes`.
    The release notes should link CodeWeavers' source (https://www.codeweavers.com/crossover/source)
    for the LGPL.
 

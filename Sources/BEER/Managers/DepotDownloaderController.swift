@@ -12,7 +12,8 @@ import Foundation
 //
 // Output streamed from DepotDownloader is parsed for:
 //   • " Pre-allocating ", " Validating ", percentage lines       → status phases
-//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress
+//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress,
+//     made one bar for the whole run by DepotDownloadProgress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
 @MainActor
@@ -21,6 +22,11 @@ final class DepotDownloaderController: ObservableObject {
     @Published private(set) var activeDownloads = 0
 
     var isBusy: Bool { activeDownloads > 0 }
+
+    /// Downloads Pause can stop right now, by Downloads entry: DepotDownloader
+    /// is running for them. Not during bottle setup or emulator patching.
+    @Published private(set) var pausableIDs: Set<Int> = []
+    private var stoppers: [Int: ProcessStopper] = [:]
 
     private let cloudClient = CloudSyncClient()
     private var authSessionDepth = 0
@@ -83,19 +89,23 @@ final class DepotDownloaderController: ObservableObject {
     // MARK: - Game install
 
     /// `installDir` is the game's folder, inside its bottle or on a drive.
+    /// `depotBytes` is each depot's size from the install sheet's lookup, so
+    /// a big depot takes up more of the progress bar than a small one.
     func installGame(
         appID: Int,
         gameName: String,
         installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]? = nil,
+        depotBytes: [Int: Int64] = [:],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
         // Say the drive is missing, rather than fail on a path that's gone.
         try GameFolders.requireDrive(for: installDir)
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
-        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+        try await download(appID: appID, downloadID: appID, into: installDir, auth: auth,
+                           depots: depots, depotBytes: depotBytes, events: events)
 
         guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
             throw DepotDownloaderError.launchExeNotFound
@@ -114,9 +124,11 @@ final class DepotDownloaderController: ObservableObject {
     /// add DLC without re-downloading the base game.
     ///
     /// A DLC whose files are among the game's own depots is fetched with the
-    /// game's `appID` and just those `depots`.
+    /// game's `appID` and just those `depots`; `downloadID` is still the DLC's
+    /// own, so Pause stops this run and not the game's.
     func installDLC(
         appID: Int,
+        downloadID: Int,
         installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]? = nil,
@@ -127,7 +139,9 @@ final class DepotDownloaderController: ObservableObject {
               isDirectory.boolValue else {
             throw DepotDownloaderError.installDirMissing(installDir.path)
         }
-        try await download(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+        // No size lookup for a DLC: its depots share the progress bar equally.
+        try await download(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
+                           depots: depots, depotBytes: [:], events: events)
     }
 
     // MARK: - Shared download
@@ -136,9 +150,11 @@ final class DepotDownloaderController: ObservableObject {
     /// Steam token in for the lifetime of the process.
     private func download(
         appID: Int,
+        downloadID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
+        depotBytes: [Int: Int64],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
@@ -146,7 +162,8 @@ final class DepotDownloaderController: ObservableObject {
         }
 
         try await withAuthSession(auth: auth) {
-            try await self.runDownload(appID: appID, into: installDir, auth: auth, depots: depots, events: events)
+            try await self.runDownload(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
+                                       depots: depots, depotBytes: depotBytes, events: events)
         }
     }
 
@@ -186,15 +203,25 @@ final class DepotDownloaderController: ObservableObject {
 
     private func runDownload(
         appID: Int,
+        downloadID: Int,
         into installDir: URL,
         auth: SteamCloudAccount,
         depots: [Int]?,
+        depotBytes: [Int: Int64],
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         // Refcounted, not a Bool: a DLC install can overlap a base-game install,
         // and whichever finished first used to clear the flag for both.
         activeDownloads += 1
         defer { activeDownloads -= 1 }
+
+        let stopper = ProcessStopper()
+        stoppers[downloadID] = stopper
+        pausableIDs.insert(downloadID)
+        defer {
+            stoppers[downloadID] = nil
+            pausableIDs.remove(downloadID)
+        }
 
         let args = Self.downloadArguments(
             appID: appID, installDir: installDir,
@@ -213,12 +240,13 @@ final class DepotDownloaderController: ObservableObject {
         // Mutable scratch for the stdout parser thread.
         let tail = Box<[String]>([])
         let lastEmittedProgress = Box<Double>(-1)
+        let progress = Box(DepotDownloadProgress(depotBytes: depotBytes))
         let status = Box(DepotDownloaderStatus())
         let authFailure = Box<String?>(nil)
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
 
-        let exit = try await runDepotDownloader(args: args) { line in
+        let exit = try await runDepotDownloader(args: args, stopper: stopper) { line in
             // Skip per-chunk progress lines; everything else (logon, licence and
             // ownership messages) is what a failed run needs.
             if parseProgressFraction(line) == nil {
@@ -233,9 +261,9 @@ final class DepotDownloaderController: ObservableObject {
                 Task { @MainActor in events(.status(phase)) }
             }
 
-            // Progress
-            if let fraction = parseProgressFraction(line),
-               abs(fraction - lastEmittedProgress.value) > 0.001 {
+            // Progress, for the whole download rather than the depot it's on
+            if let fraction = progress.value.update(with: line),
+               fraction - lastEmittedProgress.value > 0.001 || fraction == 1 {
                 lastEmittedProgress.value = fraction
                 Task { @MainActor in events(.progress(fraction)) }
             }
@@ -267,6 +295,11 @@ final class DepotDownloaderController: ObservableObject {
             }
         }
 
+        // Whatever it printed on the way out, it stopped because it was told to.
+        if stopper.wasStopped {
+            throw DepotDownloaderError.paused
+        }
+
         if sessionExpired.value {
             throw DepotDownloaderError.sessionExpired
         }
@@ -282,6 +315,17 @@ final class DepotDownloaderController: ObservableObject {
         guard exit == 0 else {
             throw DepotDownloaderError.downloadFailed(exit, tail.value.suffix(15).joined(separator: "\n"))
         }
+    }
+
+    // MARK: - Pause
+
+    /// Stop the DepotDownloader run for Downloads entry `id`. The install
+    /// that started it then ends with `DepotDownloaderError.paused`, once the
+    /// process has exited; what came down stays for Resume.
+    func pause(_ id: Int, in downloads: DownloadsStore) {
+        guard let stopper = stoppers[id] else { return }
+        downloads.markPausing(appID: id)
+        stopper.stop()
     }
 
     // MARK: - Arguments
@@ -311,7 +355,7 @@ final class DepotDownloaderController: ObservableObject {
     ///
     /// Random per run, not fixed: a DLC install can overlap a base-game install,
     /// and two runs sharing an ID would knock each other off. The ceiling keeps
-    /// it below the CloudSync helper's fixed presence ID (0x42454552).
+    /// it below the CloudSync helper's fixed session ID (0x42454552).
     static func newLoginID() -> UInt32 {
         UInt32.random(in: 1...0x3FFF_FFFF)
     }
@@ -320,6 +364,7 @@ final class DepotDownloaderController: ObservableObject {
 
     private func runDepotDownloader(
         args: [String],
+        stopper: ProcessStopper,
         lineHandler: @escaping @Sendable (String) -> Void
     ) async throws -> Int32 {
         let exe = AppPaths.depotDownloaderExecutableURL.path
@@ -336,6 +381,7 @@ final class DepotDownloaderController: ObservableObject {
                     "DOTNET_NOLOGO": "1"
                 ],
                 currentDirectory: AppPaths.depotDownloaderDirectory,
+                stopper: stopper,
                 outputHandler: { chunk in
                     let combined = leftover.value + chunk
                     var lines = combined.components(separatedBy: "\n")

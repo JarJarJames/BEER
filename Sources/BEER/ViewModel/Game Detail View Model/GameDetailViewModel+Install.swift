@@ -44,7 +44,8 @@ extension GameDetailViewModel {
             UserDefaults.standard.set(target.volume?.uuid, forKey: InstallPreferences.lastDriveKey)
         }
         // Without the depot list nothing can be left out, so none is recorded.
-        startInstall(to: target, checked: checked, leavingOut: depots == nil ? [] : leftOut, depots: depots)
+        startInstall(to: target, checked: checked, leavingOut: depots == nil ? [] : leftOut, depots: depots,
+                     depotBytes: installSize?.depotBytes ?? [:])
     }
 
     /// Tick or untick a DLC in the install sheet, and re-check the space.
@@ -58,9 +59,12 @@ extension GameDetailViewModel {
     /// twice; without it the check runs here. A game that already has a bottle
     /// goes where its files already are, whatever `target` says. `depots`, when
     /// given, is exactly what to download: everything but the `leftOut` DLC.
+    /// `depotBytes` comes from the same size lookup as `checked`, and sizes
+    /// each depot's share of the progress bar.
     func startInstall(
         to target: InstallTarget, checked: InstallSpace? = nil,
-        leavingOut leftOut: [InstallableDLC] = [], depots: [Int]? = nil
+        leavingOut leftOut: [InstallableDLC] = [], depots: [Int]? = nil,
+        depotBytes: [Int: Int64] = [:]
     ) {
         guard !game.effectiveIsNonSteam else { return }   // nothing to download
         // Synchronous re-entry guard: a second click while the first is
@@ -85,14 +89,14 @@ extension GameDetailViewModel {
 
             // Before any bottle exists, so a refused install leaves nothing behind.
             let space: InstallSpace
+            var depotBytes = depotBytes
             if let checked {
                 space = checked
             } else {
                 let (destination, partial) = installDestination(for: target)
-                space = await installSpaceCheck.run(
-                    appIDs: [game.appID], account: steamAccount,
-                    destination: destination, partialDownload: partial
-                )
+                let size = await installSpaceCheck.size(appIDs: [game.appID], account: steamAccount)
+                space = await installSpaceCheck.assess(size, destination: destination, partialDownload: partial).verdict
+                depotBytes = size.depotBytes
             }
             switch space {
             case .fits:
@@ -158,6 +162,7 @@ extension GameDetailViewModel {
             library.markInstalled(appID: game.appID, bottleID: bottleID)
             var chosen = bottles.live(bottle)
             chosen.skippedDLC = leftOut.isEmpty ? nil : leftOut
+            chosen.pausedDownload = nil
             await bottles.update(chosen)
 
             do {
@@ -167,6 +172,7 @@ extension GameDetailViewModel {
                     installDir: installDir,
                     auth: steamAccount,
                     depots: depots,
+                    depotBytes: depotBytes,
                     events: downloads.consume(appID: game.appID)
                 )
 
@@ -243,8 +249,18 @@ extension GameDetailViewModel {
                         )
                     }
                 }
+                // DepotDownloader just brought every depot up to date, and
+                // left its record in the folder for the next check.
+                library.applyUpdateCheck([game.appID: .current])
                 await createShortcutsChosenAtInstall(appID: game.appID)
                 downloads.complete(appID: game.appID)
+            } catch DepotDownloaderError.paused {
+                // Recorded on the bottle so it still shows as paused after a quit.
+                var paused = bottles.live(bottle)
+                paused.pausedDownload = PausedDownload(
+                    fraction: downloads.entry(for: game.appID)?.fraction ?? 0, pausedAt: Date())
+                await bottles.update(paused)
+                downloads.pause(appID: game.appID)
             } catch DepotDownloaderError.sessionExpired {
                 cloudAuth.sessionExpired = true
                 shouldResumeInstallAfterCloudConnect = true
@@ -260,6 +276,48 @@ extension GameDetailViewModel {
                 downloads.fail(appID: game.appID, reason: error.localizedDescription)
             }
         }
+    }
+
+    /// Carry on with a paused download: same folder, same DLC left out, no
+    /// install sheet. Falls back to the sheet whenever it can't tell exactly
+    /// what the first download fetched, or the drive it's on is unplugged.
+    func resumeInstall() {
+        guard !isStartingInstall, let existing = bottles.findBottle(forAppID: game.appID),
+              let target = fixedTarget(for: existing),
+              let account = cloudAuth.account, !cloudAuth.sessionExpired else {
+            requestInstall()
+            return
+        }
+        let leftOut = existing.skippedDLC ?? []
+        // Nothing left out: DepotDownloader picks the depots itself, as it did.
+        guard !leftOut.isEmpty else {
+            startInstall(to: target)
+            return
+        }
+        isStartingInstall = true
+        Task { [self] in
+            // One size lookup serves both the depot list and the space check.
+            let size = await installSpaceCheck.size(appIDs: [game.appID], account: account)
+            let (destination, partial) = installDestination(for: target)
+            let space = await installSpaceCheck.assess(
+                size.leavingOut(Set(leftOut.map(\.appID))), destination: destination, partialDownload: partial)
+            isStartingInstall = false
+            // Without the depot list the skipped DLC would come down too.
+            guard let depots = size.depots(leavingOut: leftOut) else {
+                requestInstall()
+                return
+            }
+            startInstall(to: target, checked: space.verdict, leavingOut: leftOut, depots: depots,
+                         depotBytes: size.depotBytes)
+        }
+    }
+
+    /// Resume from the Downloads list (see `GameLinkRouter.resume`), when the
+    /// entry is this game's own download or one of its DLC.
+    func resumeIfRequested(_ id: Int?) {
+        guard let id, id == appID || downloads.entry(for: id)?.parentAppID == appID else { return }
+        GameLinkRouter.shared.pendingResumeID = nil
+        if id == appID { resumeInstall() } else { resumeDLC(id) }
     }
 
     func cancelInstall(reason: String) {

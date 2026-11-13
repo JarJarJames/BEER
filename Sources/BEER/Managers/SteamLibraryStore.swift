@@ -14,6 +14,7 @@ final class SteamLibraryStore: ObservableObject {
     @Published var lastError: String?
 
     private let cloudClient = CloudSyncClient()
+    var updateCheck = GameUpdateCheck()
 
     func load() {
         guard let data = try? Data(contentsOf: AppPaths.steamLibraryStateURL),
@@ -24,9 +25,13 @@ final class SteamLibraryStore: ObservableObject {
         games = payload.games
     }
 
+    /// Sign out without touching the games. Each one carries what BEER
+    /// knows about it locally — which bottle it's installed in, favorite,
+    /// hidden, custom art — and dropping the Steam ones here lost all of it:
+    /// signing back in rebuilt the list from Steam, which knows none of it.
+    /// The next sign-in folds Steam's list into this one (`merge`).
     func signOut() {
         account = .signedOut
-        games = games.filter(\.effectiveIsNonSteam)   // not tied to the account
         persist()
     }
 
@@ -56,8 +61,7 @@ final class SteamLibraryStore: ObservableObject {
 
         do {
             let fetched = try await fetchOwnedGamesViaClient(account: acct)
-            let steamGames = fetched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            games = steamGames + games.filter(\.effectiveIsNonSteam)
+            games = Self.merge(existing: games, fetched: fetched)
             persist()
         } catch {
             auth.noteCloudError(error)
@@ -94,6 +98,7 @@ final class SteamLibraryStore: ObservableObject {
                 updated.isFavorite = current.isFavorite
                 updated.isHidden = current.isHidden
                 updated.customArt = current.customArt
+                updated.updateStatus = current.updateStatus
                 return updated
             }
             return fresh
@@ -142,6 +147,38 @@ final class SteamLibraryStore: ObservableObject {
         persist()
     }
 
+    /// Link each Steam game that has an installed bottle but no install on
+    /// record. The bottle keeps its app ID even when the library loses the
+    /// link — as an older sign-out did — and without it the game looks
+    /// uninstalled though its files and saves are all there.
+    func relinkInstalledGames(bottles: [Bottle]) {
+        guard let relinked = Self.relinking(games, to: bottles) else { return }
+        games = relinked
+        persist()
+    }
+
+    /// `games` with lost install links restored, or nil when none were lost.
+    /// Of two installed bottles for one game, the latest-updated wins.
+    nonisolated static func relinking(_ games: [SteamLibraryGame], to bottles: [Bottle]) -> [SteamLibraryGame]? {
+        var bottleForApp: [Int: Bottle] = [:]
+        for bottle in bottles {
+            guard let appID = bottle.steamAppID,
+                  bottle.gameInstallStatus == .installed || bottle.gameInstallStatus == .updateAvailable else { continue }
+            if let current = bottleForApp[appID], current.updatedAt >= bottle.updatedAt { continue }
+            bottleForApp[appID] = bottle
+        }
+        var changed = false
+        let relinked = games.map { game -> SteamLibraryGame in
+            guard !game.effectiveIsNonSteam, game.installedBottleID == nil,
+                  let bottle = bottleForApp[game.appID] else { return game }
+            var linked = game
+            linked.installedBottleID = bottle.id
+            changed = true
+            return linked
+        }
+        return changed ? relinked : nil
+    }
+
     func markInstalled(appID: Int, bottleID: UUID) {
         guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
         games[index].installedBottleID = bottleID
@@ -164,7 +201,47 @@ final class SteamLibraryStore: ObservableObject {
     func markUninstalled(appID: Int) {
         guard let index = games.firstIndex(where: { $0.appID == appID }) else { return }
         games[index].installedBottleID = nil
+        games[index].updateStatus = nil
         persist()
+    }
+
+    /// Ask Steam whether installed games have an update, and record each one's
+    /// status. Quiet on failure: statuses stay as the last check left them, and
+    /// a missed check never stops anyone playing.
+    func checkForUpdates(bottles: BottleStore, auth: SteamAuthStore?) async {
+        guard account.isLoggedIn, let acct = auth?.account, auth?.sessionExpired != true else { return }
+        let targets = GameUpdateCheck.targets(games: games, bottles: bottles.bottles) {
+            bottles.installLocation(of: $0).url
+        }
+        guard !targets.isEmpty else { return }
+        do {
+            applyUpdateCheck(try await updateCheck.run(targets: targets, account: acct))
+        } catch {
+            auth?.noteCloudError(error)
+            Log.install.error("Update check failed: \((error as? LocalizedError)?.errorDescription ?? error.localizedDescription)")
+        }
+    }
+
+    /// Set the status of each game in `results`; others keep theirs.
+    func applyUpdateCheck(_ results: [Int: GameUpdateStatus]) {
+        guard let updated = Self.applying(updateCheck: results, to: games) else { return }
+        games = updated
+        persist()
+    }
+
+    /// `games` with each status in `results` set, or nil when nothing changes.
+    nonisolated static func applying(
+        updateCheck results: [Int: GameUpdateStatus], to games: [SteamLibraryGame]
+    ) -> [SteamLibraryGame]? {
+        var games = games
+        var changed = false
+        for (appID, status) in results where status != .unknown {
+            guard let index = games.firstIndex(where: { $0.appID == appID }),
+                  games[index].updateStatus != status else { continue }
+            games[index].updateStatus = status
+            changed = true
+        }
+        return changed ? games : nil
     }
 
     /// Add a game that lives outside Steam. Gets a negative placeholder appID,

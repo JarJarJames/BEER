@@ -6,15 +6,19 @@ struct WideGameCard: View {
     let caption: String?
     /// False leaves the art alone, with no name bar under it.
     let showsName: Bool
-    let badge: InstalledBadge?
+    let badge: InstalledBadge
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .aspectRatio(LibraryGridLayout.wideArtAspectRatio, contentMode: .fit)
-                .overlay { GameArtImage(url: game.headerImage) }
+                .overlay { GameArtImage(url: game.headerImage, title: game.name) }
                 .clipped()
-                .overlay(alignment: .topTrailing) { badge?.padding(LibraryGridLayout.badgeInset) }
+                .overlay(alignment: .topTrailing) {
+                    badge
+                        .padding(LibraryGridLayout.badgeInset)
+                        .padding(.leading, game.effectiveIsFavorite ? LibraryGridLayout.favoriteClearance : 0)
+                }
                 .overlay(alignment: .topLeading) {
                     if game.effectiveIsFavorite { FavoriteMark().padding(LibraryGridLayout.badgeInset) }
                 }

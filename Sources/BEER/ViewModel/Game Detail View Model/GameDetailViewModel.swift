@@ -41,6 +41,8 @@ final class GameDetailViewModel: ObservableObject {
     @Published var pendingRestore: PendingSaveRestore?
     @Published var restoreConflictPrompt: RestoreConflictPrompt?
     @Published var confirmRemoveNonSteamGame: Bool = false
+    /// Set while Play asks whether to update an out-of-date game first.
+    @Published var updateBeforePlay: Bottle?
     /// Set when an install was refused because the disk can't hold it.
     @Published var diskSpaceShortfall: DiskSpaceShortfall?
     @Published var isShowingInstallSheet: Bool = false
@@ -136,6 +138,13 @@ final class GameDetailViewModel: ObservableObject {
 
     var download: DownloadsStore.Entry? {
         downloads.entry(for: appID)
+    }
+
+    /// The progress panel's Pause: nil unless DepotDownloader is running for
+    /// this game, since bottle setup and emulator patching can't be stopped.
+    var pauseDownload: (() -> Void)? {
+        guard depotCtl.pausableIDs.contains(appID) else { return nil }
+        return { [depotCtl, downloads, appID] in depotCtl.pause(appID, in: downloads) }
     }
 
     var isSteamConnected: Bool {

@@ -26,9 +26,9 @@ struct GameDetailScreen: View {
                 if layout == .steam { GameHeroView(model: model) }
                 VStack(alignment: .leading, spacing: 22) {
                     if layout == .overlay { GameHeroView(model: model) }
-                    if let download = model.download, download.isActive {
+                    if let download = model.download, download.isInProgress {
                         if layout == .overlay { Divider() }
-                        DownloadProgressView(entry: download)
+                        DownloadProgressView(entry: download, onPause: model.pauseDownload)
                     }
                     if let bottle = model.installedBottle {
                         if layout == .overlay { Divider() }
@@ -58,6 +58,9 @@ struct GameDetailScreen: View {
             guard appID == model.appID else { return }
             GameLinkRouter.shared.pendingLaunchAppID = nil
             model.launchFromShortcut()
+        }
+        .onReceive(GameLinkRouter.shared.$pendingResumeID.receive(on: DispatchQueue.main)) { id in
+            model.resumeIfRequested(id)
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {
@@ -137,6 +140,17 @@ struct GameDetailScreen: View {
                     }
                 )
             }
+        }
+        .confirmationDialog(
+            GameUpdateStrings.beforePlayTitle(model.game.name),
+            isPresented: Binding(get: { model.updateBeforePlay != nil },
+                                 set: { if !$0 { model.updateBeforePlay = nil } })
+        ) {
+            Button(GameUpdateStrings.updateFirst, action: model.updateInsteadOfPlaying)
+            Button(GameUpdateStrings.playAnyway, action: model.playWithoutUpdating)
+            Button(GameUpdateStrings.cancel, role: .cancel) {}
+        } message: {
+            Text(GameUpdateStrings.beforePlayMessage)
         }
         .confirmationDialog(
             "Remove \(model.game.name)?",

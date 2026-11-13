@@ -57,6 +57,10 @@ struct Bottle: Identifiable, Codable, Hashable {
     /// Owned DLC the user left out when the game downloaded. A resumed
     /// download leaves them out again, and the DLC manager fetches them later.
     var skippedDLC: [InstallableDLC]? = nil
+    /// Set while the game's download is paused, so it shows as paused after
+    /// BEER quits rather than as a failed install. Optional so older bottle
+    /// metadata decodes, and so older builds simply ignore it.
+    var pausedDownload: PausedDownload? = nil
 
     // --- Display resolution ---
     // Retina mode makes Wine expose twice the macOS point dimensions to Windows

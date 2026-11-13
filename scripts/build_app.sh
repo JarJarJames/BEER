@@ -5,7 +5,8 @@ set -euo pipefail
 #   • compiles the SwiftUI app in release
 #   • publishes the native CloudSync helper (SteamKit2) and bundles it inside
 #     the .app so a fresh machine needs no extra setup
-#   • builds the controller fix (needs mingw-w64) and bundles both halves
+#   • builds SDL2 without GameController (scripts/build_sdl.sh) and bundles it
+#     in Resources, for Wine's controller driver
 #   • builds BEER's Windows helpers (needs mingw-w64)
 #   • ad-hoc code-signs the bundle so it launches
 #   • zips it for download (.build/BEER.zip)

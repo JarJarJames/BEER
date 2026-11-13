@@ -7,7 +7,8 @@ enum ShellRunner {
         executable: String,
         arguments: [String],
         environment: [String: String],
-        outputHandler: @escaping @Sendable (String) -> Void
+        outputHandler: @escaping @Sendable (String) -> Void,
+        onExit: (@Sendable () -> Void)? = nil
     ) throws -> SpawnedProcess {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
@@ -20,18 +21,25 @@ enum ShellRunner {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        // `onExit` waits for both the exit and EOF, as in `run`: the two run
+        // on different threads, and a child that prints its last line and
+        // exits at once can be reported gone while that line is still being
+        // handed to `outputHandler`. For the Steam session that line is the
+        // refused logon, so `onExit` has to come after it.
+        let completion = CompletionGate()
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else {
                 // True EOF — nothing more will ever arrive on this pipe.
                 pipe.fileHandleForReading.readabilityHandler = nil
+                completion.markEOF { _ in onExit?() }
                 return
             }
             guard let chunk = String(data: data, encoding: .utf8) else { return }
             outputHandler(chunk)
         }
-        process.terminationHandler = { _ in
-            pipe.fileHandleForReading.readabilityHandler = nil
+        process.terminationHandler = { process in
+            completion.markTerminated(exitCode: process.terminationStatus) { _ in onExit?() }
         }
 
         do {
@@ -48,6 +56,7 @@ enum ShellRunner {
         arguments: [String],
         environment: [String: String],
         currentDirectory: URL? = nil,
+        stopper: ProcessStopper? = nil,
         outputHandler: @escaping @Sendable (String) -> Void
     ) async throws -> ProcessResult {
         try await withCheckedThrowingContinuation { continuation in
@@ -99,6 +108,7 @@ enum ShellRunner {
 
             do {
                 try process.run()
+                stopper?.attach(process)
             } catch {
                 pipe.fileHandleForReading.readabilityHandler = nil
                 continuation.resume(throwing: error)

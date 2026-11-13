@@ -4,24 +4,20 @@ import SwiftUI
 struct GameListRow: View {
     let game: SteamLibraryGame
     let caption: String?
-    let badge: InstalledBadge?
+    let badge: InstalledBadge
     let iconSize: CGFloat
 
     var body: some View {
         HStack(spacing: LibraryGridLayout.listRowSpacing) {
-            AsyncImage(url: game.listIcon) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "gamecontroller").foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: iconSize, height: iconSize)
-            .clipShape(RoundedRectangle(cornerRadius: LibraryGridLayout.listIconCornerRadius))
+            // The name is right beside it, so the placeholder doesn't repeat it.
+            GameArtImage(url: game.listIcon, title: nil)
+                .frame(width: iconSize, height: iconSize)
+                .clipShape(RoundedRectangle(cornerRadius: LibraryGridLayout.listIconCornerRadius))
 
             GameCardCaption(name: game.name, caption: caption)
             if game.effectiveIsFavorite { FavoriteMark() }
-            badge
+            // A row has the room: the name truncates, never the badge.
+            badge.fixedSize()
         }
         .padding(.horizontal, LibraryGridLayout.listRowHorizontalPadding)
         .padding(.vertical, LibraryGridLayout.listRowVerticalPadding)

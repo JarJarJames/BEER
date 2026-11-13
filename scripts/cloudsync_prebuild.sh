@@ -15,6 +15,9 @@ STAMP="$2"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 PROJ="$REPO_ROOT/Tools/CloudSync"
 BIN_PATH="$OUT_DIR/publish/CloudSync"
+# Left beside a fallback helper (see below) for BEER to finish the rebuild at
+# launch. Its name must match DevHelperRebuild.markerName.
+NEEDS_REBUILD="$OUT_DIR/publish/needs-rebuild"
 INSTALLED_FALLBACK="$HOME/Library/Application Support/BEER/CloudSync/CloudSync"
 
 echo "Rebuilding CloudSync helper…"
@@ -50,21 +53,22 @@ dotnet publish "$PROJ/CloudSync.csproj" \
 publish_status=$?
 
 if [ $publish_status -ne 0 ] || [ ! -f "$BIN_PATH" ]; then
-    # Xcode runs build-tool-plugin commands under a much stricter sandbox
-    # than `swift build`'s — dotnet's NuGet restore needs filesystem/network
-    # access that sandbox often denies outright, so a fresh publish can fail
-    # here even though it works fine from the terminal. Rather than take the
-    # whole Xcode build down over a dev-convenience rebuild, fall back to
-    # whatever helper is already installed (from build_cloudsync.sh or an
-    # earlier successful `swift build`) so the app/Previews still work with
-    # a slightly stale helper instead of not building at all.
-    echo "warning: dotnet publish failed under this sandbox (likely Xcode's plugin sandbox, not a real error) — falling back to the already-installed helper." >&2
+    # SwiftPM and Xcode run build-tool plugins with no network, so a publish
+    # that needs a .NET package not downloaded yet (after a .NET SDK update,
+    # a new package reference, a fresh clone) always fails here. Rather than
+    # take the whole build down, fall back to the installed helper and leave
+    # a note: BEER, which isn't sandboxed, sees it at launch and runs this
+    # script again, where the download works (see DevHelperRebuild).
+    echo "warning: couldn't rebuild the CloudSync helper inside the build sandbox (no network for .NET packages). BEER will rebuild it when it starts." >&2
     if [ -f "$INSTALLED_FALLBACK" ]; then
         cp "$INSTALLED_FALLBACK" "$BIN_PATH"
+        echo "dotnet publish failed in the build sandbox" > "$NEEDS_REBUILD"
     else
         echo "error: no CloudSync helper is installed anywhere to fall back to. Run ./scripts/build_cloudsync.sh from the terminal first." >&2
         exit 1
     fi
+else
+    rm -f "$NEEDS_REBUILD"
 fi
 
 chmod +x "$BIN_PATH"

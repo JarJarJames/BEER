@@ -7,6 +7,8 @@ struct GameCardView: View {
     let isInstalled: Bool
     /// Installed on a drive that isn't connected.
     var isDriveMissing: Bool = false
+    /// False while its download hasn't finished: the bottle has no game yet.
+    var isComplete: Bool = true
     let style: LibraryCardStyle
     /// The size slider's width, which sets a list row's icon.
     let cardWidth: Double
@@ -38,7 +40,10 @@ struct GameCardView: View {
     }
 
     @ViewBuilder private var card: some View {
-        let badge = isInstalled ? InstalledBadge(isDriveMissing: isDriveMissing) : nil
+        // Made for every card, installed or not: a download's first steps
+        // come before the game is marked installed.
+        let badge = InstalledBadge(appID: game.appID, isInstalled: isInstalled, isComplete: isComplete,
+                                   isDriveMissing: isDriveMissing, hasUpdate: game.effectiveUpdateAvailable)
         switch style {
         case .wide:
             WideGameCard(game: game, caption: caption, showsName: showsName, badge: badge)

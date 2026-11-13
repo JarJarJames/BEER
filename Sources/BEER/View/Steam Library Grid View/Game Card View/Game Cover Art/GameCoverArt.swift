@@ -8,33 +8,22 @@ struct GameCoverArt: View {
 
     var body: some View {
         if let cover = game.portraitCover {
-            AsyncImage(url: cover) { phase in
-                switch phase {
-                case .success(let image):
-                    image.resizable().aspectRatio(contentMode: .fill)
-                case .empty:
-                    Rectangle().fill(Color.secondary.opacity(0.15))
-                default:
-                    fittedArt
-                }
+            GameArtImage(url: cover) {
+                GameArtPlaceholder(title: game.name)
+            } failure: {
+                fittedArt
             }
         } else {
             fittedArt
         }
     }
 
+    /// The blurred copy is decoded tiny and blurred once, then stretched:
+    /// it looks the same as blurring the full image, for a sliver of the memory.
     private var fittedArt: some View {
-        AsyncImage(url: game.headerImage) { phase in
-            if case .success(let image) = phase {
-                ZStack {
-                    image.resizable().aspectRatio(contentMode: .fill)
-                        .blur(radius: LibraryGridLayout.fittedArtBlur)
-                    image.resizable().aspectRatio(contentMode: .fit)
-                }
-            } else {
-                Rectangle().fill(Color.secondary.opacity(0.15))
-                    .overlay(Image(systemName: "gamecontroller").foregroundStyle(.secondary))
-            }
+        ZStack {
+            GameArtImage(url: game.headerImage, fit: .backdrop) { Color.clear } failure: { Color.clear }
+            GameArtImage(url: game.headerImage, fit: .fit, title: game.name)
         }
     }
 }

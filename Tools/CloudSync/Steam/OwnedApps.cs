@@ -5,7 +5,14 @@ namespace CloudSync.Steam;
 static class OwnedApps
 {
     /// Every appid granted by the packages this account holds a licence for.
-    public static async Task<HashSet<uint>> RequestAsync(SteamSession s, SteamApps apps)
+    public static async Task<HashSet<uint>> RequestAsync(SteamSession s, SteamApps apps) =>
+        (await RequestLicensedAsync(s, apps)).Apps;
+
+    /// What this account's licences grant: `Apps`, and the `Depots`
+    /// DepotDownloader may fetch. It downloads a depot only when a licensed
+    /// package lists it under `depotids` or `appids` (a DLC's depot can share
+    /// the DLC's id), so a game's depots for other regions or editions are left out.
+    public static async Task<Licensed> RequestLicensedAsync(SteamSession s, SteamApps apps)
     {
         var licenses = await s.LicensesAsync();
         var requests = licenses
@@ -19,8 +26,8 @@ static class OwnedApps
             })
             .ToList();
 
-        var owned = new HashSet<uint>();
-        if (requests.Count == 0) return owned;
+        var licensed = new Licensed(new HashSet<uint>(), new HashSet<uint>());
+        if (requests.Count == 0) return licensed;
 
         // PICS rejects very large batches; chunk to stay well inside its limit.
         foreach (var chunk in requests.Chunk(500))
@@ -28,9 +35,18 @@ static class OwnedApps
             var info = await apps.PICSGetProductInfo(new List<SteamKit2.SteamApps.PICSRequest>(), chunk.ToList());
             foreach (var result in info.Results ?? Enumerable.Empty<SteamApps.PICSProductInfoCallback>())
                 foreach (var package in result.Packages.Values)
+                {
                     foreach (var child in package.KeyValues["appids"].Children)
-                        owned.Add(child.AsUnsignedInteger());
+                    {
+                        licensed.Apps.Add(child.AsUnsignedInteger());
+                        licensed.Depots.Add(child.AsUnsignedInteger());
+                    }
+                    foreach (var child in package.KeyValues["depotids"].Children)
+                        licensed.Depots.Add(child.AsUnsignedInteger());
+                }
         }
-        return owned;
+        return licensed;
     }
 }
+
+sealed record Licensed(HashSet<uint> Apps, HashSet<uint> Depots);

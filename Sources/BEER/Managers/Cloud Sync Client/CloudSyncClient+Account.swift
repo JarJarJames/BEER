@@ -9,7 +9,7 @@ extension CloudSyncClient {
         account: String,
         refreshToken: String
     ) async throws -> URL {
-        let obj = try await runOnce(
+        let obj = try await runLocal(
             args: ["prepare-depot-auth", "--depot-executable", executable.resolvingSymlinksInPath().path],
             account: account,
             refreshToken: refreshToken

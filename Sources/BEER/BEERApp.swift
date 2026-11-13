@@ -49,6 +49,7 @@ struct BEERApp: App {
                     await detector.refresh()
                     depotDownloader.refresh()
                     library.load()
+                    library.relinkInstalledGames(bottles: store.bottles)
                     cloudAuth.load()
                     presence.load()
                     // If a previous run died mid-game, stop any helper still
@@ -66,6 +67,11 @@ struct BEERApp: App {
                             refreshToken: account.refreshToken
                         )
                     }
+                }
+                // While a game (or any Wine command) runs, library art keeps
+                // as little memory as it can, leaving it to the game.
+                .onChange(of: store.activeBottleIDs.isEmpty, initial: true) { _, idle in
+                    GameArtStore.shared.setGameRunning(!idle)
                 }
                 // A runtime downloaded or moved while BEER is open: bottles
                 // whose runtime's files moved follow them.

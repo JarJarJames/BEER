@@ -8,6 +8,7 @@ struct LibraryToolbarView: View {
     var onAddNonSteamGame: () -> Void = {}
     @EnvironmentObject private var library: SteamLibraryStore
     @EnvironmentObject private var auth: SteamAuthStore
+    @EnvironmentObject private var bottles: BottleStore
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
     @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
 
@@ -62,7 +63,10 @@ struct LibraryToolbarView: View {
             .labelStyle(.iconOnly)
             .help("Add Non-Steam Game")
             Button {
-                Task { await library.fetchLibrary(auth: auth) }
+                Task {
+                    await library.fetchLibrary(auth: auth)
+                    await library.checkForUpdates(bottles: bottles, auth: auth)
+                }
             } label: {
                 Label("Refresh", systemImage: "arrow.clockwise")
             }

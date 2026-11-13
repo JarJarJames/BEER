@@ -2,7 +2,6 @@ using CloudSync.Cli;
 using CloudSync.Commands;
 using CloudSync.Commands.Presence;
 using CloudSync.Steam;
-using CloudSync.Transfers;
 
 namespace CloudSync;
 
@@ -25,7 +24,9 @@ namespace CloudSync;
 //   launchinfo --appid N
 //   installsize --appids N,N,...  (disk a Windows install of them needs; bytes or null)
 //   clienticon --appid N    (hash of the app's Windows .ico, or null)
-//   presence  --steamid S   (long-lived; stdin commands, until stdin closes)
+//   updatecheck --jobs <path to JSON [{appid, dir}]>  (current/update/untracked/unknown per installed game)
+//   session                 (long-lived: one logon the app runs everything through;
+//                            see PresenceSession for what it reads on stdin)
 //   download  --appid N --file "<ufs filename>" --out <localPath>
 //   upload    --appid N --file "<ufs filename>" --in <localPath> [--mtime <unix>]
 //   achievements-get   --appid N --steamid S
@@ -34,6 +35,10 @@ namespace CloudSync;
 //
 // Auth (all commands): --token <refreshToken> --account <name>
 //   Prefer --token-file <path> so the token never appears in argv / ps output.
+//
+// The app keeps ONE `session` running and sends every other command to it as
+// a request, so BEER is a single logon on the account. Run by hand, each
+// command logs on for itself.
 
 static class Program
 {
@@ -75,46 +80,20 @@ static class Program
 
             var token = CliArgs.ReadToken(args);
             var account = CliArgs.Require(args, "account");
-            uint appid = args.TryGetValue("appid", out var aid) ? uint.Parse(aid) : 0; // not needed by ownedgames
 
             using var session = await SteamSession.LogOnAsync(
                 account, token,
-                cmd == "presence" ? SteamSession.PresenceLoginID : SteamSession.CommandLoginID);
+                cmd == "session" ? SteamSession.SessionLoginID : SteamSession.CommandLoginID);
             try
             {
-                switch (cmd)
+                if (cmd == "session")
                 {
-                    case "ownedgames": await OwnedGamesCommand.RunAsync(session, ulong.Parse(CliArgs.Require(args, "steamid"))); break;
-                    case "dlc": await DlcCommand.RunAsync(session, appid); break;
-                    case "launchinfo": await LaunchInfoCommand.RunAsync(session, appid); break;
-                    case "clienticon": await ClientIconCommand.RunAsync(session, appid); break;
-                    case "installsize":
-                        await InstallSizeCommand.RunAsync(session, CliArgs.Require(args, "appids")
-                            .Split(',', StringSplitOptions.RemoveEmptyEntries).Select(uint.Parse).ToList());
-                        break;
-                    case "presence":
-                        await new PresenceSession(session, ulong.Parse(CliArgs.Require(args, "steamid"))).RunAsync();
-                        break;
-                    case "enumerate": await EnumerateCommand.RunAsync(session, appid); break;
-                    case "batch": await BatchCommand.RunAsync(session, appid, CliArgs.Require(args, "jobs")); break;
-                    case "achievements-get":
-                        await AchievementsCommand.GetAsync(session, appid, ulong.Parse(CliArgs.Require(args, "steamid")));
-                        break;
-                    case "achievements-store":
-                        await AchievementsCommand.StoreAsync(session, appid, ulong.Parse(CliArgs.Require(args, "steamid")), CliArgs.Require(args, "unlocks"));
-                        break;
-                    case "download":
-                        await CloudTransfers.DownloadAsync(session, appid, CliArgs.Require(args, "file"), CliArgs.Require(args, "out"));
-                        JsonOutput.Emit(new Dictionary<string, object?> { ["downloaded"] = true });
-                        break;
-                    case "upload":
-                        long mtime = args.TryGetValue("mtime", out var mt) ? long.Parse(mt) : DateTimeOffset.UtcNow.ToUnixTimeSeconds();
-                        await CloudTransfers.UploadAsync(session, appid, CliArgs.Require(args, "file"), CliArgs.Require(args, "in"), mtime);
-                        JsonOutput.Emit(new Dictionary<string, object?> { ["uploaded"] = true });
-                        break;
-                    default:
-                        Console.Error.WriteLine($"unknown command: {cmd}");
-                        return 2;
+                    await new PresenceSession(session).RunAsync();
+                }
+                else if (!await CommandDispatch.RunAsync(session, cmd, args))
+                {
+                    Console.Error.WriteLine($"unknown command: {cmd}");
+                    return 2;
                 }
             }
             finally

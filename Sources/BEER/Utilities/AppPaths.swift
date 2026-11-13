@@ -42,6 +42,15 @@ enum AppPaths {
         applicationSupport.appendingPathComponent("CustomArt", isDirectory: true)
     }
 
+    /// Library art downloaded from Steam, kept as the original files. In
+    /// Caches, not Application Support: it can all be downloaded again, so
+    /// macOS may clear it when the disk runs low.
+    static var gameArtCacheDirectory: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("BEER", isDirectory: true)
+            .appendingPathComponent("GameArt", isDirectory: true)
+    }
+
     /// The shortcuts BEER has made, so uninstalling can remove them.
     static var gameShortcutsURL: URL {
         applicationSupport.appendingPathComponent("shortcuts.json")

@@ -9,5 +9,7 @@ extension CloudSyncClient {
         let depotIDs: [Int]
         /// The owned DLC among them.
         let dlc: [InstallableDLC]
+        /// Each depot's own size, for the depots Steam lists one for.
+        var depotBytes: [Int: Int64] = [:]
     }
 }

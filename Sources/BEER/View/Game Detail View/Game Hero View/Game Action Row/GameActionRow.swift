@@ -32,6 +32,10 @@ struct GameActionRow: View {
                 default:
                     if bottle.runtimeIsMissing {
                         MissingRuntimeNotice(bottle: bottle)
+                    } else if model.download?.isPaused == true {
+                        // A paused update leaves the files half written, so
+                        // it finishes before the game can run.
+                        resumeButton
                     } else {
                         Button(action: { model.launch(bottle) }) {
                             Label("Play", systemImage: "play.fill")
@@ -41,6 +45,16 @@ struct GameActionRow: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                         .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
+
+                        if let update = updateButton {
+                            Button(action: model.startInstallOrLogin) {
+                                Label(update.title, systemImage: "arrow.down.circle")
+                            }
+                            .controlSize(.large)
+                            .help(update.help)
+                            .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id)
+                                      || model.isStartingInstall)
+                        }
                     }
                 }
             } else if let entry = model.download, entry.isActive {
@@ -52,6 +66,14 @@ struct GameActionRow: View {
                 .padding(.horizontal, 12)
                 .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
 
+                Button(role: .destructive) {
+                    model.cancelInstall(reason: "Cancelled.")
+                } label: {
+                    Label("Cancel", systemImage: "xmark.circle")
+                }
+                .controlSize(.large)
+            } else if model.download?.isPaused == true {
+                resumeButton
                 Button(role: .destructive) {
                     model.cancelInstall(reason: "Cancelled.")
                 } label: {
@@ -101,5 +123,34 @@ struct GameActionRow: View {
 
             GameMoreMenu(model: model)
         }
+    }
+
+    private var resumeButton: some View {
+        Button(action: model.resumeInstall) {
+            if model.isStartingInstall {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Starting…")
+                }
+                .frame(minWidth: 180, minHeight: 36)
+            } else {
+                Label(DownloadsStrings.resume, systemImage: "play.circle.fill")
+                    .font(.title3.bold())
+                    .frame(minWidth: 180, minHeight: 36)
+            }
+        }
+        .buttonStyle(.borderedProminent)
+        .controlSize(.large)
+        .disabled(model.isStartingInstall)
+    }
+
+    /// Update for a game Steam has a newer build of; Check for Updates for one
+    /// BEER can't judge yet. Both run the Reinstall / Validate download.
+    private var updateButton: (title: String, help: String)? {
+        if model.offersUpdateBeforePlay { return (GameUpdateStrings.updateButton, GameUpdateStrings.updateHelp) }
+        if !model.game.effectiveIsNonSteam, model.game.isUpdateUntracked {
+            return (GameUpdateStrings.checkButton, GameUpdateStrings.checkHelp)
+        }
+        return nil
     }
 }

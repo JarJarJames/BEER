@@ -107,10 +107,10 @@ sealed class SteamSession : IDisposable
     // commands evicting the long-lived presence session, and the user's real
     // Steam client evicting both.
     //
-    // The presence session gets a fixed id so its own reconnects keep one
-    // identity; every other command gets a random one, so a library refresh or
-    // a cloud sync can't knock presence offline mid-game.
-    public const uint PresenceLoginID = 0x42454552; // "BEER"
+    // The app's one `session` gets a fixed id so its own reconnects keep one
+    // identity; a command run by hand gets a random one, so it can't knock
+    // that session offline.
+    public const uint SessionLoginID = 0x42454552; // "BEER"
     public static readonly uint CommandLoginID = (uint)Random.Shared.Next(1, int.MaxValue);
 
     /// Log on, retrying a connection that drops before the logon completes.

@@ -50,6 +50,17 @@ static class InstallSize
         return found ? total : null;
     }
 
+    /// Each depot's size by its id, for the depots that list one. BEER weights
+    /// each depot's share of the download's progress bar by it.
+    /// A depot two of the apps asked about both list is counted once.
+    public static Dictionary<string, ulong> BytesByDepot(IEnumerable<FetchedDepot> depots)
+    {
+        var bytes = new Dictionary<string, ulong>();
+        foreach (var depot in depots)
+            if (depot.Size is { } size) bytes[depot.Id.ToString()] = size;
+        return bytes;
+    }
+
     /// Mirrors DepotDownloader's depot filter for the arguments BEER passes it.
     static bool IsFetched(KeyValue config)
     {

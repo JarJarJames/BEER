@@ -1,8 +1,8 @@
 import Foundation
 
 /// Non-JSON lines a helper invocation printed (its stderr notes), kept so a
-/// `runOnce` that never got a JSON result can report why instead of just
-/// "no JSON result". Bounded like `BatchCollector.addNote` for the same reason.
+/// `runLocal` that never got a JSON result can report why instead of just
+/// "no JSON result". Bounded, so a chatty helper can't grow it without limit.
 final class NoteBox: @unchecked Sendable {
     private let lock = NSLock()
     private var _notes: [String] = []
