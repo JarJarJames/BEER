@@ -2,7 +2,7 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
-## Unreleased
+## 0.9.0 — 2026-11-13
 
 ### Added
 - **Game updates.** After each library refresh, BEER asks Steam whether
@@ -45,6 +45,11 @@ Notable changes to BEER. Versions follow the GitHub releases.
   grow with the size of your library.
 
 ### Fixed
+- **Download progress started over for each part of a game** (#92). A game
+  made of several depots filled its bar to 100% once per depot, dropping
+  back to 0 each time. The Downloads list, the game page, the toolbar ring
+  and the library card now show one bar for the whole game that only goes
+  up, with each part counted by its size.
 - **A refused Steam sign-in could say "BEER's Steam session ended
   unexpectedly"** instead of asking you to sign in again, and BEER then logged
   on again with the refused token, which counts toward Steam's rate limit.
