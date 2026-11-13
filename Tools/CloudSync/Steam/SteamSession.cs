@@ -158,18 +158,7 @@ sealed class SteamSession : IDisposable
         ShouldRememberPassword = true,
         LoginID = loginID,
         ChatMode = SteamUser.ChatMode.NewSteamChat,
-        ClientOSType = ClientOSType,
     };
-
-    // The OS BEER tells Steam it runs on. SteamKit's default is the real one,
-    // so BEER logged on as a macOS client beside the Mac's own macOS Steam
-    // client — the one pairing on the user's account that signed each other
-    // out of Friends (#65). Their Windows PC and Mac clients coexist, and so
-    // does GameNative on Android, each a different OS. Linux matches none of
-    // a Mac user's own clients, and fits what BEER is: Windows games on a
-    // non-Windows OS, like Proton. Nothing the helper does depends on it —
-    // cloud uploads name every platform, and installs pick Windows depots.
-    internal const EOSType ClientOSType = EOSType.LinuxUnknown;
 
     static async Task<SteamSession> LogOnOnceAsync(string account, string refreshToken, uint loginID)
     {

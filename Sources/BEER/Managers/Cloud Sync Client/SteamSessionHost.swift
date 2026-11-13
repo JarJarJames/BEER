@@ -122,9 +122,15 @@ final class SteamSessionHost: @unchecked Sendable {
     /// Send a status or play command (`state Online`, `play 440`, `stop`) and
     /// hand everything the session reports outside a request to `listener`.
     func sendPresence(_ command: String) throws {
-        if command.hasPrefix("state ") { lock.withLock { presenceState = command } }
-        guard activeRefusal() == nil else { return }
+        guard activeRefusal() == nil else {
+            if command.hasPrefix("state ") { lock.withLock { presenceState = command } }
+            return
+        }
+        // A session started here replays the saved status itself, so the
+        // command is remembered only after it's sent: otherwise a status that
+        // starts the session goes out twice.
         try ensureStarted().send(command)
+        if command.hasPrefix("state ") { lock.withLock { presenceState = command } }
     }
 
     func listen(_ listener: @escaping @Sendable ([String: Any]) -> Void) {
