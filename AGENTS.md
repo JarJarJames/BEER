@@ -70,6 +70,7 @@ what a fake can't cover — not the first.
 | Mounted drives | `Tests/BEERTests/Support/FakeDrives.swift`, handed in as a `VolumeCatalog` | `InstallLocationTests`, `CloudSyncDriveTests` |
 | Same-volume check for moves | `GameMove.isSameVolume` | `GameMoveTests` |
 | Network downloads (icons) | `GameShortcutStore.fetch`, `ShortcutIconViewModel`'s `fetch` | `GameShortcutTests`, `ShortcutIconViewModelTests` |
+| Network downloads (library art), the art cache folder | `GameArtStore(fetch:disk:memoryLimit:)`, with a `GameArtDiskCache` pointed at a temp folder | `GameArtStoreTests` |
 | GitHub release lists, macOS version (runtimes) | `RuntimeInstaller(fetch:macOSMajorVersion:)`; `ToolchainDetector.preferredGameRuntime(in:macOSMajorVersion:manifest:)` | `RuntimeCatalogTests`, `PreferredRuntimeTests` |
 | Large file downloads (runtimes) | `FileDownload.run(configuration:)`, given a session whose `protocolClasses` serve the bytes | `FileDownloadTests` |
 | Rosetta installed | `BottleStore.rosettaInstalled` | `RosettaCheckTests` |
