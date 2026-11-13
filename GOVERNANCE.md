@@ -55,6 +55,14 @@ original author in the loop.
   bundles the CloudSync helper, ad-hoc signs, zips) and published via
   `gh release create` with the `BEER.zip` attached. Add `--prerelease
   --latest=false` for a nightly. Put the zip's SHA-256 in the notes.
+- **The version you pass to `build_app.sh` is the one BEER shows in its
+  window title** ("BEER X.Y.Z"), so it must be the tag without the `v`. Leave
+  it off and the script builds 0.2.0. Before publishing, check the built app
+  says the right version:
+
+  ```bash
+  /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" .build/BEER.app/Contents/Info.plist
+  ```
 - Builds are not notarized; release notes must include the
   `xattr -dr com.apple.quarantine /Applications/BEER.app` step.
 
