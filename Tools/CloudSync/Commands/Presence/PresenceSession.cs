@@ -80,15 +80,9 @@ sealed partial class PresenceSession
         JsonOutput.Emit(new Dictionary<string, object?> { ["presence_ready"] = true });
 
         // Seed the persona once so the app has a nickname and avatar to show
-        // without waiting for Steam to push an unprompted change. PlayerName
-        // has to be in the flags: Steam returns exactly the fields asked for,
-        // and leaving it out is what produced nameless updates before.
+        // without waiting for Steam to push an unprompted change.
         if (_session.Client.SteamID is { } seed)
-            _friends.RequestFriendInfo(seed,
-                EClientPersonaStateFlag.PlayerName
-                | EClientPersonaStateFlag.Status
-                | EClientPersonaStateFlag.GameExtraInfo
-                | EClientPersonaStateFlag.Presence);
+            _friends.RequestFriendInfo(seed, ProfileFlags);
         await DiagnoseStepAsync(2, "asked Steam for your profile (name, avatar)");
         var statusStepDone = !Diagnosing;
 
@@ -176,6 +170,25 @@ sealed partial class PresenceSession
         }
         JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = announced ? "retracted" : "nothing to retract" });
     }
+
+    // What BEER asks Steam about its own account at launch: name and avatar,
+    // never Status (#65).
+    //
+    // Steam answers with a persona update for the account carrying exactly
+    // these fields. With Status in them, that update said Offline — this
+    // session hasn't set a status yet — and the user's own Steam clients act
+    // on any update for their account that carries Status: the client's
+    // FriendStore.OnPersonaStateUpdate passes it to
+    // UpdateUserPersonaStateInternal, which takes the account to Offline and
+    // signs that client out of Friends. That's why every BEER launch signed
+    // the user's PC out the moment this reply came back. GameNative asks with
+    // SteamKit/JavaSteam's default flags, which leave Status out, and never
+    // does it. PlayerName has to stay: Steam returns only the fields asked
+    // for, and without it the update has no name.
+    internal const EClientPersonaStateFlag ProfileFlags =
+        EClientPersonaStateFlag.PlayerName
+        | EClientPersonaStateFlag.Presence
+        | EClientPersonaStateFlag.GameExtraInfo;
 
     // BEER_STEAM_DIAGNOSE=1: space out everything the session sends at launch
     // so a person watching their other Steam clients can see which step, if

@@ -137,7 +137,7 @@ final class SteamPresenceStore: ObservableObject {
     private func apply(_ update: PresenceInbox.PersonaUpdate) {
         persona = SteamPersona(
             name: update.name,
-            state: SteamPersonaState(rawValue: update.state) ?? desiredState,
+            state: SteamPersonaState(rawValue: update.state) ?? persona?.state ?? desiredState,
             avatarHash: update.avatarHash,
             currentAppID: update.appID == 0 ? nil : update.appID
         )

@@ -14,7 +14,9 @@ final class PresenceInbox: @unchecked Sendable {
         if let name = obj["persona_name"] as? String {
             _persona = PersonaUpdate(
                 name: name,
-                state: (obj["persona_state"] as? String) ?? "Online",
+                // Empty when the update didn't carry a status (see the
+                // helper's ProfileFlags): the store keeps what it knows.
+                state: (obj["persona_state"] as? String) ?? "",
                 avatarHash: obj["avatar_hash"] as? String,
                 appID: (obj["presence_appid"] as? NSNumber)?.intValue ?? 0
             )

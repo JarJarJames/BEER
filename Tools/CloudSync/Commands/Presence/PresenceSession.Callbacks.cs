@@ -97,7 +97,9 @@ sealed partial class PresenceSession
             JsonOutput.Emit(new Dictionary<string, object?>
             {
                 ["persona_name"] = cb.Name,
-                ["persona_state"] = cb.State.ToString(),
+                // Only an update that carries Status says what the status is;
+                // the profile reply at launch deliberately doesn't (ProfileFlags).
+                ["persona_state"] = cb.StatusFlags.HasFlag(EClientPersonaStateFlag.Status) ? cb.State.ToString() : null,
                 ["avatar_hash"] = cb.AvatarHash is null
                     ? null
                     : Convert.ToHexString(cb.AvatarHash).ToLowerInvariant(),
