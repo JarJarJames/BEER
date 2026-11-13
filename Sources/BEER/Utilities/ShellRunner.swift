@@ -21,24 +21,25 @@ enum ShellRunner {
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = pipe
+        // `onExit` waits for both the exit and EOF, as in `run`: the two run
+        // on different threads, and a child that prints its last line and
+        // exits at once can be reported gone while that line is still being
+        // handed to `outputHandler`. For the Steam session that line is the
+        // refused logon, so `onExit` has to come after it.
+        let completion = CompletionGate()
         pipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else {
                 // True EOF — nothing more will ever arrive on this pipe.
                 pipe.fileHandleForReading.readabilityHandler = nil
+                completion.markEOF { _ in onExit?() }
                 return
             }
             guard let chunk = String(data: data, encoding: .utf8) else { return }
             outputHandler(chunk)
         }
-        process.terminationHandler = { _ in
-            pipe.fileHandleForReading.readabilityHandler = nil
-            // Whatever the child wrote last may not have been read yet, and
-            // for a caller waiting on its final line that is the line that
-            // matters.
-            let rest = pipe.fileHandleForReading.readDataToEndOfFile()
-            if !rest.isEmpty, let chunk = String(data: rest, encoding: .utf8) { outputHandler(chunk) }
-            onExit?()
+        process.terminationHandler = { process in
+            completion.markTerminated(exitCode: process.terminationStatus) { _ in onExit?() }
         }
 
         do {

@@ -111,7 +111,8 @@ final class SteamSessionHost: @unchecked Sendable {
                 return nextID
             }
             guard let id, let line = try? Self.requestLine(args, id: id) else {
-                onObject(["error": "BEER's Steam session ended unexpectedly."])
+                // If it ended on a refused logon, say that, not "ended".
+                onObject(activeRefusal() ?? ["error": "BEER's Steam session ended unexpectedly."])
                 finished.resume()
                 return
             }
