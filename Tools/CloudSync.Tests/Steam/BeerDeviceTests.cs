@@ -25,6 +25,19 @@ public class BeerDeviceTests : IDisposable
     }
 
     [Fact]
+    public void TheSessionKeepsOneLoginIDPerInstall()
+    {
+        BeerDevice.UseFile(IdFile);
+        var first = SteamSession.SessionLoginID;
+        BeerDevice.UseFile(IdFile);
+        Assert.Equal(first, SteamSession.SessionLoginID);
+        Assert.True(first >= 0x4000_0000u, "clear of DepotDownloader's ids");
+
+        BeerDevice.UseFile(Path.Combine(_dir, "another-install"));
+        Assert.NotEqual(first, SteamSession.SessionLoginID);
+    }
+
+    [Fact]
     public void EveryPartIsBeersOwn()
     {
         BeerDevice.UseFile(IdFile);

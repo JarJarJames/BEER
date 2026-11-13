@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using SteamKit2;
 using SteamKit2.Internal;
 
@@ -108,10 +110,15 @@ sealed class SteamSession : IDisposable
     // commands evicting the long-lived presence session, and the user's real
     // Steam client evicting both.
     //
-    // The app's one `session` gets a fixed id so its own reconnects keep one
-    // identity; a command run by hand gets a random one, so it can't knock
-    // that session offline.
-    public const uint SessionLoginID = 0x42454552; // "BEER"
+    // The app's one `session` keeps one id per install, made from BEER's
+    // device ID, so its own reconnects keep one identity — the way GameNative
+    // derives its id from the device — and two BEER installs on one network
+    // can't take each other's. It stays at or above 0x40000000, clear of the
+    // ids DepotDownloader runs get (DepotDownloaderController.newLoginID). A
+    // command run by hand gets a random one, so it can't knock the session
+    // offline.
+    public static uint SessionLoginID =>
+        0x4000_0000u | (BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes(BeerDevice.Current.Id))) & 0x3FFF_FFFFu);
     public static readonly uint CommandLoginID = (uint)Random.Shared.Next(1, int.MaxValue);
 
     /// Log on, retrying a connection that drops before the logon completes.

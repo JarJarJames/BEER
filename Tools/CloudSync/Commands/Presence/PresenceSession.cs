@@ -70,15 +70,12 @@ sealed partial class PresenceSession
         var stop = new CancellationTokenSource();
         var keepalive = Task.Run(() => KeepaliveAsync(stop.Token));
 
+        // Nothing about playing is sent until a game starts. A launch used to
+        // open with an empty games-played; GameNative, which runs beside the
+        // user's desktop Steam client without signing it out of Friends, never
+        // sends one, and BEER did on every launch (#65). A game announced by an
+        // earlier session that died goes with that session's connection.
         await DiagnoseStepAsync(1, "logged on; nothing else sent yet");
-
-        // Declare "playing nothing" up front. Steam keeps the last games-played
-        // it was told, so a previous session that died without retracting — a
-        // crash, a force quit, a killed helper — leaves the account showing
-        // in-game indefinitely, and no later session clears it because none of
-        // them ever mention the stale game. This makes every launch self-healing.
-        SetPlaying(0);
-        await DiagnoseStepAsync(2, "sent the empty \"playing nothing\" message");
 
         JsonOutput.Emit(new Dictionary<string, object?> { ["presence_ready"] = true });
 
@@ -92,7 +89,7 @@ sealed partial class PresenceSession
                 | EClientPersonaStateFlag.Status
                 | EClientPersonaStateFlag.GameExtraInfo
                 | EClientPersonaStateFlag.Presence);
-        await DiagnoseStepAsync(3, "asked Steam for your profile (name, avatar)");
+        await DiagnoseStepAsync(2, "asked Steam for your profile (name, avatar)");
         var statusStepDone = !Diagnosing;
 
         // Console reads are synchronous underneath on Unix — ReadLineAsync
@@ -118,7 +115,7 @@ sealed partial class PresenceSession
                         if (!statusStepDone)
                         {
                             statusStepDone = true;
-                            await DiagnoseStepAsync(4, $"sent your status ({parts[1]})");
+                            await DiagnoseStepAsync(3, $"sent your status ({parts[1]})");
                             JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = "done: library, cloud and the rest run now" });
                         }
                         break;
@@ -163,16 +160,21 @@ sealed partial class PresenceSession
         stop.Cancel();
         await keepalive;
 
-        // Retract the game, but never set the persona Offline here. Persona
-        // state belongs to the account, not this session: Offline signs every
-        // device out of Friends & Chat, so quitting BEER knocked the user's
-        // Steam client and phone offline too. Logging off is enough; Steam
-        // drops this session and the others keep their status.
-        SetPlaying(0);
-        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = "retracted" });
-        // Let the retraction reach the CM before the caller disconnects the
-        // socket underneath it.
-        await Task.Delay(TimeSpan.FromSeconds(1));
+        // Retract a game still announced, but never set the persona Offline
+        // here. Persona state belongs to the account, not this session:
+        // Offline signs every device out of Friends & Chat, so quitting BEER
+        // knocked the user's Steam client and phone offline too. Logging off
+        // is enough; Steam drops this session and the others keep their status.
+        bool announced;
+        lock (_announceGate) announced = _currentApp != 0;
+        if (announced)
+        {
+            SetPlaying(0);
+            // Let the retraction reach the CM before the caller disconnects
+            // the socket underneath it.
+            await Task.Delay(TimeSpan.FromSeconds(1));
+        }
+        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = announced ? "retracted" : "nothing to retract" });
     }
 
     // BEER_STEAM_DIAGNOSE=1: space out everything the session sends at launch
@@ -184,7 +186,7 @@ sealed partial class PresenceSession
     static async Task DiagnoseStepAsync(int step, string what)
     {
         if (!Diagnosing) return;
-        JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = $"step {step}/4: {what}. Waiting {DiagnosePause.TotalSeconds:0} s…" });
+        JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = $"step {step}/3: {what}. Waiting {DiagnosePause.TotalSeconds:0} s…" });
         await Task.Delay(DiagnosePause);
     }
 
