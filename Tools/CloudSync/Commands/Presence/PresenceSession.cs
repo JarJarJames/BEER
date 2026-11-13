@@ -70,12 +70,12 @@ sealed partial class PresenceSession
         var stop = new CancellationTokenSource();
         var keepalive = Task.Run(() => KeepaliveAsync(stop.Token));
 
-        // Nothing about playing is sent until a game starts. A launch used to
-        // open with an empty games-played; GameNative, which runs beside the
-        // user's desktop Steam client without signing it out of Friends, never
-        // sends one, and BEER did on every launch (#65). A game announced by an
-        // earlier session that died goes with that session's connection.
-        await DiagnoseStepAsync(1, "logged on; nothing else sent yet");
+        // Declare "playing nothing" up front. Steam keeps the last games-played
+        // it was told, so a previous session that died without retracting — a
+        // crash, a force quit, a killed helper — leaves the account showing
+        // in-game indefinitely, and no later session clears it because none of
+        // them ever mention the stale game. This makes every launch self-healing.
+        SetPlaying(0);
 
         JsonOutput.Emit(new Dictionary<string, object?> { ["presence_ready"] = true });
 
@@ -83,8 +83,6 @@ sealed partial class PresenceSession
         // without waiting for Steam to push an unprompted change.
         if (_session.Client.SteamID is { } seed)
             _friends.RequestFriendInfo(seed, ProfileFlags);
-        await DiagnoseStepAsync(2, "asked Steam for your profile (name, avatar)");
-        var statusStepDone = !Diagnosing;
 
         // Console reads are synchronous underneath on Unix — ReadLineAsync
         // hands back an already-completed task after blocking. Push it onto a
@@ -106,12 +104,6 @@ sealed partial class PresenceSession
                     case "state":
                         if (Enum.TryParse<EPersonaState>(parts[1], true, out var wanted))
                             ApplyState(wanted);
-                        if (!statusStepDone)
-                        {
-                            statusStepDone = true;
-                            await DiagnoseStepAsync(3, $"sent your status ({parts[1]})");
-                            JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = "done: library, cloud and the rest run now" });
-                        }
                         break;
 
                     case "play":
@@ -154,21 +146,16 @@ sealed partial class PresenceSession
         stop.Cancel();
         await keepalive;
 
-        // Retract a game still announced, but never set the persona Offline
-        // here. Persona state belongs to the account, not this session:
-        // Offline signs every device out of Friends & Chat, so quitting BEER
-        // knocked the user's Steam client and phone offline too. Logging off
-        // is enough; Steam drops this session and the others keep their status.
-        bool announced;
-        lock (_announceGate) announced = _currentApp != 0;
-        if (announced)
-        {
-            SetPlaying(0);
-            // Let the retraction reach the CM before the caller disconnects
-            // the socket underneath it.
-            await Task.Delay(TimeSpan.FromSeconds(1));
-        }
-        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = announced ? "retracted" : "nothing to retract" });
+        // Retract the game, but never set the persona Offline here. Persona
+        // state belongs to the account, not this session: Offline signs every
+        // device out of Friends & Chat, so quitting BEER knocked the user's
+        // Steam client and phone offline too. Logging off is enough; Steam
+        // drops this session and the others keep their status.
+        SetPlaying(0);
+        JsonOutput.Emit(new Dictionary<string, object?> { ["shutdown"] = "retracted" });
+        // Let the retraction reach the CM before the caller disconnects the
+        // socket underneath it.
+        await Task.Delay(TimeSpan.FromSeconds(1));
     }
 
     // What BEER asks Steam about its own account at launch: name and avatar,
@@ -189,19 +176,6 @@ sealed partial class PresenceSession
         EClientPersonaStateFlag.PlayerName
         | EClientPersonaStateFlag.Presence
         | EClientPersonaStateFlag.GameExtraInfo;
-
-    // BEER_STEAM_DIAGNOSE=1: space out everything the session sends at launch
-    // so a person watching their other Steam clients can see which step, if
-    // any, signs them out of Friends. Requests wait until the steps are done.
-    static readonly bool Diagnosing = Environment.GetEnvironmentVariable("BEER_STEAM_DIAGNOSE") == "1";
-    static readonly TimeSpan DiagnosePause = TimeSpan.FromSeconds(15);
-
-    static async Task DiagnoseStepAsync(int step, string what)
-    {
-        if (!Diagnosing) return;
-        JsonOutput.Emit(new Dictionary<string, object?> { ["diagnose"] = $"step {step}/3: {what}. Waiting {DiagnosePause.TotalSeconds:0} s…" });
-        await Task.Delay(DiagnosePause);
-    }
 
     void Serve(string line)
     {
@@ -226,7 +200,6 @@ sealed partial class PresenceSession
     {
         lock (_announceGate) _currentState = wanted;
         _session.Client.Send(PersonaStatus.Message(wanted));
-        JsonOutput.Emit(new Dictionary<string, object?> { ["status_sent"] = wanted.ToString() });
     }
 
     void SetPlaying(uint appid)

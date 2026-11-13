@@ -20,7 +20,7 @@ extension CloudSyncClient {
         refreshToken: String,
         onProgress: @escaping @Sendable (Int, Int) -> Void
     ) async throws -> BatchResult {
-        guard !downloads.isEmpty || !uploads.isEmpty else { return BatchResult(ops: [], notes: []) }
+        guard !downloads.isEmpty || !uploads.isEmpty else { return BatchResult(ops: []) }
 
         let jobs: [String: Any] = [
             "appid": appID,
@@ -54,6 +54,6 @@ extension CloudSyncClient {
         if collector.rateLimited { throw CloudSyncClientError.rateLimited }
         if collector.authFailed { throw CloudSyncClientError.authExpired }
         if let fatal = collector.fatal, collector.ops.isEmpty { throw CloudSyncClientError.helper(fatal) }
-        return BatchResult(ops: collector.ops, notes: collector.notes)
+        return BatchResult(ops: collector.ops)
     }
 }

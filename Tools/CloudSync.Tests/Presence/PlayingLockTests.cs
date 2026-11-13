@@ -2,9 +2,8 @@ using CloudSync.Commands.Presence;
 
 namespace CloudSync.Tests.Presence;
 
-// Regression for #65: announcing a game while another device holds the
-// account's playing slot, or right as it lets go, signs that device out with
-// LoggedInElsewhere.
+// Announcing a game while another device holds the account's playing slot,
+// or right as it lets go, signs that device out with LoggedInElsewhere.
 public class PlayingLockTests
 {
     static readonly DateTime T0 = new(2026, 11, 12, 12, 0, 0, DateTimeKind.Utc);

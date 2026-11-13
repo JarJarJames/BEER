@@ -32,7 +32,7 @@ extension CloudSyncClient {
     func runOnce(args: [String], account: String, refreshToken: String) async throws -> [String: Any] {
         let last = ResultBox()
         try await session(account: account, refreshToken: refreshToken).request(args) { last.accept($0) }
-        return try last.result(notes: NoteBox(), ending: "the Steam session ended")
+        return try last.result(ending: "the Steam session ended")
     }
 
     /// Run a command in a helper process of its own, for the one that never
@@ -66,7 +66,7 @@ extension ResultBox {
     }
 
     /// The reply, or the error it stands for.
-    func result(notes: NoteBox, ending: String) throws -> [String: Any] {
+    func result(notes: NoteBox? = nil, ending: String) throws -> [String: Any] {
         if rateLimited { throw CloudSyncClientError.rateLimited }
         if authFailed { throw CloudSyncClientError.authExpired }
         if let error { throw CloudSyncClientError.helper(error) }
@@ -76,7 +76,7 @@ extension ResultBox {
             // no {"error": …} to relay. Fall back to whatever it did print
             // (its stderr notes), rather than the useless "no JSON result", so
             // the real cause isn't lost.
-            let detail = notes.all.suffix(15).joined(separator: " | ")
+            let detail = notes?.all.suffix(15).joined(separator: " | ") ?? ""
             throw CloudSyncClientError.badOutput(
                 detail.isEmpty ? "\(ending) with no output" : "\(detail) (\(ending))"
             )

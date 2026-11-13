@@ -35,7 +35,6 @@ namespace CloudSync;
 //
 // Auth (all commands): --token <refreshToken> --account <name>
 //   Prefer --token-file <path> so the token never appears in argv / ps output.
-//   --device-file <path> keeps BEER's own Steam device ID (see BeerDevice).
 //
 // The app keeps ONE `session` running and sends every other command to it as
 // a request, so BEER is a single logon on the account. Run by hand, each
@@ -81,7 +80,6 @@ static class Program
 
             var token = CliArgs.ReadToken(args);
             var account = CliArgs.Require(args, "account");
-            if (args.TryGetValue("device-file", out var deviceFile)) BeerDevice.UseFile(deviceFile);
 
             using var session = await SteamSession.LogOnAsync(
                 account, token,

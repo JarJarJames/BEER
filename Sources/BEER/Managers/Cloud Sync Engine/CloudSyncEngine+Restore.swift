@@ -317,7 +317,7 @@ extension CloudSyncEngine {
         // Anything that didn't upload still differs, so the next sync asks
         // again rather than pulling Steam's copy over it.
         if report.failures.isEmpty { clearPendingRestore(appID: appID) }
-        writeFailureLog(appID: appID, report: report, helperNotes: batch.notes)
+        writeFailureLog(appID: appID, report: report)
         lastSyncAt = Date()
         lastReport = report
         phase = "Kept the restored saves: \(report.uploaded) uploaded" + (report.failures.isEmpty ? "." : ", \(report.failures.count) failed.")

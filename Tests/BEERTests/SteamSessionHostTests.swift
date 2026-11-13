@@ -2,8 +2,8 @@ import XCTest
 @testable import BEER
 
 /// BEER logs on to Steam once and runs everything through that session
-/// (`SteamSessionHost`). Every extra logon is another chance to collide with
-/// the user's own Steam clients (#65) and counts toward Steam's rate limit.
+/// (`SteamSessionHost`). Every extra logon is another session on the user's
+/// account and counts toward Steam's rate limit.
 @MainActor
 final class SteamSessionHostTests: XCTestCase {
     private var root: URL!

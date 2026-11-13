@@ -26,7 +26,7 @@ executable → the repo dev build.
 |---|---|
 | `Program.cs` | Entry point: parse args, log on once, dispatch, JSON error envelope |
 | `Cli/` | `CliArgs` (argument parsing), `SessionRequest` (one request to `session`) and `JsonOutput` (the one stdout writer) |
-| `Steam/` | `SteamSession` (logon, retry, callback pump), `BeerDevice` (the device ID BEER logs on as), `LogonFailedException`, `UserStatsHandler`, `AppInfo` (PICS app info) |
+| `Steam/` | `SteamSession` (logon, retry, callback pump), `LogonFailedException`, `UserStatsHandler`, `AppInfo` (PICS app info) |
 | `Commands/` | One class per command below; `CommandDispatch` runs them; `Presence/` holds the long-lived `session` |
 | `Transfers/` | `CloudTransfers` (single-file download/upload) and `CloudFileUnwrapper` |
 | `Achievements/` | Stats-schema parsing and unlock-bit math |
@@ -39,7 +39,6 @@ Rules for adding files are in `PROJECT_STRUCTURE.md` under "C# helper". Tests ar
 ## Commands
 Output is one JSON object per line on **stdout**; logs go to **stderr**. Exit 0 = ok.
 Auth: `--account NAME --token-file FILE` (refresh token in a file, never on argv).
-`--device-file FILE` keeps the device ID BEER logs on as (see below).
 
 **The app runs only `session`.** It logs on once and stays logged on while BEER is
 open; every other command below reaches it as a request on stdin:
@@ -49,8 +48,8 @@ concurrently, every line one emits carries its `id`, and each ends with
 `presence_ready`, status and play reports, and a failed logon's `{error, …}`.
 Status and play commands are plain lines: `state <Online|Away|Invisible|Offline>`,
 `play <appid>`, `stop`. A status is sent exactly as picked, marked as set by the
-user (`PersonaStatus`): without that flag Steam signed the user's own Steam clients
-out of Friends (#65). Run by hand, each command logs on for itself.
+user (`PersonaStatus`), as Steam's own client sends it. Run by hand, each command
+logs on for itself.
 
 | Command | What it does | Writes anything? |
 |---|---|---|
@@ -66,8 +65,7 @@ out of Friends (#65). Run by hand, each command logs on for itself.
 
 `batch` jobs file: `{ "appid": N, "downloads":[{"filename","out"}], "uploads":[{"filename","in","mtime"}] }`.
 It runs up to four file transfers concurrently, reusing one HTTP connection pool,
-inside the one Steam session. Downloads finish
-before uploads begin. Per-op it emits `{op, filename, ok|error}`, then
+inside the one Steam session. Downloads finish before uploads begin. Per-op it emits `{op, filename, ok|error}`, then
 `{summary, downloaded, uploaded, failed}`.
 
 Errors: a logon rejection emits `{error, auth_failed:true}` (revoked/expired → reconnect)
@@ -87,14 +85,17 @@ also records the cache path so a launch after an app crash removes any remnant.
 **One logon for all of BEER.** Every command goes through the one `session`.
 Spawning a process (= a fresh Steam logon) per file got the account CM-rate-limited
 after ~100 logons, and every extra session is another chance to collide with the
-user's own Steam clients (#65). Don't add a command that logs on for itself, and
-don't go back to per-file `download`/`upload` calls inside a loop. DepotDownloader
-is the one exception: it's a separate program and logs on by itself.
+user's own Steam clients. Don't add a command that logs on for itself, and don't
+go back to per-file `download`/`upload` calls inside a loop. DepotDownloader is the
+one exception: it's a separate program and logs on by itself.
 
-**BEER is its own device.** SteamKit2 builds its macOS machine ID from the Mac's
-serial number and boot disk, the same inputs Steam's own client uses, so BEER
-logged on looking like the Mac's own Steam client. `BeerDevice` gives Steam a
-random ID made once per install instead.
+**Never ask Steam for the account's own Status (#65).** The session's profile
+request at launch (`PresenceSession.ProfileFlags`) is name, avatar and game info
+only. With `EClientPersonaStateFlag.Status` in it, Steam answered with an update
+for the account saying Offline, and Steam's own client applies any update for its
+account that carries Status (`FriendStore.OnPersonaStateUpdate` in its steamui
+`sp.js`), so every BEER launch signed the user's other Steam clients out of
+Friends. Valve's client never requests Status for itself.
 
 ## Debugging by hand
 `enumerate` and `download` are read-only/safe. Example (do this only with the
