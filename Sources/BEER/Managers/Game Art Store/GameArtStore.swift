@@ -2,20 +2,20 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-/// Library art for the cards: from memory if it was just decoded, else from
-/// the disk cache, else downloaded into it. Each image is decoded at the
-/// size its card shows it.
+/// Library art for the cards: from the disk cache, or downloaded into it.
+/// Each image is decoded at the size its card shows it.
 ///
 /// BEER runs beside the game it launched, so art lives on disk, not in
-/// memory: memory holds only a few screens' worth of decoded images, and
-/// none while a game is running.
+/// memory. Decoded images are held only by the cards on screen; there's no
+/// memory cache, because a drawn image it kept cost real memory (a three-
+/// screen cache measured +100 MB), while reading a card's art back from
+/// disk takes about a millisecond.
 final class GameArtStore: @unchecked Sendable {
     static let shared = GameArtStore()
 
     /// Reads art from the network. Swappable so tests don't need it.
     let fetch: @Sendable (URL) async throws -> Data
     let disk: GameArtDiskCache
-    let memory: GameArtMemoryCache
 
     private let lock = NSLock()
     private var isGameRunning = false
@@ -23,36 +23,19 @@ final class GameArtStore: @unchecked Sendable {
     private var prefetching: Set<URL> = []
     /// Art Steam doesn't have, so a card scrolling back doesn't ask again.
     private var missing: Set<URL> = []
-    private let pressure: DispatchSourceMemoryPressure
 
     init(
         fetch: @escaping @Sendable (URL) async throws -> Data = GameArtStore.download,
-        disk: GameArtDiskCache = GameArtDiskCache(),
-        memoryLimit: Int = GameArtStore.screenMemoryLimit
+        disk: GameArtDiskCache = GameArtDiskCache()
     ) {
         self.fetch = fetch
         self.disk = disk
-        memory = GameArtMemoryCache(limit: memoryLimit)
-        pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .global(qos: .utility))
-        pressure.setEventHandler { [weak self] in self?.handleMemoryWarning() }
-        pressure.activate()
-    }
-
-    deinit { pressure.cancel() }
-
-    /// The art if it's decoded already, with no disk or network: what a card
-    /// draws in its first frame.
-    func cachedImage(for request: GameArtRequest) -> CGImage? {
-        memory.image(for: request.cacheKey)
     }
 
     /// The art for `request`, or nil when there's none or it couldn't load.
     @concurrent
     func image(for request: GameArtRequest) async -> CGImage? {
-        if let image = cachedImage(for: request) { return image }
-        guard let image = await decode(request) else { return nil }
-        if !lock.withLock({ isGameRunning }) { memory.insert(image, for: request.cacheKey) }
-        return image
+        await decode(request)
     }
 
     /// Downloads art for cards about to scroll into view, to disk only:
@@ -75,15 +58,9 @@ final class GameArtStore: @unchecked Sendable {
         }
     }
 
-    /// While a game runs, BEER keeps as little as it can: decoded art that
-    /// isn't on screen is dropped, and nothing is downloaded ahead.
+    /// While a game runs, nothing is downloaded ahead.
     func setGameRunning(_ running: Bool) {
         lock.withLock { isGameRunning = running }
-        if running { memory.removeAll() }
-    }
-
-    func handleMemoryWarning() {
-        memory.removeAll()
     }
 
     private func decode(_ request: GameArtRequest) async -> CGImage? {
@@ -142,13 +119,5 @@ extension GameArtStore {
             guard (200..<300).contains(http.statusCode) else { throw GameArtError.status(http.statusCode) }
         }
         return data
-    }
-
-    /// `GameArtCacheLimits.memoryScreens` of the main display's pixels, at
-    /// 4 bytes each. Read through Core Graphics, which any thread may call.
-    static var screenMemoryLimit: Int {
-        let mode = CGDisplayCopyDisplayMode(CGMainDisplayID())
-        let pixels = mode.map { $0.pixelWidth * $0.pixelHeight } ?? 0
-        return GameArtCacheLimits.memoryScreens * 4 * (pixels > 0 ? pixels : GameArtCacheLimits.fallbackScreenPixels)
     }
 }

@@ -1,8 +1,6 @@
 import Foundation
 
-/// How much library art BEER keeps, on disk and in memory. Memory is kept
-/// small on purpose: BEER runs beside the game it launched, and every
-/// megabyte it holds is one the game can't use.
+/// How much library art BEER keeps on disk, and how it downloads ahead.
 enum GameArtCacheLimits {
     /// The downloaded art folder. A cover is 30–100 KB, so this holds a
     /// thousand-game library in any one card style with room to spare.
@@ -10,12 +8,6 @@ enum GameArtCacheLimits {
     /// A full disk cache is trimmed to this share of `diskBytes`, so it isn't
     /// trimmed again on the very next download.
     static let diskTrimTarget = 0.9
-    /// Decoded art kept for cards that just scrolled away, in screens' worth
-    /// of pixels. One of them is the cards on screen, which hold the same
-    /// images.
-    static let memoryScreens = 3
-    /// Used when no screen can be measured (tests, a headless Mac).
-    static let fallbackScreenPixels = 2880 * 1800
     /// Cards past the last one shown whose art is downloaded ahead.
     static let prefetchAhead = 12
     /// Downloads ahead at once. More are dropped, not queued: by the time a

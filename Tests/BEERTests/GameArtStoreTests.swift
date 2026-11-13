@@ -2,9 +2,9 @@ import CoreGraphics
 import XCTest
 @testable import BEER
 
-/// Library art: the disk cache, display-size decoding, the byte-capped memory
-/// cache, prefetching, and what changes while a game runs. Art comes from a
-/// fake fetch and a temporary folder, never Steam.
+/// Library art: the disk cache, display-size decoding, prefetching, and what
+/// changes while a game runs. Art comes from a fake fetch and a temporary
+/// folder, never Steam.
 final class GameArtStoreTests: XCTestCase {
     private var root: URL!
     private let server = ArtServer()
@@ -49,12 +49,11 @@ final class GameArtStoreTests: XCTestCase {
 
     private var cacheDirectory: URL { root.appendingPathComponent("GameArt", isDirectory: true) }
 
-    private func makeStore(memoryLimit: Int = 64 * 1024 * 1024, diskLimit: Int = 10 * 1024 * 1024) -> GameArtStore {
+    private func makeStore(diskLimit: Int = 10 * 1024 * 1024) -> GameArtStore {
         let server = server
         return GameArtStore(
             fetch: { try await server.fetch($0) },
-            disk: GameArtDiskCache(directory: cacheDirectory, limit: diskLimit),
-            memoryLimit: memoryLimit
+            disk: GameArtDiskCache(directory: cacheDirectory, limit: diskLimit)
         )
     }
 
@@ -76,7 +75,6 @@ final class GameArtStoreTests: XCTestCase {
         XCTAssertNotNil(first)
         XCTAssertEqual(server.requests.count, 1)
 
-        // A new store has nothing in memory, so this can only come from disk.
         let second = await makeStore().image(for: request(cover(1)))
         XCTAssertNotNil(second)
         XCTAssertEqual(server.requests.count, 1, "The second load went to the network")
@@ -158,59 +156,40 @@ final class GameArtStoreTests: XCTestCase {
         XCTAssertEqual(game.cardArt(for: .cover), URL(fileURLWithPath: "/tmp/app10-cover-1.png"))
     }
 
-    // MARK: - Memory
-
-    func testMemoryCacheStaysUnderItsByteLimitAndEmptiesOnAMemoryWarning() async throws {
-        // A fitted cover at 100×150 points, 1×, decodes to 128×192.
-        let imageCost = 128 * 192 * 4
-        let store = makeStore(memoryLimit: imageCost * 3 + imageCost / 2)
-        var last: GameArtRequest!
-        for appID in 1...10 {
-            last = request(cover(appID))
-            let decoded = await store.image(for: last)
-            let image = try XCTUnwrap(decoded)
-            XCTAssertEqual(image.width * image.height * 4, imageCost)
-            XCTAssertLessThanOrEqual(store.memory.totalCost, store.memory.limit)
-        }
-        XCTAssertGreaterThan(store.memory.totalCost, 0)
-        XCTAssertNotNil(store.cachedImage(for: last))
-
-        store.handleMemoryWarning()
-        XCTAssertEqual(store.memory.totalCost, 0)
-        XCTAssertNil(store.cachedImage(for: last))
+    func testArtShownAtTheFilesOwnSizeIsDecodedWhole() async throws {
+        // A 300×450 cover in a card that shows it at 2×: no smaller copy needed.
+        server.body = TestImages.png(width: 300, height: 450)
+        let loaded = await makeStore().image(for: request(cover(1), fit: .fill, points: CGSize(width: 150, height: 225), scale: 2))
+        let image = try XCTUnwrap(loaded)
+        XCTAssertEqual(image.width, 300)
+        XCTAssertEqual(image.height, 450)
     }
 
-    func testPrefetchDownloadsToDiskWithoutDecoding() async {
+    // MARK: - Prefetch
+
+    func testPrefetchDownloadsToDisk() async {
         let store = makeStore()
         let urls = [cover(1), cover(2)]
         for task in store.prefetch(urls) { await task.value }
 
         XCTAssertEqual(Set(server.requests), Set(urls))
         XCTAssertTrue(urls.allSatisfy(store.disk.contains))
-        XCTAssertEqual(store.memory.totalCost, 0, "Prefetching decoded art")
         // Already on disk: not downloaded again.
         XCTAssertTrue(store.prefetch(urls).isEmpty)
     }
 
-    func testWhileAGameRunsNothingIsPrefetchedAndDecodedArtIsDropped() async throws {
+    func testWhileAGameRunsNothingIsPrefetched() async {
         let store = makeStore()
-        let shown = request(cover(1))
-        let shownImage = await store.image(for: shown)
-        _ = try XCTUnwrap(shownImage)
-        XCTAssertGreaterThan(store.memory.totalCost, 0)
-
         store.setGameRunning(true)
-        XCTAssertEqual(store.memory.totalCost, 0)
-        XCTAssertTrue(store.prefetch([cover(2)]).isEmpty)
-        // A card on screen still gets its art, but it isn't kept in memory.
-        let whileRunning = await store.image(for: request(cover(3)))
+        XCTAssertTrue(store.prefetch([cover(1)]).isEmpty)
+        // A card on screen still gets its art.
+        let whileRunning = await store.image(for: request(cover(2)))
         XCTAssertNotNil(whileRunning)
-        XCTAssertEqual(store.memory.totalCost, 0)
-        XCTAssertFalse(server.requests.contains(cover(2)))
+        XCTAssertEqual(server.requests, [cover(2)])
 
         store.setGameRunning(false)
-        _ = await store.image(for: shown)
-        XCTAssertGreaterThan(store.memory.totalCost, 0)
+        for task in store.prefetch([cover(1)]) { await task.value }
+        XCTAssertTrue(store.disk.contains(cover(1)))
     }
 
     // MARK: - Failures

@@ -39,9 +39,7 @@ struct GameArtImage<Placeholder: View, Failure: View>: View {
     }
 
     @ViewBuilder private var content: some View {
-        // Art decoded moments ago draws in the card's first frame, with no
-        // placeholder flash.
-        if let image = phase.image ?? request.flatMap(GameArtStore.shared.cachedImage) {
+        if let image = phase.image {
             Image(decorative: image, scale: displayScale)
                 .resizable()
                 .aspectRatio(contentMode: fit == .fit ? .fit : .fill)

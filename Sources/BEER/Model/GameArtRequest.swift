@@ -28,9 +28,4 @@ struct GameArtRequest: Hashable, Sendable {
         self.pixelSize = fit == .backdrop ? .zero : CGSize(width: rounded(points.width), height: rounded(points.height))
         self.fit = fit
     }
-
-    /// The memory cache's key.
-    var cacheKey: String {
-        "\(fit)|\(Int(pixelSize.width))x\(Int(pixelSize.height))|\(url.absoluteString)"
-    }
 }
