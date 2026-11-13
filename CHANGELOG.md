@@ -31,6 +31,14 @@ Notable changes to BEER. Versions follow the GitHub releases.
   saves, achievements, install-size checks and icons. Before, it logged on
   separately for each, three or four times just to open. Downloads still log
   on by themselves.
+- **Library art loads faster** (#72). Cover art is saved to disk the first
+  time it downloads, so a card that scrolls back into view, or the library
+  after a restart, shows its art at once instead of downloading it again.
+  Art for the cards just below is downloaded ahead, except while a game is
+  running. A card still waiting for its art shows the game's name instead of
+  a blank grey square. The saved art lives in BEER's Caches folder, which
+  macOS can clear, and is kept under 100 MB. BEER's own memory use doesn't
+  grow with the size of your library.
 
 ### Fixed
 - **Opening BEER signed your Steam client out of Friends** on your other
