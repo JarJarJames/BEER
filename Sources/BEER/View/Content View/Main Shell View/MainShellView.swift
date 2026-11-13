@@ -29,7 +29,7 @@ struct MainShellView: View {
         .environmentObject(dlcStore)
         .frame(minWidth: MainShellLayout.detailMinWidth, maxWidth: .infinity,
                minHeight: MainShellLayout.detailMinHeight, maxHeight: .infinity)
-        .navigationTitle(MainShellStrings.appName)
+        .navigationTitle(MainShellStrings.windowTitle())
         .toolbar {
             // The trailing corner. Nothing goes in the middle: a centered
             // item pulls the items after it in beside it. The All Games /
