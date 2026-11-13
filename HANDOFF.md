@@ -91,7 +91,7 @@ What we actually do:
 ```bash
 swift build && swift run BEER      # dev
 ./scripts/build_cloudsync.sh                # (re)build + install the helper to App Support
-./scripts/build_app.sh 0.7.0                # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
+./scripts/build_app.sh <version>            # → .build/BEER.app + .build/BEER.zip (bundled helper, ad-hoc signed)
 ```
 - Work lands in **`dev`**; a release merges `dev` into `master` and is tagged there. Distributed via `gh release` at https://github.com/JarJarJames/BEER/releases. The full release steps are in `GOVERNANCE.md`.
 - **Not notarized** — downloaders must run `xattr -dr com.apple.quarantine /Applications/BEER.app`. A paid Apple Developer ID + notarization would remove that step.
