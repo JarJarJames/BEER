@@ -45,6 +45,12 @@ Notable changes to BEER. Versions follow the GitHub releases.
   grow with the size of your library.
 
 ### Fixed
+- **A refused Steam sign-in could say "BEER's Steam session ended
+  unexpectedly"** instead of asking you to sign in again, and BEER then logged
+  on again with the refused token, which counts toward Steam's rate limit.
+  BEER could notice the session had closed before reading its last message,
+  the one saying why. It now reads everything the session said first. This
+  also made a CI test fail now and then.
 - **Opening BEER signed your Steam client out of Friends** on your other
   computers. At launch BEER asked Steam for your own profile including your
   status; Steam answered "Offline", and Steam's client takes that as your
