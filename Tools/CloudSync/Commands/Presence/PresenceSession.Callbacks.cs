@@ -10,8 +10,16 @@ sealed partial class PresenceSession
     {
         _session.Subscribe<SteamUser.LoggedOffCallback>(cb =>
         {
-            if (cb.Result is EResult.LoggedInElsewhere or EResult.LogonSessionReplaced)
+            // Another BEER took this session's LoginID: reconnecting would
+            // just take it back, and the two would trade it forever.
+            if (cb.Result == EResult.LogonSessionReplaced)
                 _displaced = true;
+            // Another device took the playing slot from us. Reconnecting is
+            // safe — the request work and status don't depend on the slot —
+            // but count the slot as taken, so the reconnect can't grab it back
+            // before Steam says the other game has stopped.
+            if (cb.Result == EResult.LoggedInElsewhere)
+                lock (_announceGate) _playingLock.Update(blocked: true, DateTime.UtcNow);
             JsonOutput.Emit(new Dictionary<string, object?>
             {
                 ["logged_off"] = cb.Result.ToString(),
@@ -47,12 +55,31 @@ sealed partial class PresenceSession
                 });
                 return;
             }
-            _friends.SetPersonaState(_currentState);
             lock (_announceGate)
             {
+                if (_currentState is { } state) _session.Client.Send(PersonaStatus.Message(state));
+                // Steam only re-sends the playing state after logon if another
+                // device is playing. A block from before the drop may have
+                // cleared while we were away, so count it as clearing now: the
+                // cooldown still applies, and a live block is re-reported.
+                _playingLock.Update(blocked: false, DateTime.UtcNow);
                 if (_currentApp != 0) Announce(_currentApp);
             }
             JsonOutput.Emit(new Dictionary<string, object?> { ["reconnected"] = true });
+        });
+
+        // Another device on the account started or stopped playing.
+        _session.Subscribe<SteamUser.PlayingSessionStateCallback>(cb =>
+        {
+            lock (_announceGate)
+            {
+                _playingLock.Update(cb.PlayingBlocked, DateTime.UtcNow);
+            }
+            JsonOutput.Emit(new Dictionary<string, object?>
+            {
+                ["playing_blocked"] = cb.PlayingBlocked,
+                ["playing_app"] = cb.PlayingAppID,
+            });
         });
 
         // Steam's own view of this persona, pushed on every change. This is
@@ -70,7 +97,9 @@ sealed partial class PresenceSession
             JsonOutput.Emit(new Dictionary<string, object?>
             {
                 ["persona_name"] = cb.Name,
-                ["persona_state"] = cb.State.ToString(),
+                // Only an update that carries Status says what the status is;
+                // the profile reply at launch deliberately doesn't (ProfileFlags).
+                ["persona_state"] = cb.StatusFlags.HasFlag(EClientPersonaStateFlag.Status) ? cb.State.ToString() : null,
                 ["avatar_hash"] = cb.AvatarHash is null
                     ? null
                     : Convert.ToHexString(cb.AvatarHash).ToLowerInvariant(),

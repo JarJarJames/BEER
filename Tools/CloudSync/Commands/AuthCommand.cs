@@ -15,11 +15,15 @@ static class AuthCommand
     {
         using var session = await SteamSession.ConnectOnlyAsync();
 
+        // The device the token is issued to: this Mac's real name and OS, the
+        // way GameNative registers its token, and the same name the session
+        // logs on with (SteamSession.MachineName). It used to be a fixed
+        // "BEER for Mac" on a hard-coded macOS version (MacOS1020).
         var authSession = await session.Client.Authentication.BeginAuthSessionViaQRAsync(new AuthSessionDetails
         {
             PlatformType = EAuthTokenPlatformType.k_EAuthTokenPlatformType_SteamClient,
-            DeviceFriendlyName = "BEER for Mac",
-            ClientOSType = EOSType.MacOS1020,
+            DeviceFriendlyName = SteamSession.MachineName,
+            // ClientOSType left at SteamKit's default: the OS this runs on.
             IsPersistentSession = true,
         });
 

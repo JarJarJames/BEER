@@ -1,4 +1,3 @@
-using System.Text.Json;
 using CloudSync.Cli;
 using CloudSync.Steam;
 using SteamKit2;
@@ -55,14 +54,12 @@ static class EnumerateCommand
             if (body.files.Count == 0 || startIndex >= body.total_files) break;
         }
         var saveFiles = await UfsSaveFiles.FetchAsync(s, appid);
-        Console.Error.WriteLine($"enumerate: {files.Count} files total, serializing…");
-        var json = JsonSerializer.Serialize(new Dictionary<string, object?>
+        Console.Error.WriteLine($"enumerate: {files.Count} files total, writing…");
+        JsonOutput.Emit(new Dictionary<string, object?>
         {
             ["files"] = files,
             ["savefiles"] = saveFiles,
         });
-        Console.Error.WriteLine($"enumerate: serialized {json.Length} chars, writing…");
-        JsonOutput.WriteLine(json);
         Console.Error.WriteLine("enumerate: emitted.");
     }
 }

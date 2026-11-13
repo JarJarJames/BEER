@@ -25,9 +25,13 @@ final class SteamLibraryStore: ObservableObject {
         games = payload.games
     }
 
+    /// Sign out without touching the games. Each one carries what BEER
+    /// knows about it locally — which bottle it's installed in, favorite,
+    /// hidden, custom art — and dropping the Steam ones here lost all of it:
+    /// signing back in rebuilt the list from Steam, which knows none of it.
+    /// The next sign-in folds Steam's list into this one (`merge`).
     func signOut() {
         account = .signedOut
-        games = games.filter(\.effectiveIsNonSteam)   // not tied to the account
         persist()
     }
 
@@ -57,8 +61,7 @@ final class SteamLibraryStore: ObservableObject {
 
         do {
             let fetched = try await fetchOwnedGamesViaClient(account: acct)
-            let steamGames = fetched.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
-            games = steamGames + games.filter(\.effectiveIsNonSteam)
+            games = Self.merge(existing: games, fetched: fetched)
             persist()
         } catch {
             auth.noteCloudError(error)
@@ -142,6 +145,38 @@ final class SteamLibraryStore: ObservableObject {
         guard minutes > (games[index].playtimeMinutes ?? 0) else { return }
         games[index].playtimeMinutes = minutes
         persist()
+    }
+
+    /// Link each Steam game that has an installed bottle but no install on
+    /// record. The bottle keeps its app ID even when the library loses the
+    /// link — as an older sign-out did — and without it the game looks
+    /// uninstalled though its files and saves are all there.
+    func relinkInstalledGames(bottles: [Bottle]) {
+        guard let relinked = Self.relinking(games, to: bottles) else { return }
+        games = relinked
+        persist()
+    }
+
+    /// `games` with lost install links restored, or nil when none were lost.
+    /// Of two installed bottles for one game, the latest-updated wins.
+    nonisolated static func relinking(_ games: [SteamLibraryGame], to bottles: [Bottle]) -> [SteamLibraryGame]? {
+        var bottleForApp: [Int: Bottle] = [:]
+        for bottle in bottles {
+            guard let appID = bottle.steamAppID,
+                  bottle.gameInstallStatus == .installed || bottle.gameInstallStatus == .updateAvailable else { continue }
+            if let current = bottleForApp[appID], current.updatedAt >= bottle.updatedAt { continue }
+            bottleForApp[appID] = bottle
+        }
+        var changed = false
+        let relinked = games.map { game -> SteamLibraryGame in
+            guard !game.effectiveIsNonSteam, game.installedBottleID == nil,
+                  let bottle = bottleForApp[game.appID] else { return game }
+            var linked = game
+            linked.installedBottleID = bottle.id
+            changed = true
+            return linked
+        }
+        return changed ? relinked : nil
     }
 
     func markInstalled(appID: Int, bottleID: UUID) {

@@ -49,7 +49,7 @@ Two halves:
 - `GoldbergInstaller.swift` / `GoldbergApplicator.swift` — steam_api shim drop-in.
 - **Cloud:**
   - `SteamAuthStore.swift` — QR sign-in **via the helper**; holds the account and keeps the refresh token in the Keychain; `sessionExpired` flag + `noteCloudError`.
-  - `CloudSyncClient` (`Managers/Cloud Sync Client/`) — Swift wrapper that shells out to the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`.
+  - `CloudSyncClient` (`Managers/Cloud Sync Client/`) — Swift wrapper around the CloudSync helper (`locateBinary`, `authenticate`, `ownedGames`, `enumerate`, `batch`). Distinguishes `.authExpired` vs `.rateLimited`. Every Steam call goes through `SteamSessionHost`: one helper `session` process, logged on once, that takes each call as a request. Session output is in `play-session.log`.
   - `CloudSyncEngine` (`Managers/Cloud Sync Engine/`) — `pull` / `push` / `sync`, conflict logic, mandatory backups, path mapping, `last-sync.log`.
 - `SteamLibraryStore.swift` — owned games, fetched through the helper after `signInWithQR(auth:)`.
 - `DepotDownloaderSetupView.swift` / `SteamSignInView.swift` — first-run installation and QR onboarding.
@@ -59,7 +59,7 @@ Two halves:
 ## 4. Cloud saves — how it works
 
 1. **Auth:** `SteamSignInView` → `SteamAuthStore.runQRAuth` → helper `auth` command emits the challenge URL (re-rendered as the QR rotates) then a SteamClient-audience **refresh token**, which is stored in the Keychain. Builds that kept it in `steam-cloud-auth.json` have it migrated to the Keychain and the file deleted on load. (The Steam *Web* API needs a Publisher key — dead end; the *client* protocol via SteamKit2 only needs the user's own token, which is the whole unlock.)
-2. **Sync:** `CloudSyncEngine` runs `enumerate` (1 logon) → computes download/upload lists in Swift → one **`batch`** call (1 logon) does all file transfers. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
+2. **Sync:** `CloudSyncEngine` runs `enumerate` → computes download/upload lists in Swift → one **`batch`** request does all file transfers, both on BEER's one Steam session. The batch uses a shared HTTP client and at most four concurrent files, with downloads completing before uploads start. **Never one logon per file** — that flood gets the account CM-rate-limited (see §7).
 3. **Safety:** before any pull/push, every tracked save file is copied to `CloudSaveBackups/<appid>/<timestamp>-*/`. Sync only overwrites the strictly-older side; when timestamps differ but Steam's SHA-1 matches the local content, the unchanged file is skipped. "Back up & clear local saves" copies then removes — never a true delete, never touches the cloud.
 4. **Path mapping:** Steam cloud names look like `%WinSavedGames%kingdomcome/saves/...`; `CloudSyncEngine.mapToLocal` routes the `%Root%` token to the bottle's `drive_c/users/<user>/…`. Push learns the remote dir convention from existing cloud files.
 
@@ -84,6 +84,7 @@ What we actually do:
 - **Real Steam client on GPTK:** `steamwebhelper.exe` (CEF/Chromium) crash-loops in `NetworkChangeNotifierWin` because GPTK's `ws2_32.WSALookupServiceBeginW` is incomplete → no UI ever renders. The old manual full-Steam-bottle workflow was removed; use DepotDownloader's per-game path.
 - **Steam Web `ICloudService` / `remotestorageapp` HTML scrape:** Publisher-key-gated / read-only. Replaced by the SteamKit2 client helper.
 - **One Steam logon per file:** caused mass sync failures + got the account rate-limited (mislabeled as "expired"). Fixed by batching. Do not reintroduce.
+- **Fighting the user's other Steam devices (#65):** BEER logs on once (`SteamSessionHost` → the helper's `session`) and every command is a request on it; don't add a logon. The session logs on as its own device (`BeerDevice`), not with SteamKit's hardware-derived machine ID, which matches the Mac's own Steam client. Persona state is account-wide: BEER sends only the status the user picked, always with `persona_set_by_user` (`PersonaStatus`) — SteamKit2's `SetPersonaState` leaves it off, and that signed the user's own Steam clients out of Friends, while JavaSteam (GameNative) sets it — and never re-sends it on a timer. Games-played must not be announced while Steam reports another device playing (`ClientPlayingSessionState`), or for 60 s after it stops (`PlayingLock`), or that device gets kicked with `LoggedInElsewhere`.
 
 ## 8. Build, run, release
 

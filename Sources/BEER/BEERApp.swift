@@ -49,6 +49,7 @@ struct BEERApp: App {
                     await detector.refresh()
                     depotDownloader.refresh()
                     library.load()
+                    library.relinkInstalledGames(bottles: store.bottles)
                     cloudAuth.load()
                     presence.load()
                     // If a previous run died mid-game, stop any helper still

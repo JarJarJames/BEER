@@ -84,7 +84,8 @@ See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) for the folder map and placemen
 - Apple Silicon + macOS 14+ only. The runtime is Apple GPTK Wine (`winemac.drv`).
 - App state lives in `~/Library/Application Support/BEER/` (see `AppPaths.swift`).
 - When debugging cloud sync, read `CloudSaveBackups/<appid>/last-sync.log`
-  first, then the bottle's `beer.log`.
+  first, then `play-session.log` (the Steam session's own output), then the
+  bottle's `beer.log`.
 
 ## Working agreement
 

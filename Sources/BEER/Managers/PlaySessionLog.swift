@@ -23,7 +23,9 @@ enum PlaySessionLog {
         lock.withLock {
             let stamped = text
                 .split(separator: "\n", omittingEmptySubsequences: true)
-                .map { "\(Date().formatted(date: .omitted, time: .standard))  \($0)\n" }
+                // Milliseconds: what Steam does in reply to a logon or a status
+                // change lands within the same second, and the order matters.
+                .map { "\(Date().formatted(.dateTime.hour().minute().second().secondFraction(.fractional(3))))  \($0)\n" }
                 .joined()
             guard !stamped.isEmpty, let data = stamped.data(using: .utf8) else { return }
             // Deliberately plain try?: this runs for every line the helper

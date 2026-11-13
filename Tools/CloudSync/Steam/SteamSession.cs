@@ -1,3 +1,6 @@
+using System.Security.Cryptography;
+using System.Text;
+using CloudSync.Commands.Presence;
 using SteamKit2;
 using SteamKit2.Internal;
 
@@ -44,10 +47,15 @@ sealed class SteamSession : IDisposable
 
     static SteamSession StartPump()
     {
-        var client = new SteamClient();
+        var client = new SteamClient(SteamConfiguration.Create(b => b
+            .WithMachineInfoProvider(BeerDevice.Current)));
         var cb = new CallbackManager(client);
         var session = new SteamSession(client, cb);
+        // Handlers go in before the connection opens: SteamKit2 walks its
+        // handler list on the network thread for every message, unlocked, and
+        // one added mid-session broke that walk and stopped all delivery.
         client.AddHandler(session.UserStats);
+        client.AddHandler(new SelfPersonaTrace());
         var token = session._pump.Token;
         _ = Task.Run(() =>
         {
@@ -107,10 +115,15 @@ sealed class SteamSession : IDisposable
     // commands evicting the long-lived presence session, and the user's real
     // Steam client evicting both.
     //
-    // The presence session gets a fixed id so its own reconnects keep one
-    // identity; every other command gets a random one, so a library refresh or
-    // a cloud sync can't knock presence offline mid-game.
-    public const uint PresenceLoginID = 0x42454552; // "BEER"
+    // The app's one `session` keeps one id per install, made from BEER's
+    // device ID, so its own reconnects keep one identity — the way GameNative
+    // derives its id from the device — and two BEER installs on one network
+    // can't take each other's. It stays at or above 0x40000000, clear of the
+    // ids DepotDownloader runs get (DepotDownloaderController.newLoginID). A
+    // command run by hand gets a random one, so it can't knock the session
+    // offline.
+    public static uint SessionLoginID =>
+        0x4000_0000u | (BitConverter.ToUInt32(SHA256.HashData(Encoding.UTF8.GetBytes(BeerDevice.Current.Id))) & 0x3FFF_FFFFu);
     public static readonly uint CommandLoginID = (uint)Random.Shared.Next(1, int.MaxValue);
 
     /// Log on, retrying a connection that drops before the logon completes.
@@ -147,6 +160,24 @@ sealed class SteamSession : IDisposable
         throw last!;
     }
 
+    /// What every BEER logon sends. New chat is what the user's own Steam
+    /// clients use, and what ArchiSteamFarm, GameNative and node-steam-user
+    /// declare; SteamKit's default is the legacy (pre-2018) chat.
+    internal static SteamUser.LogOnDetails LogOnDetails(string account, string refreshToken, uint loginID) => new()
+    {
+        Username = account,
+        AccessToken = refreshToken,
+        ShouldRememberPassword = true,
+        LoginID = loginID,
+        ChatMode = SteamUser.ChatMode.NewSteamChat,
+        MachineName = MachineName,
+    };
+
+    /// The name BEER gives Steam for this device, at sign-in and at every
+    /// logon, as GameNative uses its device's own name. SteamKit2's default
+    /// is "<host> (SteamKit2)".
+    internal static string MachineName => $"BEER on {Environment.MachineName}";
+
     static async Task<SteamSession> LogOnOnceAsync(string account, string refreshToken, uint loginID)
     {
         var session = StartPump();
@@ -164,13 +195,7 @@ sealed class SteamSession : IDisposable
         session._cb.Subscribe<SteamClient.ConnectedCallback>(_ =>
         {
             Console.Error.WriteLine("connected; logging on…");
-            user.LogOn(new SteamUser.LogOnDetails
-            {
-                Username = account,
-                AccessToken = refreshToken,
-                ShouldRememberPassword = true,
-                LoginID = loginID,
-            });
+            user.LogOn(LogOnDetails(account, refreshToken, loginID));
         });
         session._cb.Subscribe<SteamClient.DisconnectedCallback>(_ =>
         {
