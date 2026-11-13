@@ -24,6 +24,10 @@ Notable changes to BEER. Versions follow the GitHub releases.
   42%** or **PAUSED 30%** while a game downloads, and **NOT INSTALLED**
   for a game whose download never finished. Before, a card said INSTALLED
   as soon as its download started, and after a failed one.
+- **Version in the window title** (#51). The title bar shows the version you're
+  running, like **BEER 0.8.1**, so you can tell which build you have when
+  reporting a bug. Built from source with `swift run`, it reads
+  **BEER dev**.
 
 ### Changed
 - **One Steam sign-in.** BEER logs on to Steam once and keeps that
