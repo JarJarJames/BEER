@@ -207,7 +207,6 @@ final class CloudSyncEngine: ObservableObject {
                     Task { @MainActor in self?.phase = "Syncing \(done)/\(total)…" }
                 }
             )
-            notes += batch.notes
             for op in batch.ops {
                 if let err = op.error {
                     report.failures.append((op.filename, err))

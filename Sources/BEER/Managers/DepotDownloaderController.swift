@@ -355,7 +355,7 @@ final class DepotDownloaderController: ObservableObject {
     ///
     /// Random per run, not fixed: a DLC install can overlap a base-game install,
     /// and two runs sharing an ID would knock each other off. The ceiling keeps
-    /// it below the CloudSync session's ID, which is always 0x40000000 or more.
+    /// it below the CloudSync helper's fixed session ID (0x42454552).
     static func newLoginID() -> UInt32 {
         UInt32.random(in: 1...0x3FFF_FFFF)
     }

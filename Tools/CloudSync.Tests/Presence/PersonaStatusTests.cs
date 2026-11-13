@@ -3,9 +3,8 @@ using SteamKit2;
 
 namespace CloudSync.Tests.Presence;
 
-// Regression for #65: SteamKit2's SetPersonaState leaves persona_set_by_user
-// off, and that status change signed the user's own Steam client out of
-// Friends. JavaSteam (GameNative) sets it; so does BEER.
+// A status the user picks goes out marked as theirs, as Steam's own client
+// sends it; SteamKit2's SetPersonaState leaves persona_set_by_user off.
 public class PersonaStatusTests
 {
     [Theory]

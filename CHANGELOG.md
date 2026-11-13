@@ -25,7 +25,30 @@ Notable changes to BEER. Versions follow the GitHub releases.
   for a game whose download never finished. Before, a card said INSTALLED
   as soon as its download started, and after a failed one.
 
+### Changed
+- **One Steam sign-in.** BEER logs on to Steam once and keeps that
+  connection for everything: your status, the library, update checks, cloud
+  saves, achievements, install-size checks and icons. Before, it logged on
+  separately for each, three or four times just to open. Downloads still log
+  on by themselves.
+
 ### Fixed
+- **Opening BEER signed your Steam client out of Friends** on your other
+  computers. At launch BEER asked Steam for your own profile including your
+  status; Steam answered "Offline", and Steam's client takes that as your
+  status and signs itself out of Friends. BEER no longer asks for it.
+- **Signing out of BEER lost your installed games.** After signing back in,
+  every installed game showed as not installed and favorites and hidden games
+  were reset, though the games and saves were untouched. Signing out now
+  keeps your library, and BEER relinks installed games when it opens, which
+  also repairs a library this already happened to.
+- **BEER overrode the status you set elsewhere.** It re-sent its own status
+  every minute, undoing what you picked in Steam on another device. It now
+  sends one only when you pick it in BEER.
+- **Playing in BEER could sign another device out.** BEER took the account's
+  "playing" slot while a game was running elsewhere, and Steam kicked the
+  other device. BEER now waits until Steam says that game has stopped, plus a
+  minute, before announcing its own.
 - **GPTK 4 games didn't start on macOS 15 and 26.** The runtime was built
   against the macOS 27 SDK and used a function older macOS doesn't have,
   so every Wine process crashed at startup. Build 2
