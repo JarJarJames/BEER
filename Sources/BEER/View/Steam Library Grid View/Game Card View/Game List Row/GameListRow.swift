@@ -9,15 +9,10 @@ struct GameListRow: View {
 
     var body: some View {
         HStack(spacing: LibraryGridLayout.listRowSpacing) {
-            AsyncImage(url: game.listIcon) { phase in
-                if case .success(let image) = phase {
-                    image.resizable().aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "gamecontroller").foregroundStyle(.secondary)
-                }
-            }
-            .frame(width: iconSize, height: iconSize)
-            .clipShape(RoundedRectangle(cornerRadius: LibraryGridLayout.listIconCornerRadius))
+            // The name is right beside it, so the placeholder doesn't repeat it.
+            GameArtImage(url: game.listIcon, title: nil)
+                .frame(width: iconSize, height: iconSize)
+                .clipShape(RoundedRectangle(cornerRadius: LibraryGridLayout.listIconCornerRadius))
 
             GameCardCaption(name: game.name, caption: caption)
             if game.effectiveIsFavorite { FavoriteMark() }

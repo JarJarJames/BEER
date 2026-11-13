@@ -24,8 +24,11 @@ enum LibraryGridLayout {
     static let wideArtAspectRatio: CGFloat = 460.0 / 215.0
     /// Steam's `library_600x900.jpg`.
     static let coverArtAspectRatio: CGFloat = 600.0 / 900.0
-    /// How much the blurred copy behind art shown whole is blurred.
-    static let fittedArtBlur: CGFloat = 18
+    /// A card's grey stand-in while its art loads, and the game's name on it.
+    static let placeholderOpacity: Double = 0.15
+    static let placeholderPadding: CGFloat = 10
+    static let placeholderTitleLines = 3
+    static let placeholderMinimumScale: CGFloat = 0.6
 
     /// The size slider sets a wide card's width. The top end is past any
     /// screen on purpose: the grid caps cards to the space it has, so the

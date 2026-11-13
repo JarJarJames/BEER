@@ -68,6 +68,11 @@ struct BEERApp: App {
                         )
                     }
                 }
+                // While a game (or any Wine command) runs, library art keeps
+                // as little memory as it can, leaving it to the game.
+                .onChange(of: store.activeBottleIDs.isEmpty, initial: true) { _, idle in
+                    GameArtStore.shared.setGameRunning(!idle)
+                }
                 // A runtime downloaded or moved while BEER is open: bottles
                 // whose runtime's files moved follow them.
                 .onChange(of: detector.candidates) {

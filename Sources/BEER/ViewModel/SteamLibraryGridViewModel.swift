@@ -12,6 +12,13 @@ final class SteamLibraryGridViewModel: ObservableObject {
         return installedBottleIDs.contains(bottleID)
     }
 
+    /// The art for the cards just past `game` in `games`, to download before
+    /// they scroll into view.
+    func artToPrefetch(after game: SteamLibraryGame, in games: [SteamLibraryGame], style: LibraryCardStyle) -> [URL] {
+        guard let index = games.firstIndex(where: { $0.id == game.id }) else { return [] }
+        return games[(index + 1)...].prefix(GameArtCacheLimits.prefetchAhead).compactMap { $0.cardArt(for: style) }
+    }
+
     func installedCount(in games: [SteamLibraryGame], installedBottleIDs: Set<UUID>) -> Int {
         games.filter { isInstalled($0, installedBottleIDs: installedBottleIDs) }.count
     }

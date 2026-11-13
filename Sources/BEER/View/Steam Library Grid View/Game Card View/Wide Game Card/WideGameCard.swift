@@ -12,7 +12,7 @@ struct WideGameCard: View {
         VStack(alignment: .leading, spacing: 0) {
             Color.clear
                 .aspectRatio(LibraryGridLayout.wideArtAspectRatio, contentMode: .fit)
-                .overlay { GameArtImage(url: game.headerImage) }
+                .overlay { GameArtImage(url: game.headerImage, title: game.name) }
                 .clipped()
                 .overlay(alignment: .topTrailing) {
                     badge

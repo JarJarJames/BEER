@@ -95,6 +95,9 @@ struct SteamLibraryGridView: View {
                                 action: { onSelectGame(game) }
                             )
                             .contextMenu { GameOrganizeMenuItems(game: game) }
+                            .onAppear {
+                                GameArtStore.shared.prefetch(model.artToPrefetch(after: game, in: games, style: cardStyle))
+                            }
                         }
                     }
                     .padding(LibraryGridLayout.gridPadding)

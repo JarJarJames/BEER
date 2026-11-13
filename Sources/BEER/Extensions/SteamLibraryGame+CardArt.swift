@@ -14,4 +14,13 @@ extension SteamLibraryGame {
     var listIcon: URL? {
         effectiveIsNonSteam ? headerImage : iconURL.flatMap(URL.init(string:))
     }
+
+    /// The art a card in `style` shows first, for downloading ahead.
+    func cardArt(for style: LibraryCardStyle) -> URL? {
+        switch style {
+        case .wide: headerImage
+        case .cover: portraitCover ?? headerImage
+        case .list: listIcon
+        }
+    }
 }
