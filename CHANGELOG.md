@@ -73,6 +73,9 @@ Notable changes to BEER. Versions follow the GitHub releases.
   (`4.0b3-winecx-26.3.0-2`) is built against the macOS 15 SDK. Download it
   from the Runtimes tab and new games use it; a game already set up on
   build 1 keeps it until you pick build 2 in the game's Runtime setting.
+- **`build_app.sh`'s header described the removed controller fix** (#45).
+  It now says the script builds BEER's SDL2 and bundles it in Resources.
+  The build example in `HANDOFF.md` uses `<version>` instead of `0.7.0`.
 
 ## 0.8.1 — 2026-11-06
 
