@@ -6,7 +6,7 @@ extension ToolchainDetector {
         Self.preferredGameRuntime(
             in: candidates,
             macOSMajorVersion: ProcessInfo.processInfo.operatingSystemVersion.majorVersion,
-            manifest: ManagedRuntimeScanner.manifest(forWineBinary:)
+            manifest: { self.manifests[$0] }
         )
     }
 

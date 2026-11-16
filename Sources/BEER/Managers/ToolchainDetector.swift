@@ -3,6 +3,9 @@ import Foundation
 @MainActor
 final class ToolchainDetector: ObservableObject {
     @Published private(set) var candidates: [RuntimeCandidate] = []
+    /// The `beer-runtime.json` of each of BEER's own builds among `candidates`,
+    /// by executable path. Read once per refresh, not on every redraw.
+    @Published private(set) var manifests: [String: BEERRuntimeManifest] = [:]
     @Published private(set) var isRefreshing = false
 
     func refresh() async {
@@ -39,6 +42,22 @@ final class ToolchainDetector: ObservableObject {
         }
 
         candidates = found.sorted { $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending }
+        manifests = Dictionary(
+            candidates.compactMap { candidate in
+                ManagedRuntimeScanner.manifest(forWineBinary: candidate.executablePath).map { (candidate.executablePath, $0) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+    }
+
+    /// Installed runtimes BEER built itself (they have a `beer-runtime.json`).
+    var installedBEERBuilds: [RuntimeCandidate] {
+        candidates.filter { manifests[$0.executablePath] != nil }
+    }
+
+    /// Every other installed runtime.
+    var otherInstalledRuntimes: [RuntimeCandidate] {
+        candidates.filter { manifests[$0.executablePath] == nil }
     }
 
     private nonisolated func detectFromPath() async -> [RuntimeCandidate] {

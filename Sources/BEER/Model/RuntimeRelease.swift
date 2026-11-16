@@ -9,6 +9,14 @@ struct RuntimeRelease: Equatable {
     let size: Int64
     let digest: String?
     let htmlURL: URL
+    /// The oldest macOS this build runs on. Set for BEER's own builds (from
+    /// the release's `beer-runtime.json`, else `RuntimeSources.beerGPTKMinimumMacOS`);
+    /// nil for builds BEER knows no limit for.
+    var minimumMacOS: Int? = nil
+
+    func runs(onMacOS majorVersion: Int) -> Bool {
+        (minimumMacOS ?? 0) <= majorVersion
+    }
 
     var displaySize: String {
         size.fileSizeString

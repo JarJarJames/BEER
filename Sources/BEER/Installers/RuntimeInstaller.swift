@@ -2,7 +2,12 @@ import Foundation
 
 @MainActor
 final class RuntimeInstaller: ObservableObject {
+    /// The GPTK the game page offers. Never a build this macOS can't run.
     @Published private(set) var latestGPTK: RuntimeRelease?
+    /// BEER's own GPTK builds, kept apart from Gcenx's. Includes ones this
+    /// macOS can't run, so the Runtime Manager can show them greyed out.
+    @Published private(set) var beerReleases: [RuntimeRelease] = []
+    /// Gcenx's GPTK builds.
     @Published private(set) var availableReleases: [RuntimeRelease] = []
     /// Mainline Wine builds (Gcenx/macOS_Wine_builds) — the fallback for games
     /// GPTK's older Wine base can't run (e.g. missing USER32 functions).
@@ -47,18 +52,21 @@ final class RuntimeInstaller: ObservableObject {
 
     /// The downloadable GPTK and Wine builds. Network only, no disk.
     func loadCatalog() async throws {
-        // BEER's own builds lead (and so become `latestGPTK`, the one the game
-        // page offers) where this macOS can run them. They're a best-effort
-        // extra: Gcenx's list still loads if they can't.
-        var beerReleases: [RuntimeRelease] = []
-        if macOSMajorVersion >= RuntimeSources.beerGPTKMinimumMacOS {
-            beerReleases = (try? await fetchGPTKReleases(from: RuntimeSources.beerGPTKReleases)) ?? []
-        }
-        availableReleases = beerReleases + (try await fetchGPTKReleases(from: RuntimeSources.gcenxGPTKReleases))
-        latestGPTK = availableReleases.first
+        // BEER's own builds are fetched on every macOS, so an older one can
+        // still list them (greyed out). They're a best-effort extra: Gcenx's
+        // list still loads if they can't.
+        beerReleases = (try? await fetchBEERReleases()) ?? []
+        availableReleases = try await fetchReleases(from: RuntimeSources.gcenxGPTKReleases).compactMap(gptkRelease(from:))
+        // BEER's newest build this macOS can run leads, else Gcenx's newest.
+        latestGPTK = beerReleases.first(where: canRun) ?? availableReleases.first
         // Wine builds are a best-effort extra catalog — don't fail the whole
         // refresh if that repo's API hiccups.
         availableWineBuilds = (try? await fetchWineBuilds()) ?? availableWineBuilds
+    }
+
+    /// Can this Mac's macOS run the release?
+    func canRun(_ release: RuntimeRelease) -> Bool {
+        release.runs(onMacOS: macOSMajorVersion)
     }
 
     /// Is this release already extracted into Application Support?
@@ -180,23 +188,51 @@ final class RuntimeInstaller: ObservableObject {
         return try JSONDecoder().decode([GitHubRelease].self, from: data)
     }
 
-    private func fetchGPTKReleases(from url: URL) async throws -> [RuntimeRelease] {
-        try await fetchReleases(from: url).compactMap { release in
-            guard let asset = release.assets.first(where: { $0.name.hasSuffix(".tar.xz") }),
-                  let assetURL = URL(string: asset.browserDownloadURL),
-                  let htmlURL = URL(string: release.htmlURL) else {
-                return nil
+    private func gptkRelease(from release: GitHubRelease) -> RuntimeRelease? {
+        guard let asset = release.assets.first(where: { $0.name.hasSuffix(".tar.xz") }),
+              let assetURL = URL(string: asset.browserDownloadURL),
+              let htmlURL = URL(string: release.htmlURL) else {
+            return nil
+        }
+        return RuntimeRelease(
+            family: .gptk,
+            tag: release.tagName,
+            name: release.name.isEmpty ? release.tagName : release.name,
+            assetName: asset.name,
+            assetURL: assetURL,
+            size: Int64(asset.size),
+            digest: asset.digest,
+            htmlURL: htmlURL
+        )
+    }
+
+    /// BEER's builds, each with the macOS it needs: from the release's
+    /// `beer-runtime.json` asset where it has one (so a build that runs on an
+    /// older macOS is offered there), else the constant.
+    private func fetchBEERReleases() async throws -> [RuntimeRelease] {
+        var out: [RuntimeRelease] = []
+        for release in try await fetchReleases(from: RuntimeSources.beerGPTKReleases) {
+            guard var runtime = gptkRelease(from: release) else { continue }
+            runtime.minimumMacOS = await fetchManifest(of: release)?.minimumMacOS ?? RuntimeSources.beerGPTKMinimumMacOS
+            out.append(runtime)
+        }
+        return out
+    }
+
+    private func fetchManifest(of release: GitHubRelease) async -> BEERRuntimeManifest? {
+        guard let asset = release.assets.first(where: { $0.name == BEERRuntimeManifest.fileName }),
+              let url = URL(string: asset.browserDownloadURL) else { return nil }
+        do {
+            let (data, response) = try await fetch(URLRequest(url: url))
+            guard let http = response as? HTTPURLResponse, 200..<300 ~= http.statusCode else {
+                throw RuntimeInstallerError.releaseFetchFailed
             }
-            return RuntimeRelease(
-                family: .gptk,
-                tag: release.tagName,
-                name: release.name.isEmpty ? release.tagName : release.name,
-                assetName: asset.name,
-                assetURL: assetURL,
-                size: Int64(asset.size),
-                digest: asset.digest,
-                htmlURL: htmlURL
-            )
+            return try JSONDecoder().decode(BEERRuntimeManifest.self, from: data)
+        } catch {
+            // The constant stands in, which is what every build needed before
+            // releases carried a manifest.
+            Log.install.error("Couldn't read \(release.tagName, privacy: .public)'s runtime manifest: \(error.localizedDescription)")
+            return nil
         }
     }
 
