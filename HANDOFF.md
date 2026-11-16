@@ -102,7 +102,9 @@ swift build && swift run BEER      # dev
 BEER's own GPTK runtime (CrossOver's open-source Wine + Apple's D3DMetal,
 GStreamer, Wine Mono, Wine Gecko) is built locally and published to
 https://github.com/JarJarJames/BEER-runtimes, which the Runtimes tab reads
-(`RuntimeSources`). Builds need macOS 15+ to run; older Macs get Gcenx's GPTK.
+(`RuntimeSources`). Builds need macOS 15+ to run; older Macs list them greyed
+out and get Gcenx's GPTK. The macOS a release needs comes from its
+`beer-runtime.json` asset, or `RuntimeSources.beerGPTKMinimumMacOS` without one.
 
 1. Download Apple's Game Porting Toolkit from developer.apple.com (needs an
    Apple ID), open its disk image, then the "Evaluation environment for
@@ -123,7 +125,7 @@ https://github.com/JarJarJames/BEER-runtimes, which the Runtimes tab reads
 4. Bump `REVISION` in the script for any rebuild: BEER never re-downloads a tag
    it has. Publish with the tag `<d3dmetal>-winecx-<crossover>-<revision>`
    (e.g. `4.0b3-winecx-26.3.0-2`), so it installs into the folder named in step 3:
-   `gh release create 4.0b3-winecx-26.3.0-2 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0-2.tar.xz --repo JarJarJames/BEER-runtimes`.
+   `gh release create 4.0b3-winecx-26.3.0-2 .build/gptk-runtime/gptk-4.0b3-winecx-26.3.0-2.tar.xz .build/gptk-runtime/beer-runtime.json --repo JarJarJames/BEER-runtimes`.
    The release notes should link CodeWeavers' source (https://www.codeweavers.com/crossover/source)
    for the LGPL.
 

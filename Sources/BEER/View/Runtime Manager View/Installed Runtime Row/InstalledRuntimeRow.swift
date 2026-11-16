@@ -2,6 +2,7 @@ import SwiftUI
 
 struct InstalledRuntimeRow: View {
     let runtime: RuntimeCandidate
+    var recommended = false
 
     var body: some View {
         HStack(spacing: 12) {
@@ -19,6 +20,9 @@ struct InstalledRuntimeRow: View {
                     .textSelection(.enabled)
             }
             Spacer()
+            if recommended {
+                RecommendedRuntimeBadge()
+            }
             Label("Ready", systemImage: "checkmark.circle.fill")
                 .font(.caption)
                 .foregroundStyle(.green)

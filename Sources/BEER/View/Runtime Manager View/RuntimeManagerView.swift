@@ -9,6 +9,7 @@ struct RuntimeManagerView: View {
             VStack(alignment: .leading, spacing: 24) {
                 RuntimeManagerHeader()
                 installedRuntimes
+                beerCatalog
                 gptkCatalog
                 wineCatalog
                 graphicsTranslators
@@ -31,28 +32,55 @@ struct RuntimeManagerView: View {
         }
     }
 
+    /// Computed once per redraw and handed to each row.
+    private var recommended: RuntimeRecommendation? {
+        detector.recommendedRuntime(beerReleases: runtimeInstaller.beerReleases, gptkReleases: runtimeInstaller.availableReleases)
+    }
+
     private var installedRuntimes: some View {
-        RuntimeSection(title: "Installed runtimes", description: "Wine and GPTK builds currently available to installed games.") {
+        RuntimeSection(title: RuntimeManagerStrings.installedTitle, description: RuntimeManagerStrings.installedDescription) {
             if detector.isRefreshing && detector.candidates.isEmpty {
                 RuntimeLoadingRow(text: "Scanning for installed runtimes…")
             } else if detector.candidates.isEmpty {
                 RuntimeEmptyRow(text: "No Wine or GPTK runtimes were detected.")
             } else {
-                ForEach(detector.candidates) { runtime in
-                    InstalledRuntimeRow(runtime: runtime)
-                    Divider()
+                let recommended = recommended
+                let beerBuilds = detector.installedBEERBuilds
+                if !beerBuilds.isEmpty {
+                    RuntimeGroupHeader(title: RuntimeManagerStrings.installedBEERGroup)
+                    installedRows(beerBuilds, recommended: recommended)
+                    RuntimeGroupHeader(title: RuntimeManagerStrings.installedOtherGroup)
                 }
+                installedRows(detector.otherInstalledRuntimes, recommended: recommended)
             }
         }
     }
 
+    private func installedRows(_ runtimes: [RuntimeCandidate], recommended: RuntimeRecommendation?) -> some View {
+        ForEach(runtimes) { runtime in
+            InstalledRuntimeRow(runtime: runtime, recommended: recommended == .installed(runtime))
+            Divider()
+        }
+    }
+
+    private var beerCatalog: some View {
+        catalog(title: RuntimeManagerStrings.beerTitle, description: RuntimeManagerStrings.beerDescription,
+                releases: runtimeInstaller.beerReleases)
+    }
+
     private var gptkCatalog: some View {
-        RuntimeSection(title: "Game Porting Toolkit", description: "Apple-focused Wine builds with D3DMetal for the best DirectX performance on Apple silicon.") {
-            if runtimeInstaller.availableReleases.isEmpty {
+        catalog(title: RuntimeManagerStrings.gptkTitle, description: RuntimeManagerStrings.gptkDescription,
+                releases: runtimeInstaller.availableReleases)
+    }
+
+    private func catalog(title: String, description: String, releases: [RuntimeRelease]) -> some View {
+        RuntimeSection(title: title, description: description) {
+            if releases.isEmpty {
                 RuntimeCatalogPlaceholder()
             } else {
-                ForEach(runtimeInstaller.availableReleases, id: \.tag) { release in
-                    RuntimeReleaseRow(release: release)
+                let recommended = recommended
+                ForEach(releases, id: \.tag) { release in
+                    RuntimeReleaseRow(release: release, recommended: recommended == .release(release))
                     Divider()
                 }
             }

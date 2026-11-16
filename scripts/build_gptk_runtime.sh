@@ -413,4 +413,7 @@ mkdir -p "$OUT"
 rm -rf "${OUT:?}/$NAME"
 mv "$STAGE" "$OUT/$NAME"
 tar -C "$OUT" -cJf "$OUT/$NAME.tar.xz" "$NAME"
-echo "built $OUT/$NAME.tar.xz"
+# Uploaded beside the archive, so BEER's catalog knows the macOS a release
+# needs before downloading it.
+cp "$OUT/$NAME/beer-runtime.json" "$OUT/beer-runtime.json"
+echo "built $OUT/$NAME.tar.xz (attach $OUT/beer-runtime.json to the release too)"
