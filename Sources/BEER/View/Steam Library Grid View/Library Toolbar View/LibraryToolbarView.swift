@@ -11,6 +11,8 @@ struct LibraryToolbarView: View {
     @EnvironmentObject private var bottles: BottleStore
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
     @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
+    @AppStorage(AppearancePreferences.settingsTabKey) private var settingsTab: SettingsTab = .appearance
+    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack(spacing: 10) {
@@ -51,8 +53,13 @@ struct LibraryToolbarView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .help(AppearanceStrings.sortOrder)
-            // Opens the Settings window, where the rest of the look is set.
-            SettingsLink {
+            // Opens the Settings window, where the rest of the look is set. On
+            // Appearance every time: the window remembers its last tab, which
+            // may be Runtimes.
+            Button {
+                settingsTab = .appearance
+                openSettings()
+            } label: {
                 Label(AppearanceStrings.customize, systemImage: "paintbrush")
             }
             .labelStyle(.iconOnly)
