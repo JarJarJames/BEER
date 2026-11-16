@@ -2,20 +2,29 @@ import AppKit
 import Foundation
 
 extension BottleStore {
-    /// Launch a specific .exe (Wine-style path like `C:\Games\Hades\x64\Hades.exe`)
-    /// inside the bottle's prefix. Used by the per-game Library flow once
-    /// the game is installed.
-    ///
-    /// We run the game's .exe directly (no `wine explorer /desktop` wrapper).
-    /// `configureDisplayMode` applies the selected Wine Mac driver resolution
-    /// mode before the game starts.
-    func launchGameExecutable(_ bottle: Bottle, executable: String, arguments: String? = nil) async {
-        guard let bottle = await withAvailableRuntime(bottle) else { return }
+    /// Everything the bottle needs just before its game runs. `configureDisplayMode`
+    /// applies the selected Wine Mac driver resolution mode. Returns the bottle
+    /// as it can run now (re-linked if its runtime moved).
+    func prepareGameSession(_ bottle: Bottle) async throws -> Bottle {
+        guard let bottle = await withAvailableRuntime(bottle) else {
+            throw LaunchError.runtimeMissing(
+                RuntimeStrings.runtimeMissingError(bottle.steamGameName ?? bottle.name, runtime: bottle.runtimeLabel)
+            )
+        }
         resetLog(for: bottle, reason: "Launching \(bottle.steamGameName ?? bottle.name)")
         await installSteamRedistributables(bottle)
         await configureControllers(bottle)
         await configureDisplayMode(bottle)
+        return bottle
+    }
 
+    /// Run a specific .exe (Wine-style path like `C:\Games\Hades\x64\Hades.exe`)
+    /// inside the bottle's prefix, after `prepareGameSession`, and return once
+    /// the bottle's whole Wine session has ended. The .exe's exit code, or nil
+    /// if it never ran.
+    ///
+    /// We run the game's .exe directly (no `wine explorer /desktop` wrapper).
+    func runGameSession(_ bottle: Bottle, executable: String, arguments: String? = nil) async -> Int32? {
         var args: [String] = [executable]
         if let arguments, !arguments.isEmpty {
             args.append(contentsOf: arguments.split(separator: " ").map(String.init))
@@ -31,7 +40,7 @@ extension BottleStore {
             ? gameDirectory
             : nil
 
-        await runBottleCommand(
+        let exitCode = await runBottleCommand(
             bottle,
             operation: "Launching \(bottle.steamGameName ?? bottle.name)",
             mode: .wine(arguments: args),
@@ -47,6 +56,7 @@ extension BottleStore {
         // record, and the post-play cloud push, which could otherwise start
         // uploading saves the game was still writing.
         await waitForWineSessionExit(bottle)
+        return exitCode
     }
 
     /// Have Wine read every pad through SDL, using BEER's SDL build; see

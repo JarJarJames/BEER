@@ -9,6 +9,8 @@ struct GameCardView: View {
     var isDriveMissing: Bool = false
     /// False while its download hasn't finished: the bottle has no game yet.
     var isComplete: Bool = true
+    /// Where a Play click for it has got to, if one is under way or failed.
+    var launchPhase: LaunchPhase?
     let style: LibraryCardStyle
     /// The size slider's width, which sets a list row's icon.
     let cardWidth: Double
@@ -43,7 +45,8 @@ struct GameCardView: View {
         // Made for every card, installed or not: a download's first steps
         // come before the game is marked installed.
         let badge = InstalledBadge(appID: game.appID, isInstalled: isInstalled, isComplete: isComplete,
-                                   isDriveMissing: isDriveMissing, hasUpdate: game.effectiveUpdateAvailable)
+                                   isDriveMissing: isDriveMissing, hasUpdate: game.effectiveUpdateAvailable,
+                                   launchPhase: launchPhase)
         switch style {
         case .wide:
             WideGameCard(game: game, caption: caption, showsName: showsName, badge: badge)

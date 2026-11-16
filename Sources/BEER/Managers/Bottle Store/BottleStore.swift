@@ -10,6 +10,12 @@ final class BottleStore: ObservableObject {
 
     @Published var activeBottleIDs: Set<Bottle.ID> = []
 
+    /// What each bottle's Play click is doing; see `runLaunch`.
+    @Published var launchPhases: [Bottle.ID: LaunchPhase] = [:]
+
+    /// How a starting game's window is spotted. Tests swap this out.
+    var gameWindowWatch: GameWindowWatch = .live
+
     @Published var lastError: String?
 
     /// Wine needs Rosetta and it isn't installed; see `requireRosetta()`.
@@ -107,7 +113,9 @@ final class BottleStore: ObservableObject {
         }
     }
 
-    func initializeBottle(_ bottle: Bottle) async {
+    /// wineboot's exit code, or nil if it never ran.
+    @discardableResult
+    func initializeBottle(_ bottle: Bottle) async -> Int32? {
         await runBottleCommand(
             bottle,
             operation: "Initializing bottle",
@@ -118,9 +126,14 @@ final class BottleStore: ObservableObject {
     /// Run wineboot again for a bottle whose first one never finished: it
     /// failed (on a Mac without Rosetta, say) and the download went on, so the
     /// game installed into a prefix with no Windows user folder for its saves.
-    func initializeIfNeeded(_ bottle: Bottle) async {
-        guard !Self.isInitialized(prefix: AppPaths.prefixURL(for: bottle)) else { return }
-        await initializeBottle(bottle)
+    ///
+    /// False if wineboot was needed and failed. Its exit code, not a second
+    /// look for `system.reg`: wineserver may not have written the registry
+    /// out yet when wineboot returns.
+    @discardableResult
+    func initializeIfNeeded(_ bottle: Bottle) async -> Bool {
+        guard !Self.isInitialized(prefix: AppPaths.prefixURL(for: bottle)) else { return true }
+        return await initializeBottle(bottle) == 0
     }
 
     /// wineboot writes the registry; a prefix without it was never set up.
@@ -196,6 +209,7 @@ final class BottleStore: ObservableObject {
             }
             bottles.removeAll { $0.id == bottle.id }
             logs[bottle.id] = nil
+            launchPhases[bottle.id] = nil
             await save()
         } catch {
             lastError = "Could not delete bottle: \(error.localizedDescription)"

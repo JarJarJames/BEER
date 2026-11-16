@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// A library card's corner badge: "INSTALLED", "UPDATE", a drive warning, a
-/// download's progress, or "NOT INSTALLED" for one that never finished. See
+/// download's progress, "NOT INSTALLED" for one that never finished, or where
+/// a Play click has got to. See
 /// `LibraryCardBadge`.
 ///
 /// It watches the downloads itself, so a progress tick redraws the few badges
@@ -13,13 +14,14 @@ struct InstalledBadge: View {
     let isComplete: Bool
     let isDriveMissing: Bool
     let hasUpdate: Bool
+    var launchPhase: LaunchPhase?
 
     @EnvironmentObject private var downloads: DownloadsStore
 
     var body: some View {
         if let badge = LibraryCardBadge.resolve(
             isInstalled: isInstalled, isComplete: isComplete, isDriveMissing: isDriveMissing,
-            hasUpdate: hasUpdate, download: downloads.entry(for: appID)
+            hasUpdate: hasUpdate, download: downloads.entry(for: appID), launch: launchPhase
         ) {
             // The words where they fit; on a narrow card, a symbol and the
             // percent, so it never runs into the favorite star.
@@ -29,7 +31,7 @@ struct InstalledBadge: View {
                     capsule(compactLabel(symbol, fraction: badge.fraction), for: badge)
                 }
             }
-            .help(badge.text)
+            .help(badge.help)
         }
     }
 
@@ -70,7 +72,9 @@ struct InstalledBadge: View {
         case .installed: return .green
         case .update, .downloading: return .blue
         case .driveMissing, .paused: return .orange
-        case .notInstalled: return .red
+        case .notInstalled, .launch(.failed): return .red
+        case .launch(.playing): return .green
+        case .launch: return .blue
         }
     }
 }

@@ -1,7 +1,8 @@
 import Foundation
 
 /// What a library card's corner badge says. A download in progress wins over
-/// everything else, since it's what the player is waiting on.
+/// everything else, since it's what the player is waiting on; then a launch,
+/// so the step it's on stays in sight from the library.
 enum LibraryCardBadge: Equatable {
     case installed
     case update
@@ -10,15 +11,18 @@ enum LibraryCardBadge: Equatable {
     case paused(Double)
     /// A bottle with no game in it yet: a download that failed or was cut off.
     case notInstalled
+    /// A Play click under way, or the error it stopped on.
+    case launch(LaunchPhase)
 
     /// `isComplete` is false while the bottle has no launch executable, i.e.
     /// its download never finished. Nil for a game that has nothing to show.
     static func resolve(
         isInstalled: Bool, isComplete: Bool, isDriveMissing: Bool, hasUpdate: Bool,
-        download: DownloadsStore.Entry?
+        download: DownloadsStore.Entry?, launch: LaunchPhase? = nil
     ) -> LibraryCardBadge? {
         if let download, download.isActive { return .downloading(download.fraction) }
         if let download, download.isPaused { return .paused(download.fraction) }
+        if let launch { return .launch(launch) }
         guard isInstalled else { return nil }
         if isDriveMissing { return .driveMissing }
         if !isComplete { return .notInstalled }
@@ -33,7 +37,14 @@ enum LibraryCardBadge: Equatable {
         case .downloading(let fraction): return DownloadsStrings.cardDownloading(fraction)
         case .paused(let fraction): return DownloadsStrings.cardPaused(fraction)
         case .notInstalled: return DownloadsStrings.cardNotInstalled
+        case .launch(let phase): return phase.cardText
         }
+    }
+
+    /// The tooltip: the words, or for a failed launch, why.
+    var help: String {
+        if case .launch(.failed(let message)) = self { return message }
+        return text
     }
 
     /// The symbol a narrow card shows instead of the words, with the percent
@@ -43,6 +54,7 @@ enum LibraryCardBadge: Equatable {
         case .downloading: return "arrow.down"
         case .paused: return "pause.fill"
         case .driveMissing: return "externaldrive.badge.xmark"
+        case .launch(let phase): return phase.symbol
         default: return nil
         }
     }
