@@ -2,6 +2,40 @@
 
 Notable changes to BEER. Versions follow the GitHub releases.
 
+## Unreleased
+
+### Added
+- **See what Play is doing** (#105). After you press Play, the game page
+  and the library card show which step the launch is on: **Setting up
+  Wine…**, **Syncing saves…** (Steam games only), **Starting game…**, then
+  **Playing** once the game's window is on screen. Before, the button just
+  greyed out until the game showed up. If a step fails, its error shows
+  under Play with a **Show Log** button, and the card says **COULDN'T
+  START** (hover it to see why). If a minute passes with no window, a note
+  says Wine can be slow the first time a game starts.
+- **BEER runtimes in the Runtime Manager** (#104). BEER's own GPTK builds
+  have their own section, above Game Porting Toolkit, in both the download
+  list and the installed list. One runtime is marked **Recommended for this
+  Mac**, and it's always the one new games get once it's installed. On a
+  Mac too old for a build, its row is greyed out and says "Needs macOS 15"
+  instead of offering a download.
+
+### Changed
+- **The library keeps its place** (#106). Going back from a game page
+  scrolls the library to the game you opened, instead of the top. Your
+  search stays too. If you changed the filter, search or card style, or the
+  game is no longer in the list, the library starts at the top.
+
+### Fixed
+- **The paint brush opened the Runtimes tab** after you'd visited it. The
+  library's Customize button reopened whichever Settings tab you used last.
+  It now always opens Appearance. ⌘, still reopens the last tab.
+- **A launch that failed early said nothing.** A missing runtime, or Wine
+  failing to set up the game's bottle, now stops the launch with an error
+  under Play. Before, a missing runtime showed nothing, and a failed bottle
+  setup carried on anyway. A game that quits with an error before its
+  window opens now says so, with the exit code.
+
 ## 0.9.0 — 2026-11-13
 
 ### Added
