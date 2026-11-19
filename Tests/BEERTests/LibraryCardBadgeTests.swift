@@ -63,4 +63,25 @@ final class LibraryCardBadgeTests: XCTestCase {
         XCTAssertEqual(LibraryCardBadge.paused(0.3).fraction, 0.3)
         XCTAssertNil(LibraryCardBadge.installed.fraction)
     }
+
+    func testLaunchShowsOnTheCardUntilADownloadStarts() {
+        let installed = { (launch: LaunchPhase?, download: DownloadsStore.Entry?) in
+            LibraryCardBadge.resolve(isInstalled: true, isComplete: true, isDriveMissing: false,
+                                     hasUpdate: true, download: download, launch: launch)
+        }
+        XCTAssertEqual(installed(.syncingSaves, nil), .launch(.syncingSaves))
+        XCTAssertEqual(installed(.syncingSaves, nil)?.text, LaunchStatusStrings.cardSyncingSaves)
+        XCTAssertEqual(installed(.playing, nil)?.compactSymbol, LaunchPhase.playing.symbol)
+        XCTAssertEqual(installed(nil, nil), .update)
+
+        let download = entry { _ in }
+        XCTAssertEqual(installed(.failed("Wine broke."), download), .downloading(0))
+    }
+
+    func testFailedLaunchSaysWhyOnHover() {
+        let badge = LibraryCardBadge.launch(.failed("Wine broke."))
+        XCTAssertEqual(badge.text, LaunchStatusStrings.cardFailed)
+        XCTAssertEqual(badge.help, "Wine broke.")
+        XCTAssertEqual(LibraryCardBadge.installed.help, LibraryCardBadge.installed.text)
+    }
 }

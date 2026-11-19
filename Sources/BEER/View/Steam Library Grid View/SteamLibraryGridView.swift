@@ -88,6 +88,7 @@ struct SteamLibraryGridView: View {
                                 isInstalled: model.isInstalled(game, installedBottleIDs: installedIDs),
                                 isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
                                 isComplete: !(game.installedBottleID.map(incompleteIDs.contains) ?? false),
+                                launchPhase: game.installedBottleID.flatMap(bottles.launchPhase(for:)),
                                 style: cardStyle,
                                 cardWidth: cardWidth,
                                 caption: cardLabel.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),

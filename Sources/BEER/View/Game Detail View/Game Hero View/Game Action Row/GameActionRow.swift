@@ -36,15 +36,24 @@ struct GameActionRow: View {
                         // A paused update leaves the files half written, so
                         // it finishes before the game can run.
                         resumeButton
+                    } else if let phase = bottles.launchPhase(for: bottle.id), phase.isInProgress {
+                        LaunchStatusView(phase: phase, onShowLog: { bottles.revealLog(bottle) })
                     } else {
-                        Button(action: { model.launch(bottle) }) {
-                            Label("Play", systemImage: "play.fill")
-                                .font(.title3.bold())
-                                .frame(minWidth: 180, minHeight: 36)
+                        VStack(alignment: .leading, spacing: LaunchStatusLayout.spacing) {
+                            Button(action: { model.launch(bottle) }) {
+                                Label("Play", systemImage: "play.fill")
+                                    .font(.title3.bold())
+                                    .frame(minWidth: 180, minHeight: 36)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.large)
+                            .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
+
+                            // The last launch stopped on this; Play tries again.
+                            if case .failed(let message) = bottles.launchPhase(for: bottle.id) {
+                                LaunchNote(text: message, isError: true, onShowLog: { bottles.revealLog(bottle) })
+                            }
                         }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(bottles.activeBottleIDs.contains(bottle.id) || model.mover.isMoving(bottle.id))
 
                         if let update = updateButton {
                             Button(action: model.startInstallOrLogin) {
