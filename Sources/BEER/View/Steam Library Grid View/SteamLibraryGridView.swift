@@ -1,6 +1,8 @@
 import SwiftUI
 
 struct SteamLibraryGridView: View {
+    /// Owned by `LibraryPane`, so it lasts while a game page replaces the grid.
+    @ObservedObject var model: SteamLibraryGridViewModel
     var onSelectGame: (SteamLibraryGame) -> Void
     /// All games, only installed ones, or hidden ones; switched in the
     /// library's bar.
@@ -12,7 +14,6 @@ struct SteamLibraryGridView: View {
     /// Observed so a tile's "drive not connected" badge follows the drive.
     @EnvironmentObject private var drives: InstallVolumeMonitor
     @EnvironmentObject private var foundGames: FoundGamesStore
-    @StateObject private var model = SteamLibraryGridViewModel()
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?
@@ -79,31 +80,39 @@ struct SteamLibraryGridView: View {
                                           message: "No games match “\(model.searchText)”.")
                 }
             } else {
-                ScrollView {
-                    LazyVGrid(columns: columns,
-                              spacing: cardStyle == .list ? LibraryGridLayout.listSpacing : LibraryGridLayout.gridSpacing) {
-                        ForEach(games) { game in
-                            GameCardView(
-                                game: game,
-                                isInstalled: model.isInstalled(game, installedBottleIDs: installedIDs),
-                                isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
-                                isComplete: !(game.installedBottleID.map(incompleteIDs.contains) ?? false),
-                                launchPhase: game.installedBottleID.flatMap(bottles.launchPhase(for:)),
-                                style: cardStyle,
-                                cardWidth: cardWidth,
-                                caption: cardLabel.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
-                                showsName: cardLabel.showsName,
-                                action: { onSelectGame(game) }
-                            )
-                            .contextMenu { GameOrganizeMenuItems(game: game) }
-                            .onAppear {
-                                GameArtStore.shared.prefetch(model.artToPrefetch(after: game, in: games, style: cardStyle))
+                ScrollViewReader { proxy in
+                    ScrollView {
+                        LazyVGrid(columns: columns,
+                                  spacing: cardStyle == .list ? LibraryGridLayout.listSpacing : LibraryGridLayout.gridSpacing) {
+                            ForEach(games) { game in
+                                GameCardView(
+                                    game: game,
+                                    isInstalled: model.isInstalled(game, installedBottleIDs: installedIDs),
+                                    isDriveMissing: game.installedBottleID.map(driveMissingIDs.contains) ?? false,
+                                    isComplete: !(game.installedBottleID.map(incompleteIDs.contains) ?? false),
+                                    launchPhase: game.installedBottleID.flatMap(bottles.launchPhase(for:)),
+                                    style: cardStyle,
+                                    cardWidth: cardWidth,
+                                    caption: cardLabel.text(for: game, playtime: playtimeFormat, lastPlayed: lastPlayedFormat),
+                                    showsName: cardLabel.showsName,
+                                    action: { onSelectGame(game) }
+                                )
+                                .contextMenu { GameOrganizeMenuItems(game: game) }
+                                .onAppear {
+                                    GameArtStore.shared.prefetch(model.artToPrefetch(after: game, in: games, style: cardStyle))
+                                }
                             }
                         }
+                        .padding(LibraryGridLayout.gridPadding)
                     }
-                    .padding(LibraryGridLayout.gridPadding)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+                    // Back from a game page: put the game that was opened in view.
+                    .task {
+                        if let appID = model.takeReturnScrollTarget(in: games, filter: filter, cardStyle: cardStyle) {
+                            proxy.scrollTo(appID, anchor: .center)
+                        }
+                    }
                 }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
             }
         }
         // Unhiding the last hidden game takes the Hidden choice away.

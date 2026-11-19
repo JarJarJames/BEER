@@ -7,6 +7,29 @@ import Foundation
 final class SteamLibraryGridViewModel: ObservableObject {
     @Published var searchText: String = ""
 
+    /// The game whose page was opened last, and the list it was opened from,
+    /// so going back can scroll to it. Kept in memory only: a fresh launch
+    /// starts at the top.
+    private var openedGame: (appID: Int, filter: LibraryFilter, searchText: String, cardStyle: LibraryCardStyle)?
+
+    /// Remembers the game whose page is opening and the list it came from.
+    func gameOpened(_ appID: Int, filter: LibraryFilter, cardStyle: LibraryCardStyle) {
+        openedGame = (appID, filter, searchText, cardStyle)
+    }
+
+    /// The game to scroll to when the grid comes back from a game page: the
+    /// one opened, if the filter, search and card style are what they were
+    /// and the game is still in `games`. Nil starts at the top. Answers once
+    /// per return.
+    func takeReturnScrollTarget(in games: [SteamLibraryGame], filter: LibraryFilter,
+                                cardStyle: LibraryCardStyle) -> Int? {
+        defer { openedGame = nil }
+        guard let opened = openedGame,
+              opened.filter == filter, opened.searchText == searchText, opened.cardStyle == cardStyle,
+              games.contains(where: { $0.appID == opened.appID }) else { return nil }
+        return opened.appID
+    }
+
     func isInstalled(_ game: SteamLibraryGame, installedBottleIDs: Set<UUID>) -> Bool {
         guard let bottleID = game.installedBottleID else { return false }
         return installedBottleIDs.contains(bottleID)
