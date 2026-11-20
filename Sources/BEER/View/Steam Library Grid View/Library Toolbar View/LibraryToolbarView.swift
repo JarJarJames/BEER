@@ -9,10 +9,10 @@ struct LibraryToolbarView: View {
     @Environment(SteamLibraryStore.self) private var library
     @Environment(SteamAuthStore.self) private var auth
     @Environment(BottleStore.self) private var bottles
+    @Environment(\.openSettings) private var openSettings
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
     @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
     @AppStorage(AppearancePreferences.settingsTabKey) private var settingsTab: SettingsTab = .appearance
-    @Environment(\.openSettings) private var openSettings
 
     var body: some View {
         HStack(spacing: 10) {

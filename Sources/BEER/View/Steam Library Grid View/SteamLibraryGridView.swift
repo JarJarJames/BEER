@@ -17,14 +17,14 @@ struct SteamLibraryGridView: View {
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?
+    /// The scroll area's width, so no card is made wider than the view.
+    @State private var gridWidth: CGFloat = 0
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
     @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = AppearanceDefaults.cardWidth
     @AppStorage(AppearancePreferences.cardLabelKey) private var cardLabel = AppearanceDefaults.cardLabel
     @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
     @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
     @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
-    /// The scroll area's width, so no card is made wider than the view.
-    @State private var gridWidth: CGFloat = 0
 
     private var columns: [GridItem] {
         if cardStyle == .list {

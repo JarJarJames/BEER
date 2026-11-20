@@ -7,12 +7,12 @@ struct MainShellView: View {
     @Environment(SteamPresenceStore.self) private var presence
     @Environment(InstallVolumeMonitor.self) private var drives
     @Environment(GameMover.self) private var mover
+    @Environment(GraphicsTranslatorInstaller.self) private var graphicsTranslator
     @State private var foundGames = FoundGamesStore()
     @State private var depotController = DepotDownloaderController()
     @State private var downloads = DownloadsStore()
     @State private var goldberg = GoldbergInstaller()
     @State private var cloudSync = CloudSyncEngine()
-    @Environment(GraphicsTranslatorInstaller.self) private var graphicsTranslator
     @State private var windowsDependencies = WindowsDependencyInstaller()
     @State private var dlcStore = DLCStore()
     @State private var filter: LibraryFilter = .all
