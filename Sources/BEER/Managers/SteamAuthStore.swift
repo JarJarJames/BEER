@@ -14,14 +14,14 @@ import Foundation
 // file. Installs that predate this still have a plaintext `steam-cloud-auth.json`
 // from older builds; `load()` migrates it into the Keychain and deletes it.
 
-@MainActor
-final class SteamAuthStore: ObservableObject {
-    @Published var account: SteamCloudAccount? = nil
-    @Published private(set) var isAuthenticating: Bool = false
-    @Published var lastError: String? = nil
+@MainActor @Observable
+final class SteamAuthStore {
+    var account: SteamCloudAccount? = nil
+    private(set) var isAuthenticating: Bool = false
+    var lastError: String? = nil
     /// Set when a cloud op fails because Steam rejected our token. The UI shows
     /// a "Reconnect" prompt; cleared on a successful re-sign-in.
-    @Published var sessionExpired: Bool = false
+    var sessionExpired: Bool = false
 
     private let client = CloudSyncClient()
 

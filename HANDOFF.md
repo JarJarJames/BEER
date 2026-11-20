@@ -39,7 +39,7 @@ Two halves:
 
 ## 3. Code map (Swift)
 
-- `BEERApp.swift` — `@main`; wires all the `@StateObject` stores.
+- `BEERApp.swift` — `@main`; wires all the `@State` stores.
 - `ContentView.swift` — onboarding router; `MainShellView` is the top bar (Downloads and the account, top right; the All Games / Installed switch is in the library's own bar) and the library/detail navigation boundary.
 - `GameDetailView.swift` (and the views under `View/Game Detail View/`) — game hero, install/play actions, per-game runtime/graphics/display/cloud controls, collapsible advanced bottle settings, and auto cloud sync: **pull before play, push after exit**.
 - `DownloadsPane.swift` — active and completed download UI.

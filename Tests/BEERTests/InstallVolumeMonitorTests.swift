@@ -80,4 +80,26 @@ final class InstallVolumeMonitorTests: XCTestCase {
 
         XCTAssertEqual(monitor.drives, [plugged])
     }
+
+    /// A view that only looks a drive up, like a tile's "drive not connected"
+    /// badge, still redraws when a drive is plugged in.
+    func testLookupThroughTheMonitorRedrawsOnADriveChange() {
+        let plugged = drive(at: oldRoot, name: "BEERTestingAparatus")
+        let oldRoot = oldRoot
+        let monitor = InstallVolumeMonitor(source: VolumeCatalog(
+            mountedDrives: { [] }, volumeUUID: { _ in nil },
+            drive: { $0 == oldRoot ? plugged : nil }
+        ))
+        let changed = expectation(description: "drive list changed")
+
+        let found = withObservationTracking {
+            monitor.current.drive(withUUID: "831E0E1D")
+        } onChange: {
+            changed.fulfill()
+        }
+        monitor.refresh(mountedAt: oldRoot)
+
+        XCTAssertNil(found)
+        wait(for: [changed], timeout: 1)
+    }
 }

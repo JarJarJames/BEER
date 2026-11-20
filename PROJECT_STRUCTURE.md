@@ -124,7 +124,7 @@ A view that is only used by one parent sits in a folder **inside that parent's f
 
 ### Views versus view models
 
-A view describes layout and reads state. A screen with logic gets a view model in `ViewModel/` that holds its `@Published` state and its actions; the view owns it with `@StateObject`. The view model takes the stores it needs at init (a `@StateObject` initializer can't read the SwiftUI environment, so a thin wrapper view such as `GameDetailView` collects them) and forwards their `objectWillChange` so the screen redraws as it would if it observed them directly. Rows that only read or edit a store use `@EnvironmentObject` themselves and need no view model.
+A view describes layout and reads state. A screen with logic gets a view model in `ViewModel/` that holds its `@Published` state and its actions; the view owns it with `@StateObject`. The view model takes the stores it needs at init (a `@StateObject` initializer can't read the SwiftUI environment, so a thin wrapper view such as `GameDetailView` collects them). Stores are `@Observable`, so a view that reads one through its view model redraws when what it read changes; nothing needs forwarding. Rows that only read or edit a store use `@Environment(Store.self)` themselves and need no view model.
 
 ## Conventions
 

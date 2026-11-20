@@ -7,14 +7,15 @@ import SwiftUI
 // main app shell (top bar + library) takes over. Bottle-specific controls live
 // in each installed game's Advanced section; runtimes are managed in Settings.
 struct ContentView: View {
-    @EnvironmentObject private var depot: DepotDownloaderInstaller
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var store: BottleStore
-    @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
-    @EnvironmentObject private var cloudAuth: SteamAuthStore
-    @EnvironmentObject private var presence: SteamPresenceStore
+    @Environment(DepotDownloaderInstaller.self) private var depot
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(BottleStore.self) private var store
+    @Environment(RuntimeInstaller.self) private var runtimeInstaller
+    @Environment(SteamAuthStore.self) private var cloudAuth
+    @Environment(SteamPresenceStore.self) private var presence
 
     var body: some View {
+        @Bindable var store = store
         Group {
             if !depot.isInstalled {
                 DepotDownloaderSetupView()

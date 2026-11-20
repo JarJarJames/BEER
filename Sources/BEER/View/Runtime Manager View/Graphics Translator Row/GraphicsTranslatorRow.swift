@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GraphicsTranslatorRow: View {
     let translator: GraphicsTranslator
-    @EnvironmentObject private var translators: GraphicsTranslatorInstaller
+    @Environment(GraphicsTranslatorInstaller.self) private var translators
 
     var body: some View {
         let downloaded = translators.installed.contains(translator)

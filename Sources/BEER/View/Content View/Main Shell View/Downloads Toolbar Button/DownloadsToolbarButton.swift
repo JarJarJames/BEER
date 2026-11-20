@@ -6,7 +6,7 @@ import SwiftUI
 /// A plain button that brightens on hover, rather than the toolbar's own
 /// highlight box, which was wider than the icon and looked out of place.
 struct DownloadsToolbarButton: View {
-    @EnvironmentObject private var downloads: DownloadsStore
+    @Environment(DownloadsStore.self) private var downloads
     @State private var isShowingList = false
     @State private var isHovering = false
 

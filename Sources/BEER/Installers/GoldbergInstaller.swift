@@ -7,13 +7,13 @@ import Foundation
 // steam_api.dll (32-bit) and steam_api64.dll (64-bit) stubs. We extract
 // them once and reuse for every game install. macOS's /usr/bin/tar is
 // libarchive-based and handles .7z natively, so no third-party unpacker.
-@MainActor
-final class GoldbergInstaller: ObservableObject {
-    @Published private(set) var isInstalled = false
-    @Published private(set) var isInstalling = false
-    @Published private(set) var statusMessage = "Checking Steam emulator…"
-    @Published private(set) var installedVersion: String?
-    @Published var lastError: String?
+@MainActor @Observable
+final class GoldbergInstaller {
+    private(set) var isInstalled = false
+    private(set) var isInstalling = false
+    private(set) var statusMessage = "Checking Steam emulator…"
+    private(set) var installedVersion: String?
+    var lastError: String?
 
     private let releaseAPI = URL(string: "https://api.github.com/repos/Detanup01/gbe_fork/releases/latest")!
 

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 struct AddNonSteamGameSheet: View {
     @StateObject private var model: AddNonSteamGameViewModel
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var drives: InstallVolumeMonitor
+    @Environment(InstallVolumeMonitor.self) private var drives
 
     init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector, drives: InstallVolumeMonitor) {
         _model = StateObject(wrappedValue: AddNonSteamGameViewModel(
@@ -127,7 +127,7 @@ struct AddNonSteamGameSheet: View {
         .padding(24)
         .frame(width: 560)
         .interactiveDismissDisabled(model.isWorking)
-        .onReceive(drives.$drives) { _ in model.refreshTargets() }
+        .onChange(of: drives.drives, initial: true) { model.refreshTargets() }
         .alert("Couldn't add game", isPresented: Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }

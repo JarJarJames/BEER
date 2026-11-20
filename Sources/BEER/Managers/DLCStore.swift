@@ -18,16 +18,16 @@ import Foundation
 //
 // Discovery results are cached per app for the session: every lookup costs a
 // Steam logon, and Steam throttles accounts that log on too often.
-@MainActor
-final class DLCStore: ObservableObject {
+@MainActor @Observable
+final class DLCStore {
 
     /// Discovery state per app. Keyed rather than "current app + a copy of its
     /// rows", so a slow reply for one game can't land on another's view.
-    @Published private(set) var states: [Int: LoadState] = [:]
-    @Published var message: StatusMessage?
+    private(set) var states: [Int: LoadState] = [:]
+    var message: StatusMessage?
 
     private let client = CloudSyncClient()
-    private var inFlight: [Int: Task<Void, Never>] = [:]
+    @ObservationIgnored private var inFlight: [Int: Task<Void, Never>] = [:]
 
     func state(for appID: Int) -> LoadState { states[appID] ?? .idle }
 

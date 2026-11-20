@@ -2,8 +2,8 @@ import SwiftUI
 
 struct GraphicsRow: View {
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
+    @Environment(BottleStore.self) private var bottles
+    @Environment(GraphicsTranslatorInstaller.self) private var graphicsTranslator
 
     var body: some View {
         let bottleID = bottle.id

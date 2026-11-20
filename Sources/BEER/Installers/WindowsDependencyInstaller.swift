@@ -11,17 +11,17 @@ import Foundation
 // Microsoft's own installers through `BottleStore`, so they get the bottle's
 // runtime and environment (Wine user `crossover`) like everything else.
 // The Wine-specific steps are lifted from winetricks' vcrun2026 / directx verbs.
-@MainActor
-final class WindowsDependencyInstaller: ObservableObject {
+@MainActor @Observable
+final class WindowsDependencyInstaller {
     struct Job: Equatable {
         let bottleID: Bottle.ID
         let dependency: WindowsDependency
     }
 
-    @Published private(set) var installed: [Bottle.ID: Set<WindowsDependency>] = [:]
-    @Published private(set) var busy: Job?
-    @Published private(set) var statusMessage: [Bottle.ID: String] = [:]
-    @Published private(set) var lastError: [Bottle.ID: String] = [:]
+    private(set) var installed: [Bottle.ID: Set<WindowsDependency>] = [:]
+    private(set) var busy: Job?
+    private(set) var statusMessage: [Bottle.ID: String] = [:]
+    private(set) var lastError: [Bottle.ID: String] = [:]
 
     /// Scratch space inside the prefix for things Windows tools need a C:
     /// path for. Free of spaces, unlike Application Support.

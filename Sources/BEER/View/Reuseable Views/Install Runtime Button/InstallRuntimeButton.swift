@@ -4,8 +4,8 @@ import SwiftUI
 /// recommended GPTK right there, so nobody has to find the Runtimes tab.
 /// Falls back to opening that tab when the catalog couldn't load.
 struct InstallRuntimeButton: View {
-    @EnvironmentObject private var detector: ToolchainDetector
-    @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @Environment(ToolchainDetector.self) private var detector
+    @Environment(RuntimeInstaller.self) private var runtimeInstaller
 
     var body: some View {
         if runtimeInstaller.isInstalling {

@@ -1,6 +1,5 @@
 import AchievementUI
 import AppKit
-import Combine
 import SwiftUI
 
 /// Shows achievement toasts in their own borderless, always-on-top window,
@@ -19,23 +18,30 @@ final class AchievementOverlayWindow {
     static let shared = AchievementOverlayWindow()
 
     private var window: NSWindow?
-    private var cancellable: AnyCancellable?
 
     private init() {
-        cancellable = AchievementToastCenter.shared.$current
-            .receive(on: RunLoop.main)
-            .sink { [weak self] achievement in
-                if let achievement {
-                    self?.show(achievement)
-                } else {
-                    self?.hide()
-                }
-            }
+        follow()
     }
 
     /// No-op beyond triggering `shared`'s lazy init — call once at app
-    /// launch so the subscription above is actually listening.
+    /// launch so `follow()` is actually listening.
     func activate() {}
+
+    /// Show the current toast, or hide the window when there is none, and
+    /// again after every change. Observation reports a change just before
+    /// it lands, so the new toast is read on the next turn of the run loop.
+    private func follow() {
+        let achievement = withObservationTracking {
+            AchievementToastCenter.shared.current
+        } onChange: { [weak self] in
+            Task { @MainActor in self?.follow() }
+        }
+        if let achievement {
+            show(achievement)
+        } else {
+            hide()
+        }
+    }
 
     private func show(_ achievement: AchievementDisplayInfo) {
         let panel = window ?? makeWindow()

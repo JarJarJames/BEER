@@ -8,12 +8,12 @@ struct SteamLibraryGridView: View {
     /// library's bar.
     @Binding var filter: LibraryFilter
 
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
     /// Observed so a tile's "drive not connected" badge follows the drive.
-    @EnvironmentObject private var drives: InstallVolumeMonitor
-    @EnvironmentObject private var foundGames: FoundGamesStore
+    @Environment(InstallVolumeMonitor.self) private var drives
+    @Environment(FoundGamesStore.self) private var foundGames
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?

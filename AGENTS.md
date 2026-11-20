@@ -74,7 +74,7 @@ what a fake can't cover — not the first.
 | GitHub release lists, macOS version (runtimes) | `RuntimeInstaller(fetch:macOSMajorVersion:)`; `ToolchainDetector.preferredGameRuntime(in:macOSMajorVersion:manifest:)` | `RuntimeCatalogTests`, `PreferredRuntimeTests` |
 | Large file downloads (runtimes) | `FileDownload.run(configuration:)`, given a session whose `protocolClasses` serve the bytes | `FileDownloadTests` |
 | Rosetta installed | `BottleStore.rosettaInstalled` | `RosettaCheckTests` |
-| A starting game's window on screen, and the launch steps | `BottleStore.gameWindowWatch`; `BottleStore.runLaunch(_:steps:)` given fake `LaunchSteps` | `LaunchStatusTests` |
+| A starting game's window on screen, and the launch steps | `BottleStore.gameWindowWatch`; `BottleStore.runLaunch(_:steps:)` given fake `LaunchSteps`; every launch phase in order through `BottleStore.launchPhasesChanged` | `LaunchStatusTests` |
 | Custom art folder | `CustomArtFiles.copy(into:)` / `remove(in:)`, pointed at a temp folder | `LibraryOrganizeTests` |
 
 The helper has its own offline xUnit tests in `Tools/CloudSync.Tests/`.

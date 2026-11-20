@@ -16,25 +16,25 @@ import Foundation
 //     made one bar for the whole run by DepotDownloadProgress
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
-@MainActor
-final class DepotDownloaderController: ObservableObject {
-    @Published var lastError: String?
-    @Published private(set) var activeDownloads = 0
+@MainActor @Observable
+final class DepotDownloaderController {
+    var lastError: String?
+    private(set) var activeDownloads = 0
 
     var isBusy: Bool { activeDownloads > 0 }
 
     /// Downloads Pause can stop right now, by Downloads entry: DepotDownloader
     /// is running for them. Not during bottle setup or emulator patching.
-    @Published private(set) var pausableIDs: Set<Int> = []
-    private var stoppers: [Int: ProcessStopper] = [:]
+    private(set) var pausableIDs: Set<Int> = []
+    @ObservationIgnored private var stoppers: [Int: ProcessStopper] = [:]
 
     private let cloudClient = CloudSyncClient()
-    private var authSessionDepth = 0
-    private var authCacheURL: URL?
+    @ObservationIgnored private var authSessionDepth = 0
+    @ObservationIgnored private var authCacheURL: URL?
 
     /// Where the in-flight credential cache's path is recorded, so a launch
     /// after a crash can delete it. Tests point this at a temporary folder.
-    var stateURL = AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
+    @ObservationIgnored var stateURL = AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
 
     func load() {
         // If the app was terminated during a download, remove the transient

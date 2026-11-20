@@ -5,9 +5,9 @@ import Foundation
 // inline. Lives in memory only — finished installs persist via the
 // SteamLibraryStore + BottleStore, and a paused game download via its
 // bottle's `pausedDownload` (see `restorePaused`).
-@MainActor
-final class DownloadsStore: ObservableObject {
-    @Published private(set) var entries: [Entry] = []
+@MainActor @Observable
+final class DownloadsStore {
+    private(set) var entries: [Entry] = []
 
     var active: [Entry] { entries.filter(\.isActive) }
     /// Running or paused: the Downloads pane's top section.

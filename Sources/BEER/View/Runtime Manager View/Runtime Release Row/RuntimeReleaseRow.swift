@@ -3,8 +3,8 @@ import SwiftUI
 struct RuntimeReleaseRow: View {
     let release: RuntimeRelease
     var recommended = false
-    @EnvironmentObject private var detector: ToolchainDetector
-    @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @Environment(ToolchainDetector.self) private var detector
+    @Environment(RuntimeInstaller.self) private var runtimeInstaller
 
     var body: some View {
         let installed = runtimeInstaller.isInstalled(release)

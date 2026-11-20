@@ -10,7 +10,7 @@ import SwiftUI
 struct EnvironmentRow: View {
     let bottleID: UUID
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
+    @Environment(BottleStore.self) private var bottles
     @StateObject private var editor = EnvironmentEditorViewModel()
 
     var body: some View {

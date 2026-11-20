@@ -90,8 +90,6 @@ final class GameDetailViewModel: ObservableObject {
     /// user clicks Install rapidly.
     @Published var isStartingInstall: Bool = false
 
-    private var storeChanges: Set<AnyCancellable> = []
-
     init(game: SteamLibraryGame, dependencies: GameDetailDependencies) {
         appID = game.appID
         self.dependencies = dependencies
@@ -109,15 +107,6 @@ final class GameDetailViewModel: ObservableObject {
         dlcStore = dependencies.dlcStore
         drives = dependencies.drives
         mover = dependencies.mover
-
-        // The screen reads store state through this object, so a change in any
-        // store has to redraw it — the same reach the view had when it observed
-        // each store directly.
-        for publisher in dependencies.changePublishers {
-            publisher
-                .sink { [weak self] _ in self?.objectWillChange.send() }
-                .store(in: &storeChanges)
-        }
     }
 
     /// The library's current copy of this game; the snapshot the screen was

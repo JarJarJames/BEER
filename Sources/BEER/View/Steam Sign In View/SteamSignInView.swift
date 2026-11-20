@@ -1,8 +1,8 @@
 import SwiftUI
 
 struct SteamSignInView: View {
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var auth: SteamAuthStore
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(SteamAuthStore.self) private var auth
 
     @StateObject private var qr = SteamQRAuthViewModel()
 
