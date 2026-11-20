@@ -1,32 +1,32 @@
 import SwiftUI
 
 struct MainShellView: View {
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var store: BottleStore
-    @EnvironmentObject private var cloudAuth: SteamAuthStore
-    @EnvironmentObject private var presence: SteamPresenceStore
-    @EnvironmentObject private var drives: InstallVolumeMonitor
-    @EnvironmentObject private var mover: GameMover
-    @StateObject private var foundGames = FoundGamesStore()
-    @StateObject private var depotController = DepotDownloaderController()
-    @StateObject private var downloads = DownloadsStore()
-    @StateObject private var goldberg = GoldbergInstaller()
-    @StateObject private var cloudSync = CloudSyncEngine()
-    @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
-    @StateObject private var windowsDependencies = WindowsDependencyInstaller()
-    @StateObject private var dlcStore = DLCStore()
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(BottleStore.self) private var store
+    @Environment(SteamAuthStore.self) private var cloudAuth
+    @Environment(SteamPresenceStore.self) private var presence
+    @Environment(InstallVolumeMonitor.self) private var drives
+    @Environment(GameMover.self) private var mover
+    @Environment(GraphicsTranslatorInstaller.self) private var graphicsTranslator
+    @State private var foundGames = FoundGamesStore()
+    @State private var depotController = DepotDownloaderController()
+    @State private var downloads = DownloadsStore()
+    @State private var goldberg = GoldbergInstaller()
+    @State private var cloudSync = CloudSyncEngine()
+    @State private var windowsDependencies = WindowsDependencyInstaller()
+    @State private var dlcStore = DLCStore()
     @State private var filter: LibraryFilter = .all
     @State private var selectedGameAppID: Int?
 
     var body: some View {
         LibraryPane(selectedGameAppID: $selectedGameAppID, filter: $filter)
-        .environmentObject(foundGames)
-        .environmentObject(depotController)
-        .environmentObject(downloads)
-        .environmentObject(goldberg)
-        .environmentObject(cloudSync)
-        .environmentObject(windowsDependencies)
-        .environmentObject(dlcStore)
+        .environment(foundGames)
+        .environment(depotController)
+        .environment(downloads)
+        .environment(goldberg)
+        .environment(cloudSync)
+        .environment(windowsDependencies)
+        .environment(dlcStore)
         .frame(minWidth: MainShellLayout.detailMinWidth, maxWidth: .infinity,
                minHeight: MainShellLayout.detailMinHeight, maxHeight: .infinity)
         .navigationTitle(MainShellStrings.windowTitle())
@@ -36,8 +36,8 @@ struct MainShellView: View {
             // Installed switch is in the library's own bar instead.
             ToolbarItem(placement: .automatic) {
                 DownloadsToolbarButton()
-                    .environmentObject(depotController)
-                    .environmentObject(downloads)
+                    .environment(depotController)
+                    .environment(downloads)
             }
             ToolbarItem(placement: .automatic) {
                 SteamAccountMenu()
@@ -47,10 +47,12 @@ struct MainShellView: View {
         // the link is waiting before the first frame, and opening the game
         // page mid-layout sends the window's toolbar into a layout loop
         // (crash). A game page shows whatever the filter is.
-        .onReceive(GameLinkRouter.shared.$requestedAppID.receive(on: DispatchQueue.main)) { appID in
-            guard let appID else { return }
-            GameLinkRouter.shared.requestedAppID = nil
-            selectedGameAppID = appID
+        .onChange(of: GameLinkRouter.shared.requestedAppID, initial: true) { _, appID in
+            Task {
+                guard let appID else { return }
+                GameLinkRouter.shared.requestedAppID = nil
+                selectedGameAppID = appID
+            }
         }
         .task {
             depotController.load()
@@ -60,12 +62,12 @@ struct MainShellView: View {
         // A drive plugged in, ejected or renamed: games on it follow, a move
         // it interrupted is finished or undone, and games on it that aren't in
         // BEER are offered. Also runs once when the shell appears.
-        .onReceive(drives.$drives) { _ in
+        .onChange(of: drives.drives, initial: true) {
             Task { await drivesChanged() }
         }
         // Downloads paused before BEER last quit. The bottles load after
         // this view appears, and a row already showing is left alone.
-        .onReceive(store.$bottles) { downloads.restorePaused(from: $0) }
+        .onChange(of: store.bottles, initial: true) { _, bottles in downloads.restorePaused(from: bottles) }
         .onChange(of: store.bottles.count) { _, _ in
             Task { await foundGames.scan(drives: drives.drives, bottles: store.bottles, library: library.games) }
         }

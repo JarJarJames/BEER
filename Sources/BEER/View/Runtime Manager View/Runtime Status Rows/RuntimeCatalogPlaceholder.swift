@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RuntimeCatalogPlaceholder: View {
-    @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @Environment(RuntimeInstaller.self) private var runtimeInstaller
 
     var body: some View {
         if runtimeInstaller.isRefreshing {

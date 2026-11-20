@@ -13,8 +13,8 @@ and `AGENTS.md`.
 
 ## Architecture
 
-- App code lives in `Sources/BEER/`. State is held in `@MainActor`
-  `ObservableObject` stores wired up in `BEERApp.swift` (e.g. `BottleStore`,
+- App code lives in `Sources/BEER/`. State is held in `@MainActor @Observable`
+  stores wired up in `BEERApp.swift` (e.g. `BottleStore`,
   `SteamLibraryStore`, `DownloadsStore`, `SteamAuthStore`, `CloudSyncEngine`).
 - **All filesystem paths go through `AppPaths`** (`Paths.swift`). Never hardcode
   `~/Library/Application Support/...`; add a property to `AppPaths` instead so the

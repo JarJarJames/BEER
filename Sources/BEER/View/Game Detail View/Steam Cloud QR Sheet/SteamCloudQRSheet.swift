@@ -8,7 +8,7 @@ import SwiftUI
 
 struct SteamCloudQRSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @EnvironmentObject private var auth: SteamAuthStore
+    @Environment(SteamAuthStore.self) private var auth
 
     let onConnected: () -> Void
 

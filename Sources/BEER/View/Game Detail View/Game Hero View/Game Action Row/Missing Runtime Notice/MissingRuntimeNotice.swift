@@ -5,8 +5,8 @@ import SwiftUI
 /// installed.
 struct MissingRuntimeNotice: View {
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
 
     var body: some View {
         Text(RuntimeStrings.runtimeMissing(bottle.runtimeLabel))

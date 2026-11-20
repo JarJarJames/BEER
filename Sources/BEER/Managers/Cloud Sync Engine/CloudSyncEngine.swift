@@ -15,40 +15,40 @@ import Foundation
 //     exact key Steam uses. A brand-new local save takes its name from sibling
 //     cloud files, or from the game's save rules when its folder has none.
 
-@MainActor
-final class CloudSyncEngine: ObservableObject {
+@MainActor @Observable
+final class CloudSyncEngine {
 
-    @Published var isSyncing: Bool = false
+    var isSyncing: Bool = false
 
-    @Published var phase: String = ""
+    var phase: String = ""
 
-    @Published var lastSyncAt: Date? = nil
+    var lastSyncAt: Date? = nil
 
-    @Published var lastReport: CloudSyncReport? = nil
+    var lastReport: CloudSyncReport? = nil
 
-    @Published var lastError: String? = nil
+    var lastError: String? = nil
 
     /// Tests swap in a client that runs `FakeSteam`.
-    var client = CloudSyncClient()
+    @ObservationIgnored var client = CloudSyncClient()
 
     /// Where backups and `last-sync.log` go for an app. Tests point this at a
     /// temporary folder.
-    var backupsDirectory: (Int) -> URL = AppPaths.cloudSaveBackupsDirectory(forAppID:)
+    @ObservationIgnored var backupsDirectory: (Int) -> URL = AppPaths.cloudSaveBackupsDirectory(forAppID:)
 
     /// Where a bottle's Wine prefix is. Tests point this at a temporary folder.
-    var bottlePrefix: (Bottle) -> URL = AppPaths.prefixURL(for:)
+    @ObservationIgnored var bottlePrefix: (Bottle) -> URL = AppPaths.prefixURL(for:)
 
     /// The mounted drives, for games whose files are on one. Tests fake them.
-    var volumes: VolumeCatalog = .system
+    @ObservationIgnored var volumes: VolumeCatalog = .system
 
     /// How many snapshots per game survive pruning (`before-clear` ones are
     /// always kept on top of these).
-    var snapshotsToKeep = CloudSaveBackupLimits.snapshotsPerGame
+    @ObservationIgnored var snapshotsToKeep = CloudSaveBackupLimits.snapshotsPerGame
 
     /// Save directories learned from the last successful sync, per appID. Kept
     /// so `localSaveFingerprint` can tell whether a play session wrote anything
     /// without spending a Steam logon to find out.
-    var knownSaveDirs: [Int: Set<URL>] = [:]
+    @ObservationIgnored var knownSaveDirs: [Int: Set<URL>] = [:]
 
     /// Pull newer cloud saves down. Backs up local saves first.
     func pull(bottle: Bottle, appID: Int, auth: SteamAuthStore) async throws -> CloudSyncReport {

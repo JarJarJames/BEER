@@ -1,31 +1,37 @@
 import AppKit
 import Foundation
 
-@MainActor
-final class BottleStore: ObservableObject {
+@MainActor @Observable
+final class BottleStore {
 
-    @Published private(set) var bottles: [Bottle] = []
+    private(set) var bottles: [Bottle] = []
 
-    @Published var logs: [Bottle.ID: [BottleLogEntry]] = [:]
+    var logs: [Bottle.ID: [BottleLogEntry]] = [:]
 
-    @Published var activeBottleIDs: Set<Bottle.ID> = []
+    var activeBottleIDs: Set<Bottle.ID> = []
 
     /// What each bottle's Play click is doing; see `runLaunch`.
-    @Published var launchPhases: [Bottle.ID: LaunchPhase] = [:]
+    var launchPhases: [Bottle.ID: LaunchPhase] = [:] {
+        didSet { launchPhasesChanged(launchPhases) }
+    }
+
+    /// Told every change to `launchPhases`, even back-to-back ones a redraw
+    /// would merge. Tests record the steps with it.
+    @ObservationIgnored var launchPhasesChanged: ([Bottle.ID: LaunchPhase]) -> Void = { _ in }
 
     /// How a starting game's window is spotted. Tests swap this out.
-    var gameWindowWatch: GameWindowWatch = .live
+    @ObservationIgnored var gameWindowWatch: GameWindowWatch = .live
 
-    @Published var lastError: String?
+    var lastError: String?
 
     /// Wine needs Rosetta and it isn't installed; see `requireRosetta()`.
-    @Published var isShowingRosettaPrompt = false
+    var isShowingRosettaPrompt = false
 
     /// The mounted drives, for games whose files are on one.
-    var volumes: VolumeCatalog = .system
+    @ObservationIgnored var volumes: VolumeCatalog = .system
 
     /// Whether Rosetta is installed. Tests swap this out.
-    var rosettaInstalled: () -> Bool = RosettaInstaller.isInstalled
+    @ObservationIgnored var rosettaInstalled: () -> Bool = RosettaInstaller.isInstalled
 
     func load() async {
         do {

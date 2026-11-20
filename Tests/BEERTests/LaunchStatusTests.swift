@@ -1,4 +1,3 @@
-import Combine
 import XCTest
 @testable import BEER
 
@@ -17,7 +16,6 @@ final class LaunchStatusTests: XCTestCase {
     private var recorded: [LaunchPhase?] = []
     /// The steps that ran, in order.
     private var ran: [String] = []
-    private var subscription: AnyCancellable?
 
     private func bottle() -> Bottle {
         let wine = "/nonexistent/runtime/bin/wine64"
@@ -38,10 +36,11 @@ final class LaunchStatusTests: XCTestCase {
             pollInterval: .milliseconds(2),
             slowAfter: slowAfter
         )
-        subscription = store.$launchPhases
-            .map { $0[bottle.id] }
-            .removeDuplicates()
-            .sink { [weak self] in self?.recorded.append($0) }
+        recorded = [store.launchPhase(for: bottle.id)]
+        store.launchPhasesChanged = { [weak self] phases in
+            guard let self, self.recorded.last != phases[bottle.id] else { return }
+            self.recorded.append(phases[bottle.id])
+        }
         return store
     }
 

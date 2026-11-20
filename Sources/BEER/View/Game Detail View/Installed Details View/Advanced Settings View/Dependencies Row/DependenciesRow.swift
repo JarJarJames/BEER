@@ -4,8 +4,8 @@ import SwiftUI
 /// winetricks menu, limited to the prerequisites games actually ask for.
 struct DependenciesRow: View {
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var installer: WindowsDependencyInstaller
+    @Environment(BottleStore.self) private var bottles
+    @Environment(WindowsDependencyInstaller.self) private var installer
 
     var body: some View {
         let installed = installer.installed[bottle.id] ?? []

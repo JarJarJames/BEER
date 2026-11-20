@@ -6,19 +6,19 @@ struct GameDetailView: View {
     let game: SteamLibraryGame
     let onBack: () -> Void
 
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
-    @EnvironmentObject private var depotCtl: DepotDownloaderController
-    @EnvironmentObject private var downloads: DownloadsStore
-    @EnvironmentObject private var goldberg: GoldbergInstaller
-    @EnvironmentObject private var cloudAuth: SteamAuthStore
-    @EnvironmentObject private var cloudSync: CloudSyncEngine
-    @EnvironmentObject private var presence: SteamPresenceStore
-    @EnvironmentObject private var graphicsTranslator: GraphicsTranslatorInstaller
-    @EnvironmentObject private var dlcStore: DLCStore
-    @EnvironmentObject private var drives: InstallVolumeMonitor
-    @EnvironmentObject private var mover: GameMover
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
+    @Environment(DepotDownloaderController.self) private var depotCtl
+    @Environment(DownloadsStore.self) private var downloads
+    @Environment(GoldbergInstaller.self) private var goldberg
+    @Environment(SteamAuthStore.self) private var cloudAuth
+    @Environment(CloudSyncEngine.self) private var cloudSync
+    @Environment(SteamPresenceStore.self) private var presence
+    @Environment(GraphicsTranslatorInstaller.self) private var graphicsTranslator
+    @Environment(DLCStore.self) private var dlcStore
+    @Environment(InstallVolumeMonitor.self) private var drives
+    @Environment(GameMover.self) private var mover
 
     var body: some View {
         GameDetailScreen(

@@ -8,23 +8,23 @@ struct SteamLibraryGridView: View {
     /// library's bar.
     @Binding var filter: LibraryFilter
 
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
     /// Observed so a tile's "drive not connected" badge follows the drive.
-    @EnvironmentObject private var drives: InstallVolumeMonitor
-    @EnvironmentObject private var foundGames: FoundGamesStore
+    @Environment(InstallVolumeMonitor.self) private var drives
+    @Environment(FoundGamesStore.self) private var foundGames
     @State private var isAddingNonSteamGame = false
     /// The drive whose found games are being reviewed.
     @State private var reviewingDriveID: String?
+    /// The scroll area's width, so no card is made wider than the view.
+    @State private var gridWidth: CGFloat = 0
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
     @AppStorage(AppearancePreferences.cardWidthKey) private var cardWidth = AppearanceDefaults.cardWidth
     @AppStorage(AppearancePreferences.cardLabelKey) private var cardLabel = AppearanceDefaults.cardLabel
     @AppStorage(AppearancePreferences.playtimeFormatKey) private var playtimeFormat = AppearanceDefaults.playtimeFormat
     @AppStorage(AppearancePreferences.lastPlayedFormatKey) private var lastPlayedFormat = AppearanceDefaults.lastPlayedFormat
     @AppStorage(AppearancePreferences.sortOrderKey) private var sortOrder = AppearanceDefaults.sortOrder
-    /// The scroll area's width, so no card is made wider than the view.
-    @State private var gridWidth: CGFloat = 0
 
     private var columns: [GridItem] {
         if cardStyle == .list {

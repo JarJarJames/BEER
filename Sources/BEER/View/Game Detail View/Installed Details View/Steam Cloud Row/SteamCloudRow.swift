@@ -3,8 +3,8 @@ import SwiftUI
 struct SteamCloudRow: View {
     let bottle: Bottle
     @ObservedObject var model: GameDetailViewModel
-    @EnvironmentObject private var cloudAuth: SteamAuthStore
-    @EnvironmentObject private var cloudSync: CloudSyncEngine
+    @Environment(SteamAuthStore.self) private var cloudAuth
+    @Environment(CloudSyncEngine.self) private var cloudSync
 
     var body: some View {
         let connected = cloudAuth.account != nil

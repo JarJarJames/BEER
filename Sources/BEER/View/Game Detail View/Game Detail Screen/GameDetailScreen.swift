@@ -53,14 +53,18 @@ struct GameDetailScreen: View {
             if sizeProbeID != nil { await model.measureInstalledSize() }
         }
         // Plugging a drive in or pulling it out updates any open sheet's list.
-        .onReceive(model.drives.$drives.dropFirst()) { _ in model.drivesChanged() }
-        .onReceive(GameLinkRouter.shared.$pendingLaunchAppID.receive(on: DispatchQueue.main)) { appID in
-            guard appID == model.appID else { return }
-            GameLinkRouter.shared.pendingLaunchAppID = nil
-            model.launchFromShortcut()
+        .onChange(of: model.drives.drives) { model.drivesChanged() }
+        // A link waiting when the page opens counts too. Handled on the next
+        // turn of the run loop, not mid-update.
+        .onChange(of: GameLinkRouter.shared.pendingLaunchAppID, initial: true) { _, appID in
+            Task {
+                guard appID == model.appID else { return }
+                GameLinkRouter.shared.pendingLaunchAppID = nil
+                model.launchFromShortcut()
+            }
         }
-        .onReceive(GameLinkRouter.shared.$pendingResumeID.receive(on: DispatchQueue.main)) { id in
-            model.resumeIfRequested(id)
+        .onChange(of: GameLinkRouter.shared.pendingResumeID, initial: true) { _, id in
+            Task { model.resumeIfRequested(id) }
         }
         .toolbar {
             ToolbarItem(placement: .navigation) {

@@ -4,32 +4,32 @@ import SwiftUI
 @main
 struct BEERApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @StateObject private var store = BottleStore()
-    @StateObject private var detector = ToolchainDetector()
-    @StateObject private var runtimeInstaller = RuntimeInstaller()
-    @StateObject private var library = SteamLibraryStore()
-    @StateObject private var depotDownloader = DepotDownloaderInstaller()
-    @StateObject private var cloudAuth = SteamAuthStore()
-    @StateObject private var presence = SteamPresenceStore()
-    @StateObject private var drives = InstallVolumeMonitor()
-    @StateObject private var mover = GameMover()
+    @State private var store = BottleStore()
+    @State private var detector = ToolchainDetector()
+    @State private var runtimeInstaller = RuntimeInstaller()
+    @State private var library = SteamLibraryStore()
+    @State private var depotDownloader = DepotDownloaderInstaller()
+    @State private var cloudAuth = SteamAuthStore()
+    @State private var presence = SteamPresenceStore()
+    @State private var drives = InstallVolumeMonitor()
+    @State private var mover = GameMover()
     /// Here rather than in the main window: the Settings window's Runtimes
     /// tab needs it too.
-    @StateObject private var graphicsTranslator = GraphicsTranslatorInstaller()
+    @State private var graphicsTranslator = GraphicsTranslatorInstaller()
 
     var body: some Scene {
         WindowGroup {
             ContentView()
-                .environmentObject(store)
-                .environmentObject(detector)
-                .environmentObject(runtimeInstaller)
-                .environmentObject(library)
-                .environmentObject(depotDownloader)
-                .environmentObject(cloudAuth)
-                .environmentObject(presence)
-                .environmentObject(drives)
-                .environmentObject(mover)
-                .environmentObject(graphicsTranslator)
+                .environment(store)
+                .environment(detector)
+                .environment(runtimeInstaller)
+                .environment(library)
+                .environment(depotDownloader)
+                .environment(cloudAuth)
+                .environment(presence)
+                .environment(drives)
+                .environment(mover)
+                .environment(graphicsTranslator)
                 .preferredColorScheme(.dark)
                 .frame(minWidth: 1100, minHeight: 720)
                 .task {
@@ -83,9 +83,9 @@ struct BEERApp: App {
 
         Settings {
             SettingsView()
-                .environmentObject(detector)
-                .environmentObject(runtimeInstaller)
-                .environmentObject(graphicsTranslator)
+                .environment(detector)
+                .environment(runtimeInstaller)
+                .environment(graphicsTranslator)
                 .preferredColorScheme(.dark)
         }
     }

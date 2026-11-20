@@ -1,29 +1,33 @@
 import AppKit
-import Combine
 import Foundation
 
 /// The drives plugged in right now, kept current as drives are connected,
 /// ejected or renamed, so drive lists and "Connect <drive> to play" update the
 /// moment it happens instead of on the next click.
-@MainActor
-final class InstallVolumeMonitor: ObservableObject {
+@MainActor @Observable
+final class InstallVolumeMonitor {
     /// Every mounted drive other than the startup disk, listed or not.
-    @Published private(set) var drives: [InstallVolume] = []
+    private(set) var drives: [InstallVolume] = []
 
     /// Drive lookups that answer from the list above instead of asking the
     /// system each time: views ask on every redraw. Paths are still checked
     /// live, so a drive pulled a moment ago never reads as holding a game.
-    let current: VolumeCatalog
+    /// A view that looks a drive up through these redraws when the list
+    /// changes, as if it had read `drives` itself.
+    @ObservationIgnored private(set) var current: VolumeCatalog = .system
 
     private let source: VolumeCatalog
     private let snapshot: DriveSnapshot
-    private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var observers: [NSObjectProtocol] = []
 
     init(source: VolumeCatalog = .system) {
         let snapshot = DriveSnapshot()
         self.source = source
         self.snapshot = snapshot
-        current = VolumeCatalog(mountedDrives: { snapshot.drives }, volumeUUID: source.volumeUUID)
+        current = VolumeCatalog(mountedDrives: { [weak self] in
+            if Thread.isMainThread { MainActor.assumeIsolated { _ = self?.drives } }
+            return snapshot.drives
+        }, volumeUUID: source.volumeUUID)
     }
 
     func start() {

@@ -11,13 +11,13 @@ import Foundation
 // We pin against the GitHub releases API so the user always gets the
 // current build, and we strip the macOS quarantine xattr so Gatekeeper
 // doesn't block first-launch.
-@MainActor
-final class DepotDownloaderInstaller: ObservableObject {
-    @Published private(set) var isInstalled = false
-    @Published private(set) var isInstalling = false
-    @Published private(set) var statusMessage = "Checking DepotDownloader…"
-    @Published private(set) var installedVersion: String?
-    @Published var lastError: String?
+@MainActor @Observable
+final class DepotDownloaderInstaller {
+    private(set) var isInstalled = false
+    private(set) var isInstalling = false
+    private(set) var statusMessage = "Checking DepotDownloader…"
+    private(set) var installedVersion: String?
+    var lastError: String?
 
     private let releaseAPI = URL(string: "https://api.github.com/repos/SteamRE/DepotDownloader/releases/latest")!
 

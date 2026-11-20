@@ -5,17 +5,17 @@ import Foundation
 /// installed. A game that isn't installed just shows its page with Install.
 /// Resume in the Downloads list goes the same way, so the page can ask to
 /// reconnect Steam or report a full disk.
-@MainActor
-final class GameLinkRouter: ObservableObject {
+@MainActor @Observable
+final class GameLinkRouter {
     static let shared = GameLinkRouter()
 
     /// The game whose page a link asked for, until the shell shows it.
-    @Published var requestedAppID: Int?
+    var requestedAppID: Int?
     /// The game to start once its page is open. The page clears it.
-    @Published var pendingLaunchAppID: Int?
+    var pendingLaunchAppID: Int?
     /// The Downloads entry (a game or one of its DLC) to resume once its
     /// game's page is open. The page clears it.
-    @Published var pendingResumeID: Int?
+    var pendingResumeID: Int?
 
     func resume(_ entry: DownloadsStore.Entry) {
         pendingResumeID = entry.id

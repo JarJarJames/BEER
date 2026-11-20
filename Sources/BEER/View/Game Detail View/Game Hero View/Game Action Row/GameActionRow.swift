@@ -2,8 +2,8 @@ import SwiftUI
 
 struct GameActionRow: View {
     @ObservedObject var model: GameDetailViewModel
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
 
     var body: some View {
         HStack(spacing: 12) {

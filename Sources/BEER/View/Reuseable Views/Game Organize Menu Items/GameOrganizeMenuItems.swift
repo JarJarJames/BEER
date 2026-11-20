@@ -4,7 +4,7 @@ import SwiftUI
 /// page's menu.
 struct GameOrganizeMenuItems: View {
     let game: SteamLibraryGame
-    @EnvironmentObject private var library: SteamLibraryStore
+    @Environment(SteamLibraryStore.self) private var library
 
     var body: some View {
         Button {
