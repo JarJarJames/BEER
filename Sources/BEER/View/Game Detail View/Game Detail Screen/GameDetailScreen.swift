@@ -19,6 +19,32 @@ struct GameDetailScreen: View {
     }
 
     var body: some View {
+        page
+            .sheet(item: sheetBinding) { sheet in
+                sheetContent(sheet)
+            }
+            .confirmationDialog(
+                confirmationTitleText,
+                isPresented: isShowingConfirmation,
+                presenting: model.dialog
+            ) { dialog in
+                confirmationActions(dialog)
+            } message: { dialog in
+                confirmationMessage(dialog)
+            }
+            .alert(
+                DiskSpaceStrings.alertTitle,
+                isPresented: isShowingShortfall,
+                presenting: model.dialog?.shortfall
+            ) { _ in
+                Button(DiskSpaceStrings.okButton, role: .cancel) { model.dialog = nil }
+            } message: { shortfall in
+                Text(DiskSpaceStrings.shortfall(shortfall))
+            }
+    }
+
+    /// The page, without the sheets and dialogs it shows.
+    private var page: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 // Steam-style runs edge to edge and fades into the page, so
@@ -73,30 +99,34 @@ struct GameDetailScreen: View {
                 }
             }
         }
-        // SwiftUI writes nil when a sheet closes itself or Esc closes it.
-        .sheet(item: Binding(get: { model.sheet }, set: { if $0 == nil { model.sheetClosed() } })) { sheet in
-            sheetContent(sheet)
-        }
-        .confirmationDialog(
-            model.dialog.map(confirmationTitle) ?? "",
-            isPresented: Binding(get: { model.dialog != nil && model.dialog?.shortfall == nil },
-                                 set: { if !$0, model.dialog?.shortfall == nil { model.dialog = nil } }),
-            presenting: model.dialog
-        ) { dialog in
-            confirmationActions(dialog)
-        } message: { dialog in
-            confirmationMessage(dialog)
-        }
-        .alert(
-            DiskSpaceStrings.alertTitle,
-            isPresented: Binding(get: { model.dialog?.shortfall != nil },
-                                 set: { if !$0, model.dialog?.shortfall != nil { model.dialog = nil } }),
-            presenting: model.dialog?.shortfall
-        ) { _ in
-            Button(DiskSpaceStrings.okButton, role: .cancel) { model.dialog = nil }
-        } message: { shortfall in
-            Text(DiskSpaceStrings.shortfall(shortfall))
-        }
+    }
+
+    // Bindings are typed here, not inline in `body`, and the page is split
+    // from what it presents: as one chain, CI's compiler gave up type-checking it.
+
+    /// SwiftUI writes nil when a sheet closes itself or Esc closes it.
+    private var sheetBinding: Binding<GameDetailSheet?> {
+        Binding(get: { model.sheet }, set: { if $0 == nil { model.sheetClosed() } })
+    }
+
+    private var confirmationTitleText: String {
+        guard let dialog = model.dialog else { return "" }
+        return confirmationTitle(dialog)
+    }
+
+    /// Every dialog but the disk-space one, which is an alert.
+    private var isShowingConfirmation: Binding<Bool> {
+        Binding(
+            get: { model.dialog != nil && model.dialog?.shortfall == nil },
+            set: { if !$0, model.dialog?.shortfall == nil { model.dialog = nil } }
+        )
+    }
+
+    private var isShowingShortfall: Binding<Bool> {
+        Binding(
+            get: { model.dialog?.shortfall != nil },
+            set: { if !$0, model.dialog?.shortfall != nil { model.dialog = nil } }
+        )
     }
 
     @ViewBuilder
