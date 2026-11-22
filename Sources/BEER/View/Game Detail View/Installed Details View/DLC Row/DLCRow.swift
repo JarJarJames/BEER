@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DLCRow: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
 
     var body: some View {
         if let state = model.dlcRowState(bottle: bottle) {

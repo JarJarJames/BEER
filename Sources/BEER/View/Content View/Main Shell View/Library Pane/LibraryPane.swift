@@ -6,7 +6,7 @@ struct LibraryPane: View {
     @Environment(SteamLibraryStore.self) private var library
     /// Owned here, not by the grid, so the search and the game to scroll back
     /// to outlive the grid while a game page is showing.
-    @StateObject private var gridModel = SteamLibraryGridViewModel()
+    @State private var gridModel = SteamLibraryGridViewModel()
     @AppStorage(AppearancePreferences.cardStyleKey) private var cardStyle = AppearanceDefaults.cardStyle
 
     var body: some View {

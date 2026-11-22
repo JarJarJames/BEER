@@ -1,12 +1,11 @@
-import Combine
 import Foundation
 
 /// State and actions behind the game detail screen: install, launch, Steam
 /// Cloud sync, the Steam emulator patch, and DLC. The views stay declarative;
 /// anything that touches a store or the disk lives here, split by concern
 /// across the `GameDetailViewModel+*.swift` files.
-@MainActor
-final class GameDetailViewModel: ObservableObject {
+@MainActor @Observable
+final class GameDetailViewModel {
     let appID: Int
     let dependencies: GameDetailDependencies
     private let initialGame: SteamLibraryGame
@@ -25,70 +24,70 @@ final class GameDetailViewModel: ObservableObject {
     let drives: InstallVolumeMonitor
     let mover: GameMover
 
-    @Published var isShowingCloudConnect: Bool = false
-    @Published var isShowingDLCManager: Bool = false
-    @Published var shouldResumeInstallAfterCloudConnect: Bool = false
-    @Published var cloudSyncMessage: String?
-    @Published var cloudSyncIsError: Bool = false
-    @Published var confirmClearBottle: Bottle?
-    @Published var isShowingSaveBackups: Bool = false
-    @Published var saveBackups: [CloudSaveSnapshot] = []
+    var isShowingCloudConnect: Bool = false
+    var isShowingDLCManager: Bool = false
+    var shouldResumeInstallAfterCloudConnect: Bool = false
+    var cloudSyncMessage: String?
+    var cloudSyncIsError: Bool = false
+    var confirmClearBottle: Bottle?
+    var isShowingSaveBackups: Bool = false
+    var saveBackups: [CloudSaveSnapshot] = []
     /// Set while the restore confirmation is up.
-    @Published var restorePlanToConfirm: SaveRestorePlan?
+    var restorePlanToConfirm: SaveRestorePlan?
     /// Shown inside the backups sheet: why a restore couldn't start or failed.
-    @Published var saveBackupsError: String?
+    var saveBackupsError: String?
     /// Kept here rather than read in `body`, which redraws on every store tick.
-    @Published var pendingRestore: PendingSaveRestore?
-    @Published var restoreConflictPrompt: RestoreConflictPrompt?
-    @Published var confirmRemoveNonSteamGame: Bool = false
+    var pendingRestore: PendingSaveRestore?
+    var restoreConflictPrompt: RestoreConflictPrompt?
+    var confirmRemoveNonSteamGame: Bool = false
     /// Set while Play asks whether to update an out-of-date game first.
-    @Published var updateBeforePlay: Bottle?
+    var updateBeforePlay: Bottle?
     /// Set when an install was refused because the disk can't hold it.
-    @Published var diskSpaceShortfall: DiskSpaceShortfall?
-    @Published var isShowingInstallSheet: Bool = false
+    var diskSpaceShortfall: DiskSpaceShortfall?
+    var isShowingInstallSheet: Bool = false
     /// The install sheet's free space for the chosen place; nil while it's looked up.
-    @Published var installSpaceReport: InstallSpaceReport?
+    var installSpaceReport: InstallSpaceReport?
     /// Steam's size for the game; nil while it's asked.
-    @Published var installSize: InstallSize?
+    var installSize: InstallSize?
     /// The DLC (app IDs) unticked in the install sheet.
-    @Published var skippedDLC: Set<Int> = []
+    var skippedDLC: Set<Int> = []
     /// The places the install sheet offers, and the one chosen.
-    @Published var installOptions: [InstallTargetOption] = []
-    @Published var installTarget: InstallTarget?
+    var installOptions: [InstallTargetOption] = []
+    var installTarget: InstallTarget?
     /// Shown under the install sheet's list: why the place is fixed.
-    @Published var installNote: String?
+    var installNote: String?
     /// Uninstalling a game whose drive isn't connected leaves its files there,
     /// so it asks first.
-    @Published var confirmRemoveWithDriveMissing: Bool = false
-    @Published var isShowingMoveSheet: Bool = false
-    @Published var moveOptions: [InstallTargetOption] = []
-    @Published var moveTarget: InstallTarget?
+    var confirmRemoveWithDriveMissing: Bool = false
+    var isShowingMoveSheet: Bool = false
+    var moveOptions: [InstallTargetOption] = []
+    var moveTarget: InstallTarget?
     /// What the game takes up now; nil while it's measured.
-    @Published var moveSourceBytes: Int64?
+    var moveSourceBytes: Int64?
     /// The move result, shown in the Location row.
-    @Published var moveMessage: String?
-    @Published var moveIsError: Bool = false
-    var installSpaceCheck = InstallSpaceCheck()
-    @Published var isShowingShortcutIcon: Bool = false
-    @Published var isShowingArtwork: Bool = false
-    @Published var artworkError: String?
+    var moveMessage: String?
+    var moveIsError: Bool = false
+    @ObservationIgnored var installSpaceCheck = InstallSpaceCheck()
+    var isShowingShortcutIcon: Bool = false
+    var isShowingArtwork: Bool = false
+    var artworkError: String?
     /// The installed game's folder size, once measured for the Size stat.
-    @Published var installedBytes: Int64?
-    @Published var patchStatusMessage: String?
-    @Published var patchStatusIsError: Bool = false
-    @Published var isPatching: Bool = false
+    var installedBytes: Int64?
+    var patchStatusMessage: String?
+    var patchStatusIsError: Bool = false
+    var isPatching: Bool = false
     /// Bumped after every Apply/Restore so the patch-status row re-reads
     /// the install dir from disk.
-    @Published var patchProbeTick: Int = 0
+    var patchProbeTick: Int = 0
     /// Cached result of the install-directory probe. `PatchStatus.probe(at:)`
     /// walks the game's whole install tree, so it must never run from `body` —
     /// every published change anywhere (a download progress tick, say) would
     /// re-walk it. Refreshed only when the tick changes or the bottle does.
-    @Published var cachedPatchStatus: PatchStatus?
+    var cachedPatchStatus: PatchStatus?
     /// Synchronous re-entry guard for the Install button. Prevents the
     /// 20-second wineboot phase from being kicked off multiple times if the
     /// user clicks Install rapidly.
-    @Published var isStartingInstall: Bool = false
+    var isStartingInstall: Bool = false
 
     init(game: SteamLibraryGame, dependencies: GameDetailDependencies) {
         appID = game.appID

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct GameHeroView: View {
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
 
     private var game: SteamLibraryGame { model.game }
 

@@ -3,7 +3,7 @@ import SwiftUI
 /// The circled ⋯ beside Play or Install: favorite, hide and artwork for every
 /// game, plus files, shortcuts and uninstalling once it's installed.
 struct GameMoreMenu: View {
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
     @Environment(BottleStore.self) private var bottles
     @State private var isHovering = false
 

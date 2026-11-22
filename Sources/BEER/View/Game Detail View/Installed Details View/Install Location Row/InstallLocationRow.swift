@@ -3,7 +3,7 @@ import SwiftUI
 /// Which drive the game is on, with Move and, while it moves, its progress.
 struct InstallLocationRow: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
 
     var body: some View {
         let live = model.bottles.live(bottle)

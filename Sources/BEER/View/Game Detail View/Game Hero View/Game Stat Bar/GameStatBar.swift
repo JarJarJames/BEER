@@ -4,7 +4,7 @@ import SwiftUI
 /// menu, then the stats. See-through, edge to edge, no border.
 /// When the window is too narrow for one line, the stats wrap under Play.
 struct GameStatBar: View {
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
     let stats: [GameStat]
 
     var body: some View {

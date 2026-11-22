@@ -1,10 +1,9 @@
-import Combine
 import Foundation
 
 /// State and actions behind the DLC manager sheet: what the account owns, what
 /// is already installed, and installing or disabling individual DLC.
-@MainActor
-final class DLCManagerViewModel: ObservableObject {
+@MainActor @Observable
+final class DLCManagerViewModel {
     let game: SteamLibraryGame
     let installDir: URL
     private let bottle: Bottle
@@ -14,9 +13,9 @@ final class DLCManagerViewModel: ObservableObject {
     private let downloads: DownloadsStore
     private let cloudAuth: SteamAuthStore
 
-    @Published private(set) var isInstallingAll = false
-    @Published private(set) var isCheckingSpace = false
-    var installSpaceCheck = InstallSpaceCheck()
+    private(set) var isInstallingAll = false
+    private(set) var isCheckingSpace = false
+    @ObservationIgnored var installSpaceCheck = InstallSpaceCheck()
 
     init(game: SteamLibraryGame, bottle: Bottle, installDir: URL, dependencies: GameDetailDependencies) {
         self.game = game

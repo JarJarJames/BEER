@@ -11,7 +11,7 @@ struct EnvironmentRow: View {
     let bottleID: UUID
     let bottle: Bottle
     @Environment(BottleStore.self) private var bottles
-    @StateObject private var editor = EnvironmentEditorViewModel()
+    @State private var editor = EnvironmentEditorViewModel()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {

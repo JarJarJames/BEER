@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SteamEmulatorRow: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
 
     var body: some View {
         SettingsRow(title: "Steam emulator") {

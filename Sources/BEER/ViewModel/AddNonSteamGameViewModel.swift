@@ -3,22 +3,22 @@ import Foundation
 /// State and actions behind the "Add Non-Steam Game" sheet: pick a game folder
 /// and its executable, bring the folder into a fresh GPTK bottle's
 /// `drive_c/Games` or onto a drive (move or copy), and register it in the library.
-@MainActor
-final class AddNonSteamGameViewModel: ObservableObject {
-    @Published private(set) var folder: URL?
-    @Published var name: String = ""
-    @Published private(set) var executables: [URL] = []
-    @Published var selectedExecutable: URL?
-    @Published var transferMode: GameFolderTransfer.Mode = .move
-    @Published private(set) var imageURL: URL?
-    @Published private(set) var isScanning = false
-    @Published private(set) var isWorking = false
-    @Published var errorMessage: String?
+@MainActor @Observable
+final class AddNonSteamGameViewModel {
+    private(set) var folder: URL?
+    var name: String = ""
+    private(set) var executables: [URL] = []
+    var selectedExecutable: URL?
+    var transferMode: GameFolderTransfer.Mode = .move
+    private(set) var imageURL: URL?
+    private(set) var isScanning = false
+    private(set) var isWorking = false
+    var errorMessage: String?
     /// Where the game can go, and the one chosen.
-    @Published private(set) var targetOptions: [InstallTargetOption] = []
-    @Published var target: InstallTarget?
+    private(set) var targetOptions: [InstallTargetOption] = []
+    var target: InstallTarget?
     /// What the chosen folder takes up; nil until measured.
-    @Published private(set) var folderBytes: Int64?
+    private(set) var folderBytes: Int64?
 
     private let bottles: BottleStore
     private let library: SteamLibraryStore

@@ -2,7 +2,7 @@ import SwiftUI
 
 struct InstalledDetailsView: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
     @State private var isAdvancedExpanded: Bool = false
 
     var body: some View {

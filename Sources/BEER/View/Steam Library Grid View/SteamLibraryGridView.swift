@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SteamLibraryGridView: View {
     /// Owned by `LibraryPane`, so it lasts while a game page replaces the grid.
-    @ObservedObject var model: SteamLibraryGridViewModel
+    @Bindable var model: SteamLibraryGridViewModel
     var onSelectGame: (SteamLibraryGame) -> Void
     /// All games, only installed ones, or hidden ones; switched in the
     /// library's bar.
