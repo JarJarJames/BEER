@@ -81,6 +81,7 @@ struct GameActionRow: View {
                     Label("Cancel", systemImage: "xmark.circle")
                 }
                 .controlSize(.large)
+                .disabled(entry.status == .cancelling)
             } else if model.download?.isPaused == true {
                 resumeButton
                 Button(role: .destructive) {

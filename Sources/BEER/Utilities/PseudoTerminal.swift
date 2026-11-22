@@ -27,27 +27,49 @@ final class PseudoTerminal: @unchecked Sendable {
         try? child.close()
     }
 
-    /// Hand over everything the child writes, on a thread of its own, then
-    /// call `onEnd` once it has closed the terminal. A pipe reports the end
-    /// as an empty read; a terminal reports it as an error (EIO), which
-    /// `FileHandle` would raise as an exception, hence plain `read`.
-    func read(_ onData: @escaping @Sendable (Data) -> Void, onEnd: @escaping @Sendable () -> Void) {
+    /// Hand over everything the child writes as text, on a thread of its
+    /// own, then call `onEnd` once it has closed the terminal. A pipe reports
+    /// the end as an empty read; a terminal reports it as an error (EIO),
+    /// which `FileHandle` would raise as an exception, hence plain `read`.
+    func read(_ onText: @escaping @Sendable (String) -> Void, onEnd: @escaping @Sendable () -> Void) {
         let primary = primary
         Thread.detachNewThread {
             var buffer = [UInt8](repeating: 0, count: 65_536)
+            var bytes: [UInt8] = []
             while true {
                 let count = Darwin.read(primary, &buffer, buffer.count)
                 if count > 0 {
-                    onData(Data(buffer[0..<count]))
+                    bytes += buffer[0..<count]
+                    // A character split across two reads waits for its rest.
+                    let whole = bytes.count - Self.unfinishedCharacter(at: bytes)
+                    onText(String(decoding: bytes[0..<whole], as: UTF8.self))
+                    bytes.removeFirst(whole)
                 } else if count < 0, errno == EINTR {
                     continue
                 } else {
                     break
                 }
             }
+            if !bytes.isEmpty { onText(String(decoding: bytes, as: UTF8.self)) }
             Darwin.close(primary)
             onEnd()
         }
+    }
+
+    /// How many bytes at the end of `bytes` begin a UTF-8 character whose
+    /// remaining bytes haven't arrived yet.
+    static func unfinishedCharacter(at bytes: [UInt8]) -> Int {
+        var lead = bytes.count - 1
+        while lead >= 0, bytes.count - lead < 4, bytes[lead] & 0xC0 == 0x80 { lead -= 1 }
+        guard lead >= 0 else { return 0 }
+        let length = switch bytes[lead] {
+        case 0xF0...: 4
+        case 0xE0...: 3
+        case 0xC0...: 2
+        default: 1
+        }
+        let arrived = bytes.count - lead
+        return arrived < length ? arrived : 0
     }
 
     /// For a child that never started.

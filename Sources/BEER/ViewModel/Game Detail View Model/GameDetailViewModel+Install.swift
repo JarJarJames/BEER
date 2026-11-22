@@ -351,7 +351,7 @@ extension GameDetailViewModel {
     /// Delete what a cancelled download put on disk: its bottle, the game's
     /// folder (on a drive too) and its download log. Only a game that never
     /// finished installing goes; one being updated keeps its files and saves.
-    func discardInstall() async {
+    private func discardInstall() async {
         let appID = game.appID
         if let bottle = bottles.findBottle(forAppID: appID), bottle.gameLaunchExecutable == nil {
             await bottles.delete(bottle)

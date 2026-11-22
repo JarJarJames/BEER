@@ -115,8 +115,7 @@ enum ShellRunner {
                     return
                 }
                 pty.childStarted()
-                pty.read({ data in
-                    let chunk = String(decoding: data, as: UTF8.self)
+                pty.read({ chunk in
                     buffer.append(chunk)
                     outputHandler(chunk)
                 }, onEnd: finish)

@@ -11,7 +11,8 @@ struct SteamLibraryGridView: View {
     @Environment(SteamLibraryStore.self) private var library
     @Environment(BottleStore.self) private var bottles
     @Environment(ToolchainDetector.self) private var detector
-    /// Observed so a tile's "drive not connected" badge follows the drive.
+    /// For the found-games scan and the Add Game sheet. A tile's "drive not
+    /// connected" badge follows the drive through its lookups.
     @Environment(InstallVolumeMonitor.self) private var drives
     @Environment(FoundGamesStore.self) private var foundGames
     @State private var isAddingNonSteamGame = false

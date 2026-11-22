@@ -10,10 +10,13 @@ import Foundation
 // and the cache is removed immediately afterward. The token never appears in
 // argv and DepotDownloader never owns a second authentication session.
 //
-// Output streamed from DepotDownloader is parsed for:
+// It runs in a pseudo-terminal, and its output is parsed for:
+//   • ESC]9;4;1;<percent>BEL after every chunk                   → progress for
+//     the whole run (DepotDownloaderOutput)
 //   • " Pre-allocating ", " Validating ", percentage lines       → status phases
-//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress,
-//     made one bar for the whole run by DepotDownloadProgress
+//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress until
+//     the above arrives, made one bar by DepotDownloadProgress
+//   • a sign-in prompt                                           → stop, session expired
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
 @MainActor @Observable

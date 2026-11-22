@@ -5,14 +5,13 @@ import Foundation
 /// two-character ones (`ESC=`). In a pseudo-terminal DepotDownloader's
 /// runtime prints some of these on its own.
 func scrub(_ line: String) -> String {
-    var out = line.replacingOccurrences(of: "\r", with: "")
-    let pattern = #"\u001B(\[[0-9;?]*[ -/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)?|[()#][0-9A-Za-z]|[=>78])"#
-    if let re = try? NSRegularExpression(pattern: pattern) {
-        let range = NSRange(out.startIndex..., in: out)
-        out = re.stringByReplacingMatches(in: out, range: range, withTemplate: "")
-    }
-    return out
+    let out = line.replacingOccurrences(of: "\r", with: "")
+    return controlSequences.stringByReplacingMatches(
+        in: out, range: NSRange(out.startIndex..., in: out), withTemplate: "")
 }
+
+private let controlSequences = try! NSRegularExpression(
+    pattern: #"\u001B(\[[0-9;?]*[ -/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)?|[()#][0-9A-Za-z]|[=>78])"#)
 
 /// DepotDownloader's output as it arrives, run in a pseudo-terminal.
 ///

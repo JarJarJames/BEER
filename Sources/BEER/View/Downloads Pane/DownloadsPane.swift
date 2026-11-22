@@ -19,7 +19,7 @@ struct DownloadsPane: View {
                             ForEach(downloads.inProgress) { entry in
                                 DownloadRow(
                                     entry: entry,
-                                    onPause: depotCtl.pausableIDs.contains(entry.id)
+                                    onPause: depotCtl.pausableIDs.contains(entry.id) && entry.status != .cancelling
                                         ? { depotCtl.pause(entry.id, in: downloads) } : nil,
                                     onResume: entry.isPaused ? { resume(entry) } : nil
                                 )

@@ -30,4 +30,15 @@ final class ShellRunnerTerminalTests: XCTestCase {
         let ended = try await result
         XCTAssertNotEqual(ended.exitCode, 0)
     }
+
+    /// "é" is two bytes; a read can end between them.
+    func testACharacterSplitAcrossReadsWaitsForItsRest() {
+        let name = Array("Pokémon".utf8)
+        let split = name.firstIndex(of: 0xC3)! + 1
+        XCTAssertEqual(PseudoTerminal.unfinishedCharacter(at: Array(name[..<split])), 1)
+        XCTAssertEqual(PseudoTerminal.unfinishedCharacter(at: name), 0)
+        XCTAssertEqual(PseudoTerminal.unfinishedCharacter(at: Array("ok".utf8)), 0)
+        XCTAssertEqual(PseudoTerminal.unfinishedCharacter(at: Array(Array("🎮".utf8)[..<3])), 3)
+        XCTAssertEqual(PseudoTerminal.unfinishedCharacter(at: []), 0)
+    }
 }
