@@ -24,13 +24,19 @@ static class InstallSizeCommand
         var info = await AppInfo.RequestAsync(apps, appids);
         var owned = await ownedTask;
 
-        var depots = new List<FetchedDepot>();
         foreach (var appid in appids)
         {
             if (!info.TryGetValue(appid, out var app) || app is null)
                 throw new Exception($"Steam returned no app info for {appid}");
-            depots.AddRange(InstallSize.Depots(app.KeyValues, owned));
         }
+        // Shared depots (Steam's redistributables) are sized by the app they come from.
+        var otherIds = appids.SelectMany(a => GameUpdate.OtherApps(info[a]!.KeyValues)).Distinct().ToList();
+        var otherApps = (await AppInfo.RequestAsync(apps, otherIds))
+            .Where(a => a.Value is not null).ToDictionary(a => a.Key, a => a.Value!.KeyValues);
+
+        var depots = new List<FetchedDepot>();
+        foreach (var appid in appids)
+            depots.AddRange(InstallSize.Depots(info[appid]!.KeyValues, owned, otherApps));
 
         var byDlc = depots.Where(d => d.DlcAppId is not null).GroupBy(d => d.DlcAppId!.Value).ToList();
         var dlcInfo = await AppInfo.RequestAsync(apps, byDlc.Select(g => g.Key));

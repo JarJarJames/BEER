@@ -9,7 +9,7 @@ public class InstallSizeTests
 {
     sealed record Depot(string Id, string? MaxSize = null, string? ManifestSize = null,
         string? OsList = null, string? OsArch = null, string? Language = null,
-        string? LowViolence = null, string? DlcAppId = null);
+        string? LowViolence = null, string? DlcAppId = null, string? DepotFromApp = null);
 
     static readonly IReadOnlySet<uint> NoneOwned = new HashSet<uint>();
 
@@ -25,6 +25,7 @@ public class InstallSizeTests
             section[d.Id] = node;
             if (d.MaxSize is not null) node["maxsize"] = new KeyValue("maxsize", d.MaxSize);
             if (d.DlcAppId is not null) node["dlcappid"] = new KeyValue("dlcappid", d.DlcAppId);
+            if (d.DepotFromApp is not null) node["depotfromapp"] = new KeyValue("depotfromapp", d.DepotFromApp);
             if (d.ManifestSize is not null)
             {
                 var manifests = new KeyValue("manifests");
@@ -134,5 +135,32 @@ public class InstallSizeTests
         var app = App(new Depot("101", MaxSize: "1000"));
         app["depots"]["228980"] = new KeyValue("228980");
         Assert.Equal(new[] { 101U }, InstallSize.Depots(app, NoneOwned).Select(d => d.Id));
+    }
+
+    // Deus Ex: Human Revolution lists Steam's DirectX and VC++ depots with only
+    // `depotfromapp`; unsized, each took a game depot's share of the progress
+    // bar, and 110 MB of redistributables filled half of it.
+    [Fact]
+    public void SizesASharedDepotFromTheAppItComesFrom()
+    {
+        var game = App(
+            new Depot("228982", DepotFromApp: "228980"),
+            new Depot("228990", DepotFromApp: "228980"),
+            new Depot("238011", MaxSize: "16000000000"));
+        var redist = App(
+            new Depot("228982", MaxSize: "9688647"),
+            new Depot("228990", ManifestSize: "102931551"));
+        var depots = InstallSize.Depots(game, NoneOwned, new Dictionary<uint, KeyValue> { [228980] = redist });
+        Assert.Equal(
+            new Dictionary<string, ulong> { ["228982"] = 9688647, ["228990"] = 102931551, ["238011"] = 16000000000 },
+            InstallSize.BytesByDepot(depots));
+    }
+
+    [Fact]
+    public void ASharedDepotStaysUnsizedWithoutItsApp()
+    {
+        var game = App(new Depot("228982", DepotFromApp: "228980"), new Depot("238011", MaxSize: "1000"));
+        Assert.Null(InstallSize.Depots(game, NoneOwned, new Dictionary<uint, KeyValue>())[0].Size);
+        Assert.Null(InstallSize.Depots(game, NoneOwned)[0].Size);
     }
 }

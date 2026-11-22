@@ -16,7 +16,7 @@ extension DownloadsStore {
 
         var isActive: Bool {
             switch status {
-            case .queued, .running, .pausing: return true
+            case .queued, .running, .pausing, .cancelling: return true
             default: return false
             }
         }
@@ -31,6 +31,7 @@ extension DownloadsStore {
             case .queued: return "Queued"
             case .running(let phase): return phase
             case .pausing: return DownloadsStrings.pausing
+            case .cancelling: return DownloadsStrings.cancelling
             case .paused: return DownloadsStrings.paused
             case .completed: return "Installed"
             case .failed(let reason): return reason

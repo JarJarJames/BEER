@@ -7,6 +7,7 @@ enum DownloadsStrings {
     static let resume = "Resume"
     static let pausing = "Pausing…"
     static let paused = "Paused"
+    static let cancelling = "Cancelling…"
     static let resumeHelp = "Opens the game's page and carries on from what's already downloaded."
 
     // MARK: Library card badge

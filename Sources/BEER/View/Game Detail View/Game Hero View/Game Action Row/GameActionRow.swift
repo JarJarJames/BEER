@@ -76,7 +76,7 @@ struct GameActionRow: View {
                 .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
 
                 Button(role: .destructive) {
-                    model.cancelInstall(reason: "Cancelled.")
+                    model.cancelInstall()
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
                 }
@@ -84,7 +84,7 @@ struct GameActionRow: View {
             } else if model.download?.isPaused == true {
                 resumeButton
                 Button(role: .destructive) {
-                    model.cancelInstall(reason: "Cancelled.")
+                    model.cancelInstall()
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
                 }

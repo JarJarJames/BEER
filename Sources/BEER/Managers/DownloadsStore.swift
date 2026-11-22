@@ -96,9 +96,20 @@ final class DownloadsStore {
         entries[idx].fraction = 1
     }
 
+    /// A download already being cancelled stays that way.
     func markPausing(appID: Int) {
-        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        guard let idx = entries.firstIndex(where: { $0.id == appID }),
+              entries[idx].status != .cancelling else { return }
         entries[idx].status = .pausing
+    }
+
+    func markCancelling(appID: Int) {
+        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        entries[idx].status = .cancelling
+    }
+
+    func isCancelling(_ appID: Int) -> Bool {
+        entry(for: appID)?.status == .cancelling
     }
 
     /// DepotDownloader has exited; the progress bar stays where it stopped.
