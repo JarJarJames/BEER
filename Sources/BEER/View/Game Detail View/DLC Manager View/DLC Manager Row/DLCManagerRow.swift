@@ -3,7 +3,7 @@ import SwiftUI
 struct DLCManagerRow: View {
     let dlc: CloudSyncClient.DLCInfo
     let installed: Bool
-    @ObservedObject var model: DLCManagerViewModel
+    let model: DLCManagerViewModel
 
     var body: some View {
         let active = model.activeDownload(for: dlc)

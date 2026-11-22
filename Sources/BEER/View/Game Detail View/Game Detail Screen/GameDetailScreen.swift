@@ -2,7 +2,7 @@ import SwiftUI
 
 struct GameDetailScreen: View {
     let onBack: () -> Void
-    @StateObject private var model: GameDetailViewModel
+    @State private var model: GameDetailViewModel
     @AppStorage(AppearancePreferences.showsBackdropKey) private var showsBackdrop = AppearanceDefaults.showsBackdrop
     @AppStorage(AppearancePreferences.layoutKey) private var layout = AppearanceDefaults.layout
     @AppStorage(AppearancePreferences.shownStatsKey) private var shownStats = AppearanceDefaults.shownStats
@@ -15,7 +15,7 @@ struct GameDetailScreen: View {
 
     init(game: SteamLibraryGame, onBack: @escaping () -> Void, dependencies: GameDetailDependencies) {
         self.onBack = onBack
-        _model = StateObject(wrappedValue: GameDetailViewModel(game: game, dependencies: dependencies))
+        _model = State(initialValue: GameDetailViewModel(game: game, dependencies: dependencies))
     }
 
     var body: some View {

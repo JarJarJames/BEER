@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct GameActionRow: View {
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
     @Environment(BottleStore.self) private var bottles
     @Environment(ToolchainDetector.self) private var detector
 

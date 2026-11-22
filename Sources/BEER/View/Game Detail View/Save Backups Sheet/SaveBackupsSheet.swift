@@ -6,7 +6,7 @@ import SwiftUI
 
 struct SaveBackupsSheet: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    let model: GameDetailViewModel
 
     var body: some View {
         let busy = model.savesAreBusy(bottle)

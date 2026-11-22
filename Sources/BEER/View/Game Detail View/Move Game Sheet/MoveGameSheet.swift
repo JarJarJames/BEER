@@ -4,7 +4,7 @@ import SwiftUI
 /// game's size, then each place with its free space.
 struct MoveGameSheet: View {
     let bottle: Bottle
-    @ObservedObject var model: GameDetailViewModel
+    @Bindable var model: GameDetailViewModel
 
     var body: some View {
         let shortfall = model.moveShortfall

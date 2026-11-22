@@ -3,8 +3,8 @@ import Foundation
 
 /// State behind the shortcut icon sheet: the cover to crop, whether Steam's
 /// icon is big enough to offer, and the player's pick.
-@MainActor
-final class ShortcutIconViewModel: ObservableObject {
+@MainActor @Observable
+final class ShortcutIconViewModel {
     enum SteamIcon: Equatable {
         case checking
         /// Steam lists none, or none at 256×256 or larger.
@@ -19,10 +19,10 @@ final class ShortcutIconViewModel: ObservableObject {
     /// Keeps the icon address Steam gave, so it isn't asked for again.
     private let rememberClientIcon: (URL) -> Void
 
-    @Published private(set) var cover: CGImage?
-    @Published private(set) var steamIcon: SteamIcon
-    @Published var choice: ShortcutIconChoice
-    @Published private(set) var error: String?
+    private(set) var cover: CGImage?
+    private(set) var steamIcon: SteamIcon
+    var choice: ShortcutIconChoice
+    private(set) var error: String?
 
     init(
         game: SteamLibraryGame,

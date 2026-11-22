@@ -3,14 +3,14 @@ import Foundation
 /// Search text plus the filtering and ordering rules for the library grid.
 /// The rules are pure functions of the games and the set of installed bottles,
 /// so they can be tested without any store.
-@MainActor
-final class SteamLibraryGridViewModel: ObservableObject {
-    @Published var searchText: String = ""
+@MainActor @Observable
+final class SteamLibraryGridViewModel {
+    var searchText: String = ""
 
     /// The game whose page was opened last, and the list it was opened from,
     /// so going back can scroll to it. Kept in memory only: a fresh launch
     /// starts at the top.
-    private var openedGame: (appID: Int, filter: LibraryFilter, searchText: String, cardStyle: LibraryCardStyle)?
+    @ObservationIgnored private var openedGame: (appID: Int, filter: LibraryFilter, searchText: String, cardStyle: LibraryCardStyle)?
 
     /// Remembers the game whose page is opening and the list it came from.
     func gameOpened(_ appID: Int, filter: LibraryFilter, cardStyle: LibraryCardStyle) {

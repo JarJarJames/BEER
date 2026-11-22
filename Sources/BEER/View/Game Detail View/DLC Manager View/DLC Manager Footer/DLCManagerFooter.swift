@@ -2,7 +2,7 @@ import SwiftUI
 
 struct DLCManagerFooter: View {
     let pending: [CloudSyncClient.DLCInfo]
-    @ObservedObject var model: DLCManagerViewModel
+    let model: DLCManagerViewModel
     let onDone: () -> Void
 
     var body: some View {

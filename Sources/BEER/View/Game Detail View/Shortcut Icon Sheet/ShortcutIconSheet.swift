@@ -3,13 +3,13 @@ import SwiftUI
 /// Picks what a game's shortcuts show: a square of its cover, or Steam's own
 /// icon when Steam has one at 256×256 or larger.
 struct ShortcutIconSheet: View {
-    @StateObject private var model: ShortcutIconViewModel
     let onSave: (ShortcutIconChoice) -> Void
     let onCancel: () -> Void
+    @State private var model: ShortcutIconViewModel
 
     init(game: SteamLibraryGame, account: SteamCloudAccount?, rememberClientIcon: @escaping (URL) -> Void,
          onSave: @escaping (ShortcutIconChoice) -> Void, onCancel: @escaping () -> Void) {
-        _model = StateObject(wrappedValue: ShortcutIconViewModel(
+        _model = State(initialValue: ShortcutIconViewModel(
             game: game, account: account, rememberClientIcon: rememberClientIcon
         ))
         self.onSave = onSave

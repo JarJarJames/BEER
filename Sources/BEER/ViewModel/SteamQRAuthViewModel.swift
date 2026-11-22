@@ -3,11 +3,11 @@ import Foundation
 /// Drives one QR sign-in attempt for the sign-in screen and the Steam Cloud
 /// sheet: holds the challenge once Steam issues it, any failure, and the task
 /// polling for approval on the phone.
-@MainActor
-final class SteamQRAuthViewModel: ObservableObject {
-    @Published private(set) var session: SteamAuthStore.QRSession?
-    @Published private(set) var error: String?
-    private var task: Task<Void, Never>?
+@MainActor @Observable
+final class SteamQRAuthViewModel {
+    private(set) var session: SteamAuthStore.QRSession?
+    private(set) var error: String?
+    @ObservationIgnored private var task: Task<Void, Never>?
 
     /// Starts the attempt unless one is already running. `onApproved` runs once
     /// the user approves on their phone.

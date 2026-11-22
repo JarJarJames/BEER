@@ -4,7 +4,7 @@ struct SteamSignInView: View {
     @Environment(SteamLibraryStore.self) private var library
     @Environment(SteamAuthStore.self) private var auth
 
-    @StateObject private var qr = SteamQRAuthViewModel()
+    @State private var qr = SteamQRAuthViewModel()
 
     var body: some View {
         VStack(spacing: 20) {

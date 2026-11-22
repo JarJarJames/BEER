@@ -3,10 +3,10 @@ import Foundation
 /// Backs the per-bottle environment-variable editor. The list is edited as an
 /// ordered array rather than straight from the bottle's dictionary: a
 /// dictionary reorders as you type, which makes the rows jump under the cursor.
-@MainActor
-final class EnvironmentEditorViewModel: ObservableObject {
-    @Published var envVars: [EnvironmentVariable] = []
-    private var loadedFor: UUID?
+@MainActor @Observable
+final class EnvironmentEditorViewModel {
+    var envVars: [EnvironmentVariable] = []
+    @ObservationIgnored private var loadedFor: UUID?
 
     /// Seed once per bottle. Re-seeding on every redraw would fight the user's
     /// cursor.

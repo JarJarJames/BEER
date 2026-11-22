@@ -14,7 +14,7 @@ struct DLCManagerView: View {
     let emulatorApplied: Bool
     let onDone: () -> Void
 
-    @StateObject private var model: DLCManagerViewModel
+    @State private var model: DLCManagerViewModel
 
     init(
         game: SteamLibraryGame,
@@ -26,7 +26,7 @@ struct DLCManagerView: View {
     ) {
         self.emulatorApplied = emulatorApplied
         self.onDone = onDone
-        _model = StateObject(wrappedValue: DLCManagerViewModel(
+        _model = State(initialValue: DLCManagerViewModel(
             game: game, bottle: bottle, installDir: installDir, dependencies: dependencies
         ))
     }

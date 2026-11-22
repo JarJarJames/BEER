@@ -12,7 +12,7 @@ struct SteamCloudQRSheet: View {
 
     let onConnected: () -> Void
 
-    @StateObject private var qr = SteamQRAuthViewModel()
+    @State private var qr = SteamQRAuthViewModel()
 
     var body: some View {
         VStack(spacing: 18) {

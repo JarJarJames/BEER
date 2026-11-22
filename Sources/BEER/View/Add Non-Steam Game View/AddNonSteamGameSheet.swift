@@ -3,12 +3,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct AddNonSteamGameSheet: View {
-    @StateObject private var model: AddNonSteamGameViewModel
     @Environment(\.dismiss) private var dismiss
     @Environment(InstallVolumeMonitor.self) private var drives
+    @State private var model: AddNonSteamGameViewModel
 
     init(bottles: BottleStore, library: SteamLibraryStore, detector: ToolchainDetector, drives: InstallVolumeMonitor) {
-        _model = StateObject(wrappedValue: AddNonSteamGameViewModel(
+        _model = State(initialValue: AddNonSteamGameViewModel(
             bottles: bottles, library: library, detector: detector, drives: drives
         ))
     }
