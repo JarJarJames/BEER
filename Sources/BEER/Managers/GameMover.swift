@@ -3,18 +3,18 @@ import Foundation
 /// Moves installed games between this Mac and drives, and finishes moves a
 /// crash or a pulled drive interrupted. The file work is `GameMove`; this adds
 /// progress for the game page, Cancel, and the bottle update.
-@MainActor
-final class GameMover: ObservableObject {
+@MainActor @Observable
+final class GameMover {
     /// Moves under way, by bottle.
-    @Published private(set) var progress: [UUID: GameMoveProgress] = [:]
+    private(set) var progress: [UUID: GameMoveProgress] = [:]
 
-    var journal = GameMoveJournal(url: AppPaths.gameMovesURL)
-    var volumes: VolumeCatalog = .system
-    private var cancelFlags: [UUID: CancelFlag] = [:]
+    @ObservationIgnored var journal = GameMoveJournal(url: AppPaths.gameMovesURL)
+    @ObservationIgnored var volumes: VolumeCatalog = .system
+    @ObservationIgnored private var cancelFlags: [UUID: CancelFlag] = [:]
     /// Games whose interrupted move is being finished. Their journal entry
     /// is still in use, so a new move for them waits.
-    @Published private(set) var recovering: Set<UUID> = []
-    private var isFinishingMoves = false
+    private(set) var recovering: Set<UUID> = []
+    @ObservationIgnored private var isFinishingMoves = false
 
     func isMoving(_ bottleID: UUID) -> Bool { progress[bottleID] != nil || recovering.contains(bottleID) }
 

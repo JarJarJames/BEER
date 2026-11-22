@@ -1,27 +1,27 @@
 import Foundation
 
-@MainActor
-final class RuntimeInstaller: ObservableObject {
+@MainActor @Observable
+final class RuntimeInstaller {
     /// The GPTK the game page offers. Never a build this macOS can't run.
-    @Published private(set) var latestGPTK: RuntimeRelease?
+    private(set) var latestGPTK: RuntimeRelease?
     /// BEER's own GPTK builds, kept apart from Gcenx's. Includes ones this
     /// macOS can't run, so the Runtime Manager can show them greyed out.
-    @Published private(set) var beerReleases: [RuntimeRelease] = []
+    private(set) var beerReleases: [RuntimeRelease] = []
     /// Gcenx's GPTK builds.
-    @Published private(set) var availableReleases: [RuntimeRelease] = []
+    private(set) var availableReleases: [RuntimeRelease] = []
     /// Mainline Wine builds (Gcenx/macOS_Wine_builds) — the fallback for games
     /// GPTK's older Wine base can't run (e.g. missing USER32 functions).
-    @Published private(set) var availableWineBuilds: [RuntimeRelease] = []
-    @Published private(set) var installedRuntime: RuntimeCandidate?
-    @Published private(set) var isRefreshing = false
-    @Published private(set) var isInstalling = false
+    private(set) var availableWineBuilds: [RuntimeRelease] = []
+    private(set) var installedRuntime: RuntimeCandidate?
+    private(set) var isRefreshing = false
+    private(set) var isInstalling = false
     /// The tag currently being downloaded/installed, so the UI can show progress
     /// on the right row.
-    @Published private(set) var installingTag: String?
+    private(set) var installingTag: String?
     /// Bytes downloaded so far while the archive downloads; nil otherwise.
-    @Published private(set) var downloadProgress: ByteProgress?
-    @Published private(set) var statusMessage = "Ready"
-    @Published var lastError: String?
+    private(set) var downloadProgress: ByteProgress?
+    private(set) var statusMessage = "Ready"
+    var lastError: String?
 
     /// Fetches a GitHub API URL. Swappable so tests can answer without the network.
     private let fetch: (URLRequest) async throws -> (Data, URLResponse)

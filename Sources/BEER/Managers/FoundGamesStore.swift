@@ -2,18 +2,18 @@ import Foundation
 
 /// Games on connected drives that aren't in BEER, offered in a banner above
 /// the library, and adding the ones the player picks.
-@MainActor
-final class FoundGamesStore: ObservableObject {
-    @Published private(set) var found: [FoundGame] = []
+@MainActor @Observable
+final class FoundGamesStore {
+    private(set) var found: [FoundGame] = []
     /// Drives whose banner the player closed, until BEER restarts.
-    @Published private(set) var dismissedDriveIDs: Set<String> = []
-    @Published private(set) var isAdding = false
-    @Published var errors: [String] = []
+    private(set) var dismissedDriveIDs: Set<String> = []
+    private(set) var isAdding = false
+    var errors: [String] = []
 
-    var volumes: VolumeCatalog = .system
+    @ObservationIgnored var volumes: VolumeCatalog = .system
     /// Bumped by each scan, so a slow one finishing after a newer one can't
     /// put back games the newer one knew were added.
-    private var scanGeneration = 0
+    @ObservationIgnored private var scanGeneration = 0
 
     /// Found games grouped by drive, without the drives the player dismissed.
     var byDrive: [(drive: InstallVolume, games: [FoundGame])] {

@@ -1,12 +1,12 @@
 import Foundation
 
-@MainActor
-final class ToolchainDetector: ObservableObject {
-    @Published private(set) var candidates: [RuntimeCandidate] = []
+@MainActor @Observable
+final class ToolchainDetector {
+    private(set) var candidates: [RuntimeCandidate] = []
     /// The `beer-runtime.json` of each of BEER's own builds among `candidates`,
     /// by executable path. Read once per refresh, not on every redraw.
-    @Published private(set) var manifests: [String: BEERRuntimeManifest] = [:]
-    @Published private(set) var isRefreshing = false
+    private(set) var manifests: [String: BEERRuntimeManifest] = [:]
+    private(set) var isRefreshing = false
 
     func refresh() async {
         isRefreshing = true

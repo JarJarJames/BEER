@@ -12,9 +12,9 @@ import SwiftUI
 /// A button with a popover rather than a `Menu`: a toolbar menu draws only a
 /// plain title and icon, not the avatar and status line.
 struct SteamAccountMenu: View {
-    @EnvironmentObject private var library: SteamLibraryStore
-    @EnvironmentObject private var cloudAuth: SteamAuthStore
-    @EnvironmentObject private var presence: SteamPresenceStore
+    @Environment(SteamLibraryStore.self) private var library
+    @Environment(SteamAuthStore.self) private var cloudAuth
+    @Environment(SteamPresenceStore.self) private var presence
     @State private var isOpen = false
 
     var body: some View {

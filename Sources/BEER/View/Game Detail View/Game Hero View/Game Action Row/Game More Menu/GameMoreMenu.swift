@@ -4,7 +4,7 @@ import SwiftUI
 /// game, plus files, shortcuts and uninstalling once it's installed.
 struct GameMoreMenu: View {
     @ObservedObject var model: GameDetailViewModel
-    @EnvironmentObject private var bottles: BottleStore
+    @Environment(BottleStore.self) private var bottles
     @State private var isHovering = false
 
     /// Only a game BEER can launch gets the file and shortcut items.

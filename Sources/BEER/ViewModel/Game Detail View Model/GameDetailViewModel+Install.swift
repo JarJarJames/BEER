@@ -164,6 +164,7 @@ extension GameDetailViewModel {
             chosen.skippedDLC = leftOut.isEmpty ? nil : leftOut
             chosen.pausedDownload = nil
             await bottles.update(chosen)
+            if await discardIfCancelled() { return }
 
             do {
                 let result = try await depotCtl.installGame(
@@ -175,6 +176,7 @@ extension GameDetailViewModel {
                     depotBytes: depotBytes,
                     events: downloads.consume(appID: game.appID)
                 )
+                if await discardIfCancelled() { return }
 
                 // Apply the Steam emulator (GBE_Fork) so the game launches
                 // without a running Steam process. Lazily install the
@@ -230,6 +232,7 @@ extension GameDetailViewModel {
                     downloads.append(appID: game.appID, log: "Couldn't read Steam's launch options (\(msg)); using \(launchExe.lastPathComponent).")
                 }
 
+                if await discardIfCancelled() { return }
                 if let refreshed = bottles.bottles.first(where: { $0.id == bottleID }) {
                     await bottles.recordGameInstall(
                         refreshed,
@@ -254,6 +257,10 @@ extension GameDetailViewModel {
                 library.applyUpdateCheck([game.appID: .current])
                 await createShortcutsChosenAtInstall(appID: game.appID)
                 downloads.complete(appID: game.appID)
+            } catch _ where downloads.isCancelling(game.appID) {
+                // Stopped by Cancel; DepotDownloader has exited, so nothing
+                // writes into the folder once it's gone.
+                await discardInstall()
             } catch DepotDownloaderError.paused {
                 // Recorded on the bottle so it still shows as paused after a quit.
                 var paused = bottles.live(bottle)
@@ -320,18 +327,40 @@ extension GameDetailViewModel {
         if id == appID { resumeInstall() } else { resumeDLC(id) }
     }
 
-    func cancelInstall(reason: String) {
-        // We don't have process-kill plumbing yet; mark the UI state and
-        // remove the bottle. The running DepotDownloader will eventually
-        // exit on its own (it'll fail when its install dir disappears).
-        downloads.fail(appID: game.appID, reason: reason)
-        if let bottle = installedBottle {
-            Task { [self] in
-                await bottles.delete(bottle)
-                library.markUninstalled(appID: game.appID)
-                downloads.remove(appID: game.appID)
-            }
+    /// Cancel this game's download and delete everything it put on disk. A
+    /// paused download has nothing running, so its files go now. A running
+    /// one stops, and `startInstall` deletes them once DepotDownloader has
+    /// exited, or at its next step if it's setting up or finishing.
+    func cancelInstall() {
+        guard let entry = downloads.entry(for: game.appID), entry.isInProgress else { return }
+        if entry.isPaused {
+            Task { await discardInstall() }
+        } else {
+            depotCtl.cancel(game.appID, in: downloads)
         }
+    }
+
+    /// After each step of `startInstall`: true, with the files deleted, once
+    /// the download has been cancelled.
+    private func discardIfCancelled() async -> Bool {
+        guard downloads.isCancelling(game.appID) else { return false }
+        await discardInstall()
+        return true
+    }
+
+    /// Delete what a cancelled download put on disk: its bottle, the game's
+    /// folder (on a drive too) and its download log. Only a game that never
+    /// finished installing goes; one being updated keeps its files and saves.
+    private func discardInstall() async {
+        let appID = game.appID
+        if let bottle = bottles.findBottle(forAppID: appID), bottle.gameLaunchExecutable == nil {
+            await bottles.delete(bottle)
+            library.markUninstalled(appID: appID)
+        }
+        attempt("Delete the download log", log: Log.install) {
+            try FileManager.default.removeItemIfPresent(at: AppPaths.depotDownloaderLogURL(forAppID: appID))
+        }
+        downloads.remove(appID: appID)
     }
 
     /// Uninstalling a non-Steam game deletes the folder it was brought in as,

@@ -5,9 +5,9 @@ import Foundation
 // inline. Lives in memory only — finished installs persist via the
 // SteamLibraryStore + BottleStore, and a paused game download via its
 // bottle's `pausedDownload` (see `restorePaused`).
-@MainActor
-final class DownloadsStore: ObservableObject {
-    @Published private(set) var entries: [Entry] = []
+@MainActor @Observable
+final class DownloadsStore {
+    private(set) var entries: [Entry] = []
 
     var active: [Entry] { entries.filter(\.isActive) }
     /// Running or paused: the Downloads pane's top section.
@@ -96,9 +96,20 @@ final class DownloadsStore: ObservableObject {
         entries[idx].fraction = 1
     }
 
+    /// A download already being cancelled stays that way.
     func markPausing(appID: Int) {
-        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        guard let idx = entries.firstIndex(where: { $0.id == appID }),
+              entries[idx].status != .cancelling else { return }
         entries[idx].status = .pausing
+    }
+
+    func markCancelling(appID: Int) {
+        guard let idx = entries.firstIndex(where: { $0.id == appID }) else { return }
+        entries[idx].status = .cancelling
+    }
+
+    func isCancelling(_ appID: Int) -> Bool {
+        entry(for: appID)?.status == .cancelling
     }
 
     /// DepotDownloader has exited; the progress bar stays where it stopped.

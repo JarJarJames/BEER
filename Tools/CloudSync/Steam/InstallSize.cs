@@ -16,8 +16,12 @@ static class InstallSize
     /// shouldn't block the base game.
     ///
     /// Each depot's size is its `maxsize` (the installed size), falling back
-    /// to the public manifest's `size`.
-    public static List<FetchedDepot> Depots(KeyValue appInfo, IReadOnlySet<uint> ownedAppIds)
+    /// to the public manifest's `size`. A depot shared from another app
+    /// (`depotfromapp`, like Steam's DirectX and VC++ redistributables) lists
+    /// neither, so its size comes from that app's info in `otherApps` (see
+    /// `GameUpdate.OtherApps`).
+    public static List<FetchedDepot> Depots(
+        KeyValue appInfo, IReadOnlySet<uint> ownedAppIds, IReadOnlyDictionary<uint, KeyValue>? otherApps = null)
     {
         var fetched = new List<FetchedDepot>();
         foreach (var depot in appInfo["depots"].Children)
@@ -32,7 +36,7 @@ static class InstallSize
                 dlcAppId = dlcId;
             }
             if (!IsFetched(depot["config"])) continue;
-            fetched.Add(new FetchedDepot(id, dlcAppId, SizeOf(depot)));
+            fetched.Add(new FetchedDepot(id, dlcAppId, SizeOf(depot) ?? SharedSizeOf(depot, otherApps)));
         }
         return fetched;
     }
@@ -78,6 +82,15 @@ static class InstallSize
             if (value != KeyValue.Invalid && ulong.TryParse(value.Value, out var bytes) && bytes > 0)
                 return bytes;
         return null;
+    }
+
+    static ulong? SharedSizeOf(KeyValue depot, IReadOnlyDictionary<uint, KeyValue>? otherApps)
+    {
+        if (otherApps is null || depot["manifests"] != KeyValue.Invalid || depot["depotfromapp"] == KeyValue.Invalid)
+            return null;
+        return otherApps.TryGetValue(depot["depotfromapp"].AsUnsignedInteger(), out var other)
+            ? SizeOf(other["depots"][depot.Name!])
+            : null;
     }
 
     static string? Set(KeyValue value) =>

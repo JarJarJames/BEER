@@ -3,7 +3,7 @@ import SwiftUI
 struct LibraryPane: View {
     @Binding var selectedGameAppID: Int?
     @Binding var filter: LibraryFilter
-    @EnvironmentObject private var library: SteamLibraryStore
+    @Environment(SteamLibraryStore.self) private var library
     /// Owned here, not by the grid, so the search and the game to scroll back
     /// to outlive the grid while a game page is showing.
     @StateObject private var gridModel = SteamLibraryGridViewModel()

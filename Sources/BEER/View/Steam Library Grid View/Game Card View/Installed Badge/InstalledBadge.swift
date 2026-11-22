@@ -16,7 +16,7 @@ struct InstalledBadge: View {
     let hasUpdate: Bool
     var launchPhase: LaunchPhase?
 
-    @EnvironmentObject private var downloads: DownloadsStore
+    @Environment(DownloadsStore.self) private var downloads
 
     var body: some View {
         if let badge = LibraryCardBadge.resolve(

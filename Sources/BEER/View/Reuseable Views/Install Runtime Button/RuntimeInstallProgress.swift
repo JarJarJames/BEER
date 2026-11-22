@@ -3,7 +3,7 @@ import SwiftUI
 /// How far a runtime install has got: a bar with the megabytes while it
 /// downloads, then a spinner with the step (verifying, extracting).
 struct RuntimeInstallProgress: View {
-    @EnvironmentObject private var runtimeInstaller: RuntimeInstaller
+    @Environment(RuntimeInstaller.self) private var runtimeInstaller
 
     var body: some View {
         if let progress = runtimeInstaller.downloadProgress {

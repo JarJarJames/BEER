@@ -57,6 +57,7 @@ enum ShellRunner {
         environment: [String: String],
         currentDirectory: URL? = nil,
         stopper: ProcessStopper? = nil,
+        terminal: Bool = false,
         outputHandler: @escaping @Sendable (String) -> Void
     ) async throws -> ProcessResult {
         try await withCheckedThrowingContinuation { continuation in
@@ -65,10 +66,6 @@ enum ShellRunner {
             process.arguments = arguments
             process.environment = ProcessInfo.processInfo.environment.merging(environment) { _, new in new }
             process.currentDirectoryURL = currentDirectory
-
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = pipe
 
             let buffer = OutputBuffer()
 
@@ -85,25 +82,60 @@ enum ShellRunner {
             // `terminationHandler`, and whichever of the two fires second is
             // what actually resumes the continuation.
             let completion = CompletionGate()
-
-            pipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                guard !data.isEmpty else {
-                    pipe.fileHandleForReading.readabilityHandler = nil
-                    completion.markEOF { exitCode in
-                        continuation.resume(returning: ProcessResult(exitCode: exitCode, output: buffer.output))
-                    }
-                    return
+            let finish: @Sendable () -> Void = {
+                completion.markEOF { exitCode in
+                    continuation.resume(returning: ProcessResult(exitCode: exitCode, output: buffer.output))
                 }
-                guard let chunk = String(data: data, encoding: .utf8) else { return }
-                buffer.append(chunk)
-                outputHandler(chunk)
             }
 
             process.terminationHandler = { process in
                 completion.markTerminated(exitCode: process.terminationStatus) { exitCode in
                     continuation.resume(returning: ProcessResult(exitCode: exitCode, output: buffer.output))
                 }
+            }
+
+            if terminal {
+                // The child's stdin is the terminal too: a program checks both
+                // before it acts as if a person is watching.
+                let pty: PseudoTerminal
+                do {
+                    pty = try PseudoTerminal()
+                } catch {
+                    continuation.resume(throwing: error)
+                    return
+                }
+                process.standardInput = pty.child
+                process.standardOutput = pty.child
+                process.standardError = pty.child
+                do {
+                    try process.run()
+                } catch {
+                    pty.close()
+                    continuation.resume(throwing: error)
+                    return
+                }
+                pty.childStarted()
+                pty.read({ chunk in
+                    buffer.append(chunk)
+                    outputHandler(chunk)
+                }, onEnd: finish)
+                stopper?.attach(process)
+                return
+            }
+
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = pipe
+            pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                guard !data.isEmpty else {
+                    pipe.fileHandleForReading.readabilityHandler = nil
+                    finish()
+                    return
+                }
+                guard let chunk = String(data: data, encoding: .utf8) else { return }
+                buffer.append(chunk)
+                outputHandler(chunk)
             }
 
             do {

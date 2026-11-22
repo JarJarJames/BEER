@@ -2,8 +2,8 @@ import SwiftUI
 
 struct GameActionRow: View {
     @ObservedObject var model: GameDetailViewModel
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
 
     var body: some View {
         HStack(spacing: 12) {
@@ -76,15 +76,16 @@ struct GameActionRow: View {
                 .background(Color.accentColor.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
 
                 Button(role: .destructive) {
-                    model.cancelInstall(reason: "Cancelled.")
+                    model.cancelInstall()
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
                 }
                 .controlSize(.large)
+                .disabled(entry.status == .cancelling)
             } else if model.download?.isPaused == true {
                 resumeButton
                 Button(role: .destructive) {
-                    model.cancelInstall(reason: "Cancelled.")
+                    model.cancelInstall()
                 } label: {
                     Label("Cancel", systemImage: "xmark.circle")
                 }

@@ -2,8 +2,8 @@ import SwiftUI
 
 struct RuntimeRow: View {
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
-    @EnvironmentObject private var detector: ToolchainDetector
+    @Environment(BottleStore.self) private var bottles
+    @Environment(ToolchainDetector.self) private var detector
 
     var body: some View {
         let bottleID = bottle.id

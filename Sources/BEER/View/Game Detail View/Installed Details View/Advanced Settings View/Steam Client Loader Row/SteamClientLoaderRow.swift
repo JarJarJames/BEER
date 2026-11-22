@@ -2,7 +2,7 @@ import SwiftUI
 
 struct SteamClientLoaderRow: View {
     let bottle: Bottle
-    @EnvironmentObject private var bottles: BottleStore
+    @Environment(BottleStore.self) private var bottles
 
     var body: some View {
         let bottleID = bottle.id

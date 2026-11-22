@@ -13,12 +13,12 @@ import Foundation
 // D3DMetal is deliberately NOT here — it's Apple's, bundled only inside GPTK's
 // Wine, so it isn't installable into mainline Wine (and isn't offered there).
 
-@MainActor
-final class GraphicsTranslatorInstaller: ObservableObject {
-    @Published private(set) var installed: Set<GraphicsTranslator> = []
-    @Published private(set) var busy: GraphicsTranslator? = nil
-    @Published private(set) var statusMessage = ""
-    @Published var lastError: String?
+@MainActor @Observable
+final class GraphicsTranslatorInstaller {
+    private(set) var installed: Set<GraphicsTranslator> = []
+    private(set) var busy: GraphicsTranslator? = nil
+    private(set) var statusMessage = ""
+    var lastError: String?
 
     func refresh() {
         installed = Set(GraphicsTranslator.allCases.filter { isDownloaded($0) })

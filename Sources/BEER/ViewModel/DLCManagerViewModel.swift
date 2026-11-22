@@ -17,7 +17,6 @@ final class DLCManagerViewModel: ObservableObject {
     @Published private(set) var isInstallingAll = false
     @Published private(set) var isCheckingSpace = false
     var installSpaceCheck = InstallSpaceCheck()
-    private var storeChanges: Set<AnyCancellable> = []
 
     init(game: SteamLibraryGame, bottle: Bottle, installDir: URL, dependencies: GameDetailDependencies) {
         self.game = game
@@ -28,13 +27,6 @@ final class DLCManagerViewModel: ObservableObject {
         depotCtl = dependencies.depotCtl
         downloads = dependencies.downloads
         cloudAuth = dependencies.cloudAuth
-
-        for publisher in [dlcStore.objectWillChange, bottles.objectWillChange, depotCtl.objectWillChange,
-                          downloads.objectWillChange, cloudAuth.objectWillChange] {
-            publisher
-                .sink { [weak self] _ in self?.objectWillChange.send() }
-                .store(in: &storeChanges)
-        }
     }
 
     private var liveBottle: Bottle { bottles.live(bottle) }

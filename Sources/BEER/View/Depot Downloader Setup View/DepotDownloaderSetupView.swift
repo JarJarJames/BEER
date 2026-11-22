@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct DepotDownloaderSetupView: View {
-    @EnvironmentObject private var depot: DepotDownloaderInstaller
+    @Environment(DepotDownloaderInstaller.self) private var depot
 
     var body: some View {
         VStack(spacing: 22) {

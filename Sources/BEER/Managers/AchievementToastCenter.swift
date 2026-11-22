@@ -1,18 +1,17 @@
 import AchievementUI
 import AppKit
-import Combine
 import SwiftUI
 
 /// A tiny event bus for "an achievement just unlocked" toasts. One shared
 /// instance so any `AchievementWatcher` (there is one per running game) can
 /// post to it without needing a view hierarchy reference.
-@MainActor
-final class AchievementToastCenter: ObservableObject {
+@MainActor @Observable
+final class AchievementToastCenter {
     static let shared = AchievementToastCenter()
 
-    @Published private(set) var current: AchievementDisplayInfo?
-    private var queue: [AchievementDisplayInfo] = []
-    private var dismissTask: Task<Void, Never>?
+    private(set) var current: AchievementDisplayInfo?
+    @ObservationIgnored private var queue: [AchievementDisplayInfo] = []
+    @ObservationIgnored private var dismissTask: Task<Void, Never>?
 
     func post(_ achievements: [AchievementDisplayInfo]) {
         queue.append(contentsOf: achievements)

@@ -6,15 +6,15 @@ import Foundation
 // Sign-in is QR-only: the user scans a code with the Steam Mobile App (see
 // SteamAuthStore), and we pull the owned-games list through that authenticated
 // client session via the CloudSync helper — no Steam Web API key, no password.
-@MainActor
-final class SteamLibraryStore: ObservableObject {
-    @Published var account: SteamAccount = .signedOut
-    @Published private(set) var games: [SteamLibraryGame] = []
-    @Published private(set) var isFetchingLibrary = false
-    @Published var lastError: String?
+@MainActor @Observable
+final class SteamLibraryStore {
+    var account: SteamAccount = .signedOut
+    private(set) var games: [SteamLibraryGame] = []
+    private(set) var isFetchingLibrary = false
+    var lastError: String?
 
     private let cloudClient = CloudSyncClient()
-    var updateCheck = GameUpdateCheck()
+    @ObservationIgnored var updateCheck = GameUpdateCheck()
 
     func load() {
         guard let data = try? Data(contentsOf: AppPaths.steamLibraryStateURL),

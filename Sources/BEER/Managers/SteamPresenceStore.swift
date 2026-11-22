@@ -6,18 +6,18 @@ import SwiftUI
 // BEER's one Steam session (`SteamSessionHost`), the same logon every other
 // Steam call uses.
 
-@MainActor
-final class SteamPresenceStore: ObservableObject {
+@MainActor @Observable
+final class SteamPresenceStore {
     /// Nil until Steam has told us who we are.
-    @Published private(set) var persona: SteamPersona?
-    @Published private(set) var isConnected = false
+    private(set) var persona: SteamPersona?
+    private(set) var isConnected = false
     /// The status the user picked. Applied on every (re)connect, so it survives
     /// restarts and outlives any one session.
-    @Published private(set) var desiredState: SteamPersonaState = .online
-    @Published var lastError: String?
+    private(set) var desiredState: SteamPersonaState = .online
+    var lastError: String?
 
     private let client = CloudSyncClient()
-    private var session: SteamSessionHost?
+    @ObservationIgnored private var session: SteamSessionHost?
     private let inbox = PresenceInbox()
 
     // MARK: - Lifecycle

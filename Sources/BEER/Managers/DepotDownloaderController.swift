@@ -10,31 +10,34 @@ import Foundation
 // and the cache is removed immediately afterward. The token never appears in
 // argv and DepotDownloader never owns a second authentication session.
 //
-// Output streamed from DepotDownloader is parsed for:
+// It runs in a pseudo-terminal, and its output is parsed for:
+//   • ESC]9;4;1;<percent>BEL after every chunk                   → progress for
+//     the whole run (DepotDownloaderOutput)
 //   • " Pre-allocating ", " Validating ", percentage lines       → status phases
-//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress,
-//     made one bar for the whole run by DepotDownloadProgress
+//   • "  ##.##% ..." or "Downloaded XXX / YYY MB"                → progress until
+//     the above arrives, made one bar by DepotDownloadProgress
+//   • a sign-in prompt                                           → stop, session expired
 //   • "Total downloaded: ..." or "Depot ... downloaded"          → completion
 
-@MainActor
-final class DepotDownloaderController: ObservableObject {
-    @Published var lastError: String?
-    @Published private(set) var activeDownloads = 0
+@MainActor @Observable
+final class DepotDownloaderController {
+    var lastError: String?
+    private(set) var activeDownloads = 0
 
     var isBusy: Bool { activeDownloads > 0 }
 
     /// Downloads Pause can stop right now, by Downloads entry: DepotDownloader
     /// is running for them. Not during bottle setup or emulator patching.
-    @Published private(set) var pausableIDs: Set<Int> = []
-    private var stoppers: [Int: ProcessStopper] = [:]
+    private(set) var pausableIDs: Set<Int> = []
+    @ObservationIgnored private var stoppers: [Int: ProcessStopper] = [:]
 
     private let cloudClient = CloudSyncClient()
-    private var authSessionDepth = 0
-    private var authCacheURL: URL?
+    @ObservationIgnored private var authSessionDepth = 0
+    @ObservationIgnored private var authCacheURL: URL?
 
     /// Where the in-flight credential cache's path is recorded, so a launch
     /// after a crash can delete it. Tests point this at a temporary folder.
-    var stateURL = AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
+    @ObservationIgnored var stateURL = AppPaths.applicationSupport.appendingPathComponent("depotdownloader-state.json")
 
     func load() {
         // If the app was terminated during a download, remove the transient
@@ -246,7 +249,14 @@ final class DepotDownloaderController: ObservableObject {
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
 
-        let exit = try await runDepotDownloader(args: args, stopper: stopper) { line in
+        let lastRunProgress = Box<Double>(-1)
+
+        let exit = try await runDepotDownloader(args: args, stopper: stopper, progressHandler: { fraction in
+            // The whole run's own count, after every chunk; see `DepotDownloaderOutput`.
+            guard fraction > lastRunProgress.value else { return }
+            lastRunProgress.value = fraction
+            Task { @MainActor in events(.progress(fraction)) }
+        }) { line in
             // Skip per-chunk progress lines; everything else (logon, licence and
             // ownership messages) is what a failed run needs.
             if parseProgressFraction(line) == nil {
@@ -261,8 +271,10 @@ final class DepotDownloaderController: ObservableObject {
                 Task { @MainActor in events(.status(phase)) }
             }
 
-            // Progress, for the whole download rather than the depot it's on
+            // Progress, for the whole download rather than the depot it's on.
+            // Only until the run's own count arrives, which is exact.
             if let fraction = progress.value.update(with: line),
+               lastRunProgress.value < 0 || fraction == 1,
                fraction - lastEmittedProgress.value > 0.001 || fraction == 1 {
                 lastEmittedProgress.value = fraction
                 Task { @MainActor in events(.progress(fraction)) }
@@ -273,7 +285,8 @@ final class DepotDownloaderController: ObservableObject {
             // back to the interactive password prompt that we can't satisfy.
             let l = line.lowercased()
             if l.contains("logon requires a username and password or access token") ||
-               l.contains("enter account password for") {
+               l.contains("enter account password for") ||
+               l.contains("2 factor auth code") || l.contains("authentication code sent to your email") {
                 sessionExpired.value = true
             }
 
@@ -295,13 +308,14 @@ final class DepotDownloaderController: ObservableObject {
             }
         }
 
+        // Before the pause check: BEER stops it at a sign-in prompt too.
+        if sessionExpired.value {
+            throw DepotDownloaderError.sessionExpired
+        }
+
         // Whatever it printed on the way out, it stopped because it was told to.
         if stopper.wasStopped {
             throw DepotDownloaderError.paused
-        }
-
-        if sessionExpired.value {
-            throw DepotDownloaderError.sessionExpired
         }
 
         if let detail = authFailure.value {
@@ -326,6 +340,14 @@ final class DepotDownloaderController: ObservableObject {
         guard let stopper = stoppers[id] else { return }
         downloads.markPausing(appID: id)
         stopper.stop()
+    }
+
+    /// Mark Downloads entry `id` as cancelled and stop its DepotDownloader run
+    /// if one is going. The install that started it deletes its files once
+    /// the process has exited, so nothing is written into a deleted folder.
+    func cancel(_ id: Int, in downloads: DownloadsStore) {
+        downloads.markCancelling(appID: id)
+        stoppers[id]?.stop()
     }
 
     // MARK: - Arguments
@@ -362,15 +384,19 @@ final class DepotDownloaderController: ObservableObject {
 
     // MARK: - Process invocation
 
+    /// In a pseudo-terminal, for every download: only there does it report
+    /// the whole run's progress after each chunk (see `DepotDownloaderOutput`).
+    /// A sign-in prompt it would wait at forever stops it instead, and reaches
+    /// `lineHandler` like any other line.
     private func runDepotDownloader(
         args: [String],
         stopper: ProcessStopper,
+        progressHandler: @escaping @Sendable (Double) -> Void,
         lineHandler: @escaping @Sendable (String) -> Void
     ) async throws -> Int32 {
         let exe = AppPaths.depotDownloaderExecutableURL.path
 
-        // Line-buffering layer over ShellRunner's chunk callback.
-        let leftover = Box("")
+        let output = Box(DepotDownloaderOutput())
         let result: ProcessResult
         do {
             result = try await ShellRunner.run(
@@ -378,29 +404,28 @@ final class DepotDownloaderController: ObservableObject {
                 arguments: args,
                 environment: [
                     "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-                    "DOTNET_NOLOGO": "1"
+                    "DOTNET_NOLOGO": "1",
+                    // It checks TERM before it sends progress to a terminal.
+                    "TERM": "xterm-256color"
                 ],
                 currentDirectory: AppPaths.depotDownloaderDirectory,
                 stopper: stopper,
+                terminal: true,
                 outputHandler: { chunk in
-                    let combined = leftover.value + chunk
-                    var lines = combined.components(separatedBy: "\n")
-                    if !combined.hasSuffix("\n"), let last = lines.last {
-                        leftover.value = last
-                        lines.removeLast()
-                    } else {
-                        leftover.value = ""
-                    }
-                    for line in lines where !line.isEmpty {
-                        lineHandler(scrub(line))
+                    let read = output.value.consume(chunk)
+                    read.progress.forEach(progressHandler)
+                    read.lines.forEach(lineHandler)
+                    if let prompt = read.prompt {
+                        lineHandler(prompt)
+                        stopper.stop()
                     }
                 }
             )
         } catch {
             throw DepotDownloaderError.spawnFailed(error.localizedDescription)
         }
-        if !leftover.value.isEmpty {
-            lineHandler(scrub(leftover.value))
+        if let rest = output.value.finish() {
+            lineHandler(rest)
         }
         return result.exitCode
     }
