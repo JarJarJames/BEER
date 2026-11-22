@@ -9,13 +9,13 @@ extension GameDetailViewModel {
     /// The Play prompt's Update First: the same download as Reinstall / Validate,
     /// which only fetches what changed.
     func updateInsteadOfPlaying() {
-        updateBeforePlay = nil
+        dialog = nil
         startInstallOrLogin()
     }
 
     func playWithoutUpdating() {
-        guard let bottle = updateBeforePlay else { return }
-        updateBeforePlay = nil
+        guard case .updateBeforePlay(let bottle) = dialog else { return }
+        dialog = nil
         launch(bottle, skippingUpdatePrompt: true)
     }
 
@@ -47,7 +47,7 @@ extension GameDetailViewModel {
         }
         // Before the save pull: saves from a newer build may not load in this one.
         if !skippingUpdatePrompt, offersUpdateBeforePlay {
-            updateBeforePlay = installedBottle
+            dialog = .updateBeforePlay(installedBottle)
             return
         }
         // Before the save pull and Discord, which would be for nothing.
@@ -144,7 +144,7 @@ extension GameDetailViewModel {
         } catch CloudSyncError.restoreConflict(let conflict) {
             // Playing on either set of saves before choosing would
             // make the choice for the player. Ask, then launch.
-            restoreConflictPrompt = RestoreConflictPrompt(conflict: conflict, bottle: installedBottle, retry: .launch)
+            sheet = .restoreConflict(RestoreConflictPrompt(conflict: conflict, bottle: installedBottle, retry: .launch))
             return false
         } catch CloudSyncClientError.authExpired {
             cloudAuth.sessionExpired = true

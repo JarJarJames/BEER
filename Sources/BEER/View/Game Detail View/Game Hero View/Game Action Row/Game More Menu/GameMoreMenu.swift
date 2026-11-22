@@ -18,7 +18,7 @@ struct GameMoreMenu: View {
             GameOrganizeMenuItems(game: model.game)
             Button(GameOrganizeStrings.customizeArtwork) {
                 model.artworkError = nil
-                model.isShowingArtwork = true
+                model.sheet = .artwork
             }
             if let bottle = launchableBottle {
                 Divider()
@@ -28,7 +28,7 @@ struct GameMoreMenu: View {
                 Divider()
                 Button(GameShortcutStrings.createDesktop) { model.createShortcut(.desktop) }
                 Button(GameShortcutStrings.createApplication) { model.createShortcut(.application) }
-                Button(GameShortcutStrings.editIcon) { model.isShowingShortcutIcon = true }
+                Button(GameShortcutStrings.editIcon) { model.sheet = .shortcutIcon }
                 Divider()
                 if model.game.effectiveIsNonSteam {
                     Button("Remove Game…", role: .destructive, action: model.requestUninstall)

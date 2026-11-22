@@ -54,7 +54,7 @@ struct SaveBackupsSheet: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button(SaveRestoreStrings.doneButton) { model.isShowingSaveBackups = false }
+                Button(SaveRestoreStrings.doneButton) { model.sheet = nil }
                     .keyboardShortcut(.defaultAction)
             }
         }

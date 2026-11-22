@@ -52,7 +52,7 @@ struct MoveGameSheet: View {
                 .keyboardShortcut(.defaultAction)
                 .disabled(model.moveTarget == nil || model.moveSourceBytes == nil || shortfall != nil)
 
-                Button { model.isShowingMoveSheet = false } label: {
+                Button { model.sheet = nil } label: {
                     Text(GameMoveStrings.cancelButton)
                         .frame(width: InstallSheetLayout.buttonWidth)
                 }

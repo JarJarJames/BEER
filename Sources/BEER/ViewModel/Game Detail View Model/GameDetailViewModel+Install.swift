@@ -5,7 +5,7 @@ extension GameDetailViewModel {
         requestInstall()
     }
 
-    var preferredDefaultRuntime: RuntimeCandidate? { detector.preferredGameRuntime }
+    var preferredDefaultRuntime: RuntimeCandidate? { preferredRuntime() }
 
     /// Show the install sheet: the game's size, where it can go and each
     /// place's free space, with Install turned off when it won't fit. Nothing
@@ -16,7 +16,7 @@ extension GameDetailViewModel {
         guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
-            isShowingCloudConnect = true
+            sheet = .cloudConnect
             return
         }
         installSpaceReport = nil
@@ -24,11 +24,11 @@ extension GameDetailViewModel {
         // A resumed download leaves out what was left out before.
         skippedDLC = Set(bottles.findBottle(forAppID: game.appID)?.skippedDLC?.map(\.appID) ?? [])
         prepareInstallTargets()
-        isShowingInstallSheet = true
+        sheet = .install
 
         Task { [self] in
             let size = await installSpaceCheck.size(appIDs: [game.appID], account: steamAccount)
-            guard isShowingInstallSheet else { return }
+            guard sheet == .install else { return }
             installSize = size
             await assessInstallTarget()
         }
@@ -39,7 +39,7 @@ extension GameDetailViewModel {
         let checked = installSpaceReport?.verdict
         let leftOut = installSize?.dlc.filter { skippedDLC.contains($0.appID) } ?? []
         let depots = installSize?.depots(leavingOut: leftOut)
-        isShowingInstallSheet = false
+        sheet = nil
         if bottles.findBottle(forAppID: game.appID) == nil {
             UserDefaults.standard.set(target.volume?.uuid, forKey: InstallPreferences.lastDriveKey)
         }
@@ -74,7 +74,7 @@ extension GameDetailViewModel {
         guard bottles.requireRosetta() else { return }
         guard let steamAccount = cloudAuth.account, !cloudAuth.sessionExpired else {
             shouldResumeInstallAfterCloudConnect = true
-            isShowingCloudConnect = true
+            sheet = .cloudConnect
             return
         }
         isStartingInstall = true
@@ -105,7 +105,7 @@ extension GameDetailViewModel {
                 downloads.append(appID: game.appID, log: note)
             case .short(let shortfall):
                 downloads.remove(appID: game.appID)
-                diskSpaceShortfall = shortfall
+                dialog = .diskSpaceShortfall(shortfall)
                 return
             }
 
@@ -272,7 +272,7 @@ extension GameDetailViewModel {
                 cloudAuth.sessionExpired = true
                 shouldResumeInstallAfterCloudConnect = true
                 downloads.fail(appID: game.appID, reason: "Steam sign-in expired. Reconnect to resume the download.")
-                isShowingCloudConnect = true
+                sheet = .cloudConnect
             } catch _ where drive.map({ !GameFolders.isConnected($0, volumes: .system) }) ?? false {
                 // Whatever DepotDownloader said, the cause is the drive. What
                 // came down is on it; Resume continues from there.
@@ -368,9 +368,9 @@ extension GameDetailViewModel {
     /// Either asks when its drive isn't connected: the files stay there.
     func requestUninstall() {
         if installLocation?.missingDriveName != nil {
-            confirmRemoveWithDriveMissing = true
+            dialog = .removeWithDriveMissing
         } else if game.effectiveIsNonSteam {
-            confirmRemoveNonSteamGame = true
+            dialog = .removeNonSteamGame
         } else {
             uninstall()
         }

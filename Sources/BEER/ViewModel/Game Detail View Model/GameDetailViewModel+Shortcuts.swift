@@ -26,7 +26,7 @@ extension GameDetailViewModel {
 
     /// The icon sheet saved a new pick: the game's shortcuts get it too.
     func shortcutIconSaved(_ choice: ShortcutIconChoice) {
-        isShowingShortcutIcon = false
+        sheet = nil
         library.setShortcutIcon(choice, appID: appID)
         Task { [self] in
             do {

@@ -19,7 +19,7 @@ struct DLCRow: View {
                             .font(.callout)
                     }
                     Spacer()
-                    Button("Manage…") { model.isShowingDLCManager = true }
+                    Button("Manage…") { model.sheet = .dlcManager }
                         .controlSize(.small)
 
                 case .loading:

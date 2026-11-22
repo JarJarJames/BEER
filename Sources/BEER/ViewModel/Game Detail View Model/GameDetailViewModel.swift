@@ -24,27 +24,20 @@ final class GameDetailViewModel {
     let drives: InstallVolumeMonitor
     let mover: GameMover
 
-    var isShowingCloudConnect: Bool = false
-    var isShowingDLCManager: Bool = false
+    /// The sheet that's up, if any. Opening one replaces whatever was up.
+    var sheet: GameDetailSheet?
+    /// The confirmation or alert that's up, if any.
+    var dialog: GameDetailDialog?
+    /// An install waiting on sign-in: the install sheet opens once the
+    /// sign-in sheet closes signed in.
     var shouldResumeInstallAfterCloudConnect: Bool = false
     var cloudSyncMessage: String?
     var cloudSyncIsError: Bool = false
-    var confirmClearBottle: Bottle?
-    var isShowingSaveBackups: Bool = false
     var saveBackups: [CloudSaveSnapshot] = []
-    /// Set while the restore confirmation is up.
-    var restorePlanToConfirm: SaveRestorePlan?
     /// Shown inside the backups sheet: why a restore couldn't start or failed.
     var saveBackupsError: String?
     /// Kept here rather than read in `body`, which redraws on every store tick.
     var pendingRestore: PendingSaveRestore?
-    var restoreConflictPrompt: RestoreConflictPrompt?
-    var confirmRemoveNonSteamGame: Bool = false
-    /// Set while Play asks whether to update an out-of-date game first.
-    var updateBeforePlay: Bottle?
-    /// Set when an install was refused because the disk can't hold it.
-    var diskSpaceShortfall: DiskSpaceShortfall?
-    var isShowingInstallSheet: Bool = false
     /// The install sheet's free space for the chosen place; nil while it's looked up.
     var installSpaceReport: InstallSpaceReport?
     /// Steam's size for the game; nil while it's asked.
@@ -56,10 +49,6 @@ final class GameDetailViewModel {
     var installTarget: InstallTarget?
     /// Shown under the install sheet's list: why the place is fixed.
     var installNote: String?
-    /// Uninstalling a game whose drive isn't connected leaves its files there,
-    /// so it asks first.
-    var confirmRemoveWithDriveMissing: Bool = false
-    var isShowingMoveSheet: Bool = false
     var moveOptions: [InstallTargetOption] = []
     var moveTarget: InstallTarget?
     /// What the game takes up now; nil while it's measured.
@@ -68,8 +57,8 @@ final class GameDetailViewModel {
     var moveMessage: String?
     var moveIsError: Bool = false
     @ObservationIgnored var installSpaceCheck = InstallSpaceCheck()
-    var isShowingShortcutIcon: Bool = false
-    var isShowingArtwork: Bool = false
+    /// The runtime a new install gets. Tests swap this out.
+    @ObservationIgnored var preferredRuntime: @MainActor () -> RuntimeCandidate?
     var artworkError: String?
     /// The installed game's folder size, once measured for the Size stat.
     var installedBytes: Int64?
@@ -106,6 +95,7 @@ final class GameDetailViewModel {
         dlcStore = dependencies.dlcStore
         drives = dependencies.drives
         mover = dependencies.mover
+        preferredRuntime = { [detector = dependencies.detector] in detector.preferredGameRuntime }
     }
 
     /// The library's current copy of this game; the snapshot the screen was

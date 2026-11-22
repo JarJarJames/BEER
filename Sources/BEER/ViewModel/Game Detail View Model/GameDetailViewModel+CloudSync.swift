@@ -25,7 +25,7 @@ extension GameDetailViewModel {
                 if !report.failures.isEmpty { parts.append("\(report.failures.count) failed") }
                 cloudSyncMessage = parts.joined(separator: ", ") + "."
             } catch CloudSyncError.restoreConflict(let conflict) {
-                restoreConflictPrompt = RestoreConflictPrompt(conflict: conflict, bottle: bottle, retry: .sync(pull: pull, push: push))
+                sheet = .restoreConflict(RestoreConflictPrompt(conflict: conflict, bottle: bottle, retry: .sync(pull: pull, push: push)))
             } catch {
                 showCloudError(error)
             }
@@ -51,12 +51,21 @@ extension GameDetailViewModel {
         }
     }
 
-    /// Called when the QR sheet finishes connecting. Brings back the install
-    /// sheet for an install that was waiting on sign-in.
+    /// Called when the QR sheet finishes connecting, just before it closes
+    /// itself. An install waiting on sign-in carries on in `sheetClosed()`:
+    /// opening the install sheet here would be closed along with this one.
     func cloudDidConnect() {
         cloudSyncMessage = "Connected to Steam Cloud as \(cloudAuth.account?.accountName ?? "?")."
         cloudSyncIsError = false
-        if shouldResumeInstallAfterCloudConnect {
+    }
+
+    /// SwiftUI closed the sheet that was up (Esc, or a sheet dismissing
+    /// itself). Closing the sign-in sheet signed in brings back the install
+    /// sheet for an install that was waiting on it.
+    func sheetClosed() {
+        let closed = sheet
+        sheet = nil
+        if closed == .cloudConnect, shouldResumeInstallAfterCloudConnect, isSteamConnected {
             shouldResumeInstallAfterCloudConnect = false
             requestInstall()
         }

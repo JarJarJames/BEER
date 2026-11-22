@@ -6,7 +6,7 @@ extension GameDetailViewModel {
     /// open, so they're listed again here, keeping the player's choice while
     /// it's still there.
     func drivesChanged() {
-        if isShowingInstallSheet {
+        if sheet == .install {
             let chosen = installTarget
             prepareInstallTargets()
             if let kept = Self.stillThere(chosen, in: installOptions) { installTarget = kept }
@@ -14,10 +14,10 @@ extension GameDetailViewModel {
             Task { await assessInstallTarget() }
         }
 
-        if isShowingMoveSheet, let bottle = installedBottle {
+        if sheet == .move, let bottle = installedBottle {
             // The game's own drive went away: there's nothing to move from.
             guard moveBlockedReason(bottle) == nil else {
-                isShowingMoveSheet = false
+                sheet = nil
                 return
             }
             let chosen = moveTarget
