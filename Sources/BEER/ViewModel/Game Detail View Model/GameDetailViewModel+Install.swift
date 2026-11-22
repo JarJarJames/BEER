@@ -165,10 +165,6 @@ extension GameDetailViewModel {
             chosen.pausedDownload = nil
             await bottles.update(chosen)
             if await discardIfCancelled() { return }
-            // A game that never finished installing comes down in full, so
-            // its folder filling up shows how far along it is. An update's
-            // files already take their full space.
-            let neverInstalled = existing?.gameLaunchExecutable == nil
 
             do {
                 let result = try await depotCtl.installGame(
@@ -178,7 +174,6 @@ extension GameDetailViewModel {
                     auth: steamAccount,
                     depots: depots,
                     depotBytes: depotBytes,
-                    measuredTotal: neverInstalled ? DownloadedBytes.total(of: depots, sizes: depotBytes) : nil,
                     events: downloads.consume(appID: game.appID)
                 )
                 if await discardIfCancelled() { return }

@@ -91,10 +91,6 @@ final class DepotDownloaderController {
     /// `installDir` is the game's folder, inside its bottle or on a drive.
     /// `depotBytes` is each depot's size from the install sheet's lookup, so
     /// a big depot takes up more of the progress bar than a small one.
-    /// `measuredTotal`, for a game that was never installed, is the whole
-    /// download's size: the bar then also follows the folder filling up (see
-    /// `DownloadedBytes`). An update rewrites files that already take their
-    /// full space, so it passes nil.
     func installGame(
         appID: Int,
         gameName: String,
@@ -102,7 +98,6 @@ final class DepotDownloaderController {
         auth: SteamCloudAccount,
         depots: [Int]? = nil,
         depotBytes: [Int: Int64] = [:],
-        measuredTotal: Int64? = nil,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws -> InstallResult {
         // Say the drive is missing, rather than fail on a path that's gone.
@@ -110,7 +105,7 @@ final class DepotDownloaderController {
         try FileManager.default.createDirectory(at: installDir, withIntermediateDirectories: true)
 
         try await download(appID: appID, downloadID: appID, into: installDir, auth: auth,
-                           depots: depots, depotBytes: depotBytes, measuredTotal: measuredTotal, events: events)
+                           depots: depots, depotBytes: depotBytes, events: events)
 
         guard let exe = LaunchExecutableFinder.find(in: installDir, gameName: gameName) else {
             throw DepotDownloaderError.launchExeNotFound
@@ -146,7 +141,7 @@ final class DepotDownloaderController {
         }
         // No size lookup for a DLC: its depots share the progress bar equally.
         try await download(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
-                           depots: depots, depotBytes: [:], measuredTotal: nil, events: events)
+                           depots: depots, depotBytes: [:], events: events)
     }
 
     // MARK: - Shared download
@@ -160,7 +155,6 @@ final class DepotDownloaderController {
         auth: SteamCloudAccount,
         depots: [Int]?,
         depotBytes: [Int: Int64],
-        measuredTotal: Int64?,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         guard FileManager.default.isExecutableFile(atPath: AppPaths.depotDownloaderExecutableURL.path) else {
@@ -169,8 +163,7 @@ final class DepotDownloaderController {
 
         try await withAuthSession(auth: auth) {
             try await self.runDownload(appID: appID, downloadID: downloadID, into: installDir, auth: auth,
-                                       depots: depots, depotBytes: depotBytes, measuredTotal: measuredTotal,
-                                       events: events)
+                                       depots: depots, depotBytes: depotBytes, events: events)
         }
     }
 
@@ -215,7 +208,6 @@ final class DepotDownloaderController {
         auth: SteamCloudAccount,
         depots: [Int]?,
         depotBytes: [Int: Int64],
-        measuredTotal: Int64?,
         events: @escaping @MainActor (DepotDownloaderEvent) -> Void
     ) async throws {
         // Refcounted, not a Bool: a DLC install can overlap a base-game install,
@@ -254,20 +246,14 @@ final class DepotDownloaderController {
         let sessionExpired = Box<Bool>(false)
         let notOwned = Box<String?>(nil)
 
-        // Between DepotDownloader's per-file percentages; see `DownloadedBytes`.
-        let folderWatch = measuredTotal.map { total in
-            Task.detached {
-                while !Task.isCancelled {
-                    try? await Task.sleep(for: DownloadedBytes.interval)
-                    guard !Task.isCancelled, let bytes = DownloadedBytes.measure(installDir) else { continue }
-                    let fraction = DownloadedBytes.fraction(bytes, of: total)
-                    await MainActor.run { events(.progress(fraction)) }
-                }
-            }
-        }
-        defer { folderWatch?.cancel() }
+        let lastRunProgress = Box<Double>(-1)
 
-        let exit = try await runDepotDownloader(args: args, stopper: stopper) { line in
+        let exit = try await runDepotDownloader(args: args, stopper: stopper, progressHandler: { fraction in
+            // The whole run's own count, after every chunk; see `DepotDownloaderOutput`.
+            guard fraction > lastRunProgress.value else { return }
+            lastRunProgress.value = fraction
+            Task { @MainActor in events(.progress(fraction)) }
+        }) { line in
             // Skip per-chunk progress lines; everything else (logon, licence and
             // ownership messages) is what a failed run needs.
             if parseProgressFraction(line) == nil {
@@ -282,8 +268,10 @@ final class DepotDownloaderController {
                 Task { @MainActor in events(.status(phase)) }
             }
 
-            // Progress, for the whole download rather than the depot it's on
+            // Progress, for the whole download rather than the depot it's on.
+            // Only until the run's own count arrives, which is exact.
             if let fraction = progress.value.update(with: line),
+               lastRunProgress.value < 0 || fraction == 1,
                fraction - lastEmittedProgress.value > 0.001 || fraction == 1 {
                 lastEmittedProgress.value = fraction
                 Task { @MainActor in events(.progress(fraction)) }
@@ -294,7 +282,8 @@ final class DepotDownloaderController {
             // back to the interactive password prompt that we can't satisfy.
             let l = line.lowercased()
             if l.contains("logon requires a username and password or access token") ||
-               l.contains("enter account password for") {
+               l.contains("enter account password for") ||
+               l.contains("2 factor auth code") || l.contains("authentication code sent to your email") {
                 sessionExpired.value = true
             }
 
@@ -316,13 +305,14 @@ final class DepotDownloaderController {
             }
         }
 
+        // Before the pause check: BEER stops it at a sign-in prompt too.
+        if sessionExpired.value {
+            throw DepotDownloaderError.sessionExpired
+        }
+
         // Whatever it printed on the way out, it stopped because it was told to.
         if stopper.wasStopped {
             throw DepotDownloaderError.paused
-        }
-
-        if sessionExpired.value {
-            throw DepotDownloaderError.sessionExpired
         }
 
         if let detail = authFailure.value {
@@ -391,15 +381,19 @@ final class DepotDownloaderController {
 
     // MARK: - Process invocation
 
+    /// In a pseudo-terminal, for every download: only there does it report
+    /// the whole run's progress after each chunk (see `DepotDownloaderOutput`).
+    /// A sign-in prompt it would wait at forever stops it instead, and reaches
+    /// `lineHandler` like any other line.
     private func runDepotDownloader(
         args: [String],
         stopper: ProcessStopper,
+        progressHandler: @escaping @Sendable (Double) -> Void,
         lineHandler: @escaping @Sendable (String) -> Void
     ) async throws -> Int32 {
         let exe = AppPaths.depotDownloaderExecutableURL.path
 
-        // Line-buffering layer over ShellRunner's chunk callback.
-        let leftover = Box("")
+        let output = Box(DepotDownloaderOutput())
         let result: ProcessResult
         do {
             result = try await ShellRunner.run(
@@ -407,29 +401,28 @@ final class DepotDownloaderController {
                 arguments: args,
                 environment: [
                     "DOTNET_CLI_TELEMETRY_OPTOUT": "1",
-                    "DOTNET_NOLOGO": "1"
+                    "DOTNET_NOLOGO": "1",
+                    // It checks TERM before it sends progress to a terminal.
+                    "TERM": "xterm-256color"
                 ],
                 currentDirectory: AppPaths.depotDownloaderDirectory,
                 stopper: stopper,
+                terminal: true,
                 outputHandler: { chunk in
-                    let combined = leftover.value + chunk
-                    var lines = combined.components(separatedBy: "\n")
-                    if !combined.hasSuffix("\n"), let last = lines.last {
-                        leftover.value = last
-                        lines.removeLast()
-                    } else {
-                        leftover.value = ""
-                    }
-                    for line in lines where !line.isEmpty {
-                        lineHandler(scrub(line))
+                    let read = output.value.consume(chunk)
+                    read.progress.forEach(progressHandler)
+                    read.lines.forEach(lineHandler)
+                    if let prompt = read.prompt {
+                        lineHandler(prompt)
+                        stopper.stop()
                     }
                 }
             )
         } catch {
             throw DepotDownloaderError.spawnFailed(error.localizedDescription)
         }
-        if !leftover.value.isEmpty {
-            lineHandler(scrub(leftover.value))
+        if let rest = output.value.finish() {
+            lineHandler(rest)
         }
         return result.exitCode
     }

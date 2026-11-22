@@ -1,12 +1,76 @@
 import Foundation
 
+/// A line without carriage returns or terminal control sequences: colours
+/// and modes (`ESC[?1h`), titles and progress (`ESC]…BEL`), and the
+/// two-character ones (`ESC=`). In a pseudo-terminal DepotDownloader's
+/// runtime prints some of these on its own.
 func scrub(_ line: String) -> String {
     var out = line.replacingOccurrences(of: "\r", with: "")
-    if let re = try? NSRegularExpression(pattern: "\\u{1B}\\[[0-9;]*[a-zA-Z]") {
+    let pattern = #"\u001B(\[[0-9;?]*[ -/]*[@-~]|\][^\u0007\u001B]*(\u0007|\u001B\\)?|[()#][0-9A-Za-z]|[=>78])"#
+    if let re = try? NSRegularExpression(pattern: pattern) {
         let range = NSRange(out.startIndex..., in: out)
         out = re.stringByReplacingMatches(in: out, range: range, withTemplate: "")
     }
     return out
+}
+
+/// DepotDownloader's output as it arrives, run in a pseudo-terminal.
+///
+/// There it sends, after every chunk, how far the whole run has got: the
+/// terminal progress sequence `ESC ] 9 ; 4 ; <state> ; <percent> BEL`
+/// (`Ansi.Progress` in its source; state 1 carries a percentage). That counts
+/// every depot and leaves out what's already on disk, so it's right for a
+/// first download, an update and a DLC alike. Its printed percentages come
+/// only when a whole file is done, and only for the depot it's on.
+///
+/// A terminal on stdin also means a sign-in prompt waits for an answer that
+/// will never come, so a prompt is reported as soon as it's printed, without
+/// the newline the rest of the output ends with.
+struct DepotDownloaderOutput {
+    struct Read: Equatable {
+        /// Whole lines, scrubbed, without empty ones.
+        var lines: [String] = []
+        /// The whole run's progress, 0 to 1, in the order it came.
+        var progress: [Double] = []
+        /// A prompt DepotDownloader is waiting at.
+        var prompt: String?
+    }
+
+    /// From its `Program.cs` (password) and `Steam3Session.cs` (Steam Guard).
+    static let prompts = [
+        "Enter account password for",
+        "Please enter your 2 factor auth code",
+        "Please enter the authentication code sent to your email",
+    ]
+
+    /// The line still being written, which may end in half a sequence.
+    private var pending = ""
+
+    mutating func consume(_ chunk: String) -> Read {
+        var read = Read()
+        var text = pending + chunk
+        while let match = text.firstMatch(of: /\x{1B}\]9;4;([0-9]+);([0-9]+)\x{07}/) {
+            if match.output.1 == "1", let percent = Double(match.output.2) {
+                read.progress.append(min(percent, 100) / 100)
+            }
+            text.removeSubrange(match.range)
+        }
+        var lines = text.components(separatedBy: "\n")
+        pending = lines.removeLast()
+        read.lines = lines.map(scrub).filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if Self.prompts.contains(where: pending.contains) {
+            read.prompt = scrub(pending)
+            pending = ""
+        }
+        return read
+    }
+
+    /// Whatever was left without a newline when the output ended.
+    mutating func finish() -> String? {
+        let rest = scrub(pending)
+        pending = ""
+        return rest.trimmingCharacters(in: .whitespaces).isEmpty ? nil : rest
+    }
 }
 
 func parseStatusPhrase(_ line: String) -> String? {
