@@ -19,11 +19,11 @@ extension GameDetailViewModel {
         moveSourceBytes = nil
         moveOptions = moveTargetOptions(for: bottle)
         moveTarget = InstallTargets.initialSelection(moveOptions, rememberedDriveUUID: nil)
-        isShowingMoveSheet = true
+        sheet = .move
         Task { [self] in
             // Walks the whole game folder.
             let bytes = await Task.detached { DiskSpaceCheck.allocatedSize(of: source) }.value
-            if isShowingMoveSheet { moveSourceBytes = bytes }
+            if sheet == .move { moveSourceBytes = bytes }
         }
     }
 
@@ -45,7 +45,7 @@ extension GameDetailViewModel {
 
     func confirmMove(_ bottle: Bottle) {
         guard let target = moveTarget, moveSourceBytes != nil, moveShortfall == nil else { return }
-        isShowingMoveSheet = false
+        sheet = nil
         moveMessage = nil
         let appID = game.appID
         let cloudSync = cloudSync

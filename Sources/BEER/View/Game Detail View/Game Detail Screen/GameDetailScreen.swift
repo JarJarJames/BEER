@@ -73,19 +73,46 @@ struct GameDetailScreen: View {
                 }
             }
         }
-        .sheet(isPresented: $model.isShowingArtwork) {
+        // SwiftUI writes nil when a sheet closes itself or Esc closes it.
+        .sheet(item: Binding(get: { model.sheet }, set: { if $0 == nil { model.sheetClosed() } })) { sheet in
+            sheetContent(sheet)
+        }
+        .confirmationDialog(
+            model.dialog.map(confirmationTitle) ?? "",
+            isPresented: Binding(get: { model.dialog != nil && model.dialog?.shortfall == nil },
+                                 set: { if !$0, model.dialog?.shortfall == nil { model.dialog = nil } }),
+            presenting: model.dialog
+        ) { dialog in
+            confirmationActions(dialog)
+        } message: { dialog in
+            confirmationMessage(dialog)
+        }
+        .alert(
+            DiskSpaceStrings.alertTitle,
+            isPresented: Binding(get: { model.dialog?.shortfall != nil },
+                                 set: { if !$0, model.dialog?.shortfall != nil { model.dialog = nil } }),
+            presenting: model.dialog?.shortfall
+        ) { _ in
+            Button(DiskSpaceStrings.okButton, role: .cancel) { model.dialog = nil }
+        } message: { shortfall in
+            Text(DiskSpaceStrings.shortfall(shortfall))
+        }
+    }
+
+    @ViewBuilder
+    private func sheetContent(_ sheet: GameDetailSheet) -> some View {
+        switch sheet {
+        case .artwork:
             CustomArtworkSheet(
                 game: model.game,
                 error: model.artworkError,
                 onChoose: { model.chooseArtwork($0, for: $1) },
                 onReset: { model.resetArtwork($0) },
-                onDone: { model.isShowingArtwork = false }
+                onDone: { model.sheet = nil }
             )
-        }
-        .sheet(isPresented: $model.isShowingCloudConnect) {
+        case .cloudConnect:
             SteamCloudQRSheet(onConnected: model.cloudDidConnect)
-        }
-        .sheet(isPresented: $model.isShowingInstallSheet) {
+        case .install:
             InstallSheet(
                 game: model.game,
                 size: model.installSize?.leavingOut(model.skippedDLC),
@@ -98,37 +125,32 @@ struct GameDetailScreen: View {
                 selection: Binding(get: { model.installTarget }, set: { model.selectInstallTarget($0) }),
                 note: model.installNote,
                 onInstall: model.confirmInstall,
-                onCancel: { model.isShowingInstallSheet = false }
+                onCancel: { model.sheet = nil }
             )
-        }
-        .sheet(isPresented: $model.isShowingMoveSheet) {
+        case .move:
             if let bottle = model.installedBottle {
                 MoveGameSheet(bottle: bottle, model: model)
             }
-        }
-        .sheet(isPresented: $model.isShowingShortcutIcon) {
+        case .shortcutIcon:
             ShortcutIconSheet(
                 game: model.game,
                 account: model.isSteamConnected ? model.cloudAuth.account : nil,
                 rememberClientIcon: { model.library.setClientIconURL($0, appID: model.appID) },
                 onSave: model.shortcutIconSaved,
-                onCancel: { model.isShowingShortcutIcon = false }
+                onCancel: { model.sheet = nil }
             )
-        }
-        .sheet(isPresented: $model.isShowingSaveBackups) {
+        case .saveBackups:
             if let bottle = model.installedBottle {
                 SaveBackupsSheet(bottle: bottle, model: model)
             }
-        }
-        .sheet(item: $model.restoreConflictPrompt) { prompt in
+        case .restoreConflict(let prompt):
             RestoreConflictSheet(
                 prompt: prompt,
                 onKeepRestored: { model.resolveRestoreConflict(prompt, keepRestored: true) },
                 onUseCloud: { model.resolveRestoreConflict(prompt, keepRestored: false) },
-                onCancel: { model.restoreConflictPrompt = nil }
+                onCancel: { model.sheet = nil }
             )
-        }
-        .sheet(isPresented: $model.isShowingDLCManager) {
+        case .dlcManager:
             if let bottle = model.installedBottle, let installDir = bottle.resolvedInstallDirectory {
                 DLCManagerView(
                     game: model.game,
@@ -137,7 +159,7 @@ struct GameDetailScreen: View {
                     emulatorApplied: model.cachedPatchStatus == .applied,
                     dependencies: model.dependencies,
                     onDone: {
-                        model.isShowingDLCManager = false
+                        model.sheet = nil
                         // The manager may have written configs.app.ini, so the
                         // emulator row's on-disk probe is now stale.
                         model.patchProbeTick &+= 1
@@ -145,56 +167,55 @@ struct GameDetailScreen: View {
                 )
             }
         }
-        .confirmationDialog(
-            GameUpdateStrings.beforePlayTitle(model.game.name),
-            isPresented: Binding(get: { model.updateBeforePlay != nil },
-                                 set: { if !$0 { model.updateBeforePlay = nil } })
-        ) {
+    }
+
+    private func confirmationTitle(_ dialog: GameDetailDialog) -> String {
+        switch dialog {
+        case .updateBeforePlay: GameUpdateStrings.beforePlayTitle(model.game.name)
+        case .removeNonSteamGame: "Remove \(model.game.name)?"
+        case .removeWithDriveMissing: InstallDriveStrings.removeWhileMissingTitle(model.game.name)
+        case .clearLocalSaves: "Back up and clear local saves?"
+        case .diskSpaceShortfall: ""
+        }
+    }
+
+    @ViewBuilder
+    private func confirmationActions(_ dialog: GameDetailDialog) -> some View {
+        switch dialog {
+        case .updateBeforePlay:
             Button(GameUpdateStrings.updateFirst, action: model.updateInsteadOfPlaying)
             Button(GameUpdateStrings.playAnyway, action: model.playWithoutUpdating)
             Button(GameUpdateStrings.cancel, role: .cancel) {}
-        } message: {
-            Text(GameUpdateStrings.beforePlayMessage)
-        }
-        .confirmationDialog(
-            "Remove \(model.game.name)?",
-            isPresented: $model.confirmRemoveNonSteamGame
-        ) {
+        case .removeNonSteamGame:
             Button("Remove Game", role: .destructive, action: model.uninstall)
             Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The game's folder in BEER is deleted, on this Mac or on its drive. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
-        }
-        .confirmationDialog(
-            InstallDriveStrings.removeWhileMissingTitle(model.game.name),
-            isPresented: $model.confirmRemoveWithDriveMissing
-        ) {
+        case .removeWithDriveMissing:
             Button(InstallDriveStrings.removeButton, role: .destructive, action: model.uninstall)
             Button(InstallDriveStrings.cancelButton, role: .cancel) {}
-        } message: {
-            Text(InstallDriveStrings.removeWhileMissingMessage(model.installLocation?.missingDriveName ?? ""))
-        }
-        .alert(
-            DiskSpaceStrings.alertTitle,
-            isPresented: Binding(get: { model.diskSpaceShortfall != nil }, set: { if !$0 { model.diskSpaceShortfall = nil } }),
-            presenting: model.diskSpaceShortfall
-        ) { _ in
-            Button(DiskSpaceStrings.okButton, role: .cancel) { model.diskSpaceShortfall = nil }
-        } message: { shortfall in
-            Text(DiskSpaceStrings.shortfall(shortfall))
-        }
-        .confirmationDialog(
-            "Back up and clear local saves?",
-            isPresented: Binding(get: { model.confirmClearBottle != nil }, set: { if !$0 { model.confirmClearBottle = nil } }),
-            presenting: model.confirmClearBottle
-        ) { bottle in
+        case .clearLocalSaves(let bottle):
             Button("Back up & clear", role: .destructive) {
                 model.clearLocalSaves(for: bottle)
-                model.confirmClearBottle = nil
+                model.dialog = nil
             }
-            Button("Cancel", role: .cancel) { model.confirmClearBottle = nil }
-        } message: { _ in
+            Button("Cancel", role: .cancel) { model.dialog = nil }
+        case .diskSpaceShortfall:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func confirmationMessage(_ dialog: GameDetailDialog) -> some View {
+        switch dialog {
+        case .updateBeforePlay:
+            Text(GameUpdateStrings.beforePlayMessage)
+        case .removeNonSteamGame:
+            Text("The game's folder in BEER is deleted, on this Mac or on its drive. If you moved it in, this is the only copy; if you copied it, your original is untouched.")
+        case .removeWithDriveMissing:
+            Text(InstallDriveStrings.removeWhileMissingMessage(model.installLocation?.missingDriveName ?? ""))
+        case .clearLocalSaves:
             Text("Your current local saves for this game are copied to a timestamped backup, then removed from the bottle. Nothing is uploaded or deleted from Steam Cloud. You can restore by pulling from cloud, or from the backup folder.")
+        case .diskSpaceShortfall:
+            EmptyView()
         }
     }
 }

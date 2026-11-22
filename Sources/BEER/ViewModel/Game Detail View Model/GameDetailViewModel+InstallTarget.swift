@@ -65,7 +65,7 @@ extension GameDetailViewModel {
         let (destination, partial) = installDestination(for: target)
         let report = await installSpaceCheck.assess(size.leavingOut(skipped), destination: destination, partialDownload: partial)
         // The sheet closed, or another place or DLC was picked, while this ran.
-        guard isShowingInstallSheet, installTarget?.id == target.id, skippedDLC == skipped else { return }
+        guard sheet == .install, installTarget?.id == target.id, skippedDLC == skipped else { return }
         installSpaceReport = report
     }
 }

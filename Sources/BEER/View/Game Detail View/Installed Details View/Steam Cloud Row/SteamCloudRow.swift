@@ -36,7 +36,7 @@ struct SteamCloudRow: View {
                 if !connected || expired {
                     Button {
                         model.cloudSyncMessage = nil
-                        model.isShowingCloudConnect = true
+                        model.sheet = .cloudConnect
                     } label: {
                         Label(expired ? "Reconnect" : "Connect", systemImage: "icloud")
                     }
@@ -79,7 +79,7 @@ struct SteamCloudRow: View {
                             Label(SaveRestoreStrings.menuItem, systemImage: "clock.arrow.circlepath")
                         }
                         Button(role: .destructive) {
-                            model.confirmClearBottle = bottle
+                            model.dialog = .clearLocalSaves(bottle)
                         } label: {
                             Label("Back up & clear local saves…", systemImage: "trash")
                         }

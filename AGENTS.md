@@ -75,6 +75,7 @@ what a fake can't cover — not the first.
 | Large file downloads (runtimes) | `FileDownload.run(configuration:)`, given a session whose `protocolClasses` serve the bytes | `FileDownloadTests` |
 | Rosetta installed | `BottleStore.rosettaInstalled` | `RosettaCheckTests` |
 | A starting game's window on screen, and the launch steps | `BottleStore.gameWindowWatch`; `BottleStore.runLaunch(_:steps:)` given fake `LaunchSteps`; every launch phase in order through `BottleStore.launchPhasesChanged` | `LaunchStatusTests` |
+| The runtime a new install gets (game page) | `GameDetailViewModel.preferredRuntime` | `GameDetailSheetTests` |
 | Custom art folder | `CustomArtFiles.copy(into:)` / `remove(in:)`, pointed at a temp folder | `LibraryOrganizeTests` |
 
 The helper has its own offline xUnit tests in `Tools/CloudSync.Tests/`.

@@ -11,7 +11,15 @@ extension GameDetailViewModel {
     func showSaveBackups() {
         saveBackupsError = nil
         reloadSaveBackups()
-        isShowingSaveBackups = true
+        sheet = .saveBackups(confirmingRestore: nil)
+    }
+
+    /// The restore the backups sheet is asking about. It lives in that
+    /// sheet's case, so closing the sheet drops it, and a plan worked out
+    /// after the sheet closed is never shown.
+    var restorePlanToConfirm: SaveRestorePlan? {
+        get { if case .saveBackups(let plan) = sheet { plan } else { nil } }
+        set { if case .saveBackups = sheet { sheet = .saveBackups(confirmingRestore: newValue) } }
     }
 
     func reloadSaveBackups() {
@@ -53,7 +61,7 @@ extension GameDetailViewModel {
             try cloudSync.restore(plan, appID: game.appID)
             cloudSyncIsError = false
             cloudSyncMessage = SaveRestoreStrings.restored(plan.snapshot.date)
-            isShowingSaveBackups = false
+            sheet = nil
         } catch {
             saveBackupsError = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
@@ -65,7 +73,7 @@ extension GameDetailViewModel {
     /// The player picked a side in the conflict prompt. Settle it, then carry
     /// on with what they were doing when the sync stopped.
     func resolveRestoreConflict(_ prompt: RestoreConflictPrompt, keepRestored: Bool) {
-        restoreConflictPrompt = nil
+        sheet = nil
         Task { [self] in
             cloudSyncMessage = nil
             if keepRestored {
@@ -101,7 +109,7 @@ extension GameDetailViewModel {
         if case CloudSyncClientError.authExpired = error {
             cloudAuth.sessionExpired = true
             cloudSyncMessage = "Steam sign-in expired — reconnect to finish syncing."
-            isShowingCloudConnect = true
+            sheet = .cloudConnect
         } else {
             cloudSyncMessage = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
         }
