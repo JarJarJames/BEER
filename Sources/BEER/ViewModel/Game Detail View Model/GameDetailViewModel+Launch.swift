@@ -79,17 +79,15 @@ extension GameDetailViewModel {
         }
         return BottleStore.LaunchSteps(
             setUpWine: { [self] in
-                (state.bottle, state.exe) = try await setUpWine(for: installedBottle)
+                (state.bottle, state.exe) = try await session.setUpWine(self, installedBottle)
             },
             syncSaves: syncSaves,
             prepareGame: { [self] in
-                state.bottle = try await bottles.prepareGameSession(state.bottle)
+                state.bottle = try await session.prepareGame(bottles, state.bottle)
             },
             runGame: { [self] in
                 state.tracking = beginPlay(state.bottle, watchesAchievements: pullsSaves)
-                return await bottles.runGameSession(
-                    state.bottle, executable: state.exe, arguments: state.bottle.effectiveGameLaunchArguments
-                )
+                return await session.runGame(bottles, state.bottle, state.exe)
             },
             afterPlay: { [self] in
                 await endPlay(state.bottle, tracking: state.tracking)
@@ -99,7 +97,7 @@ extension GameDetailViewModel {
 
     /// The prefix, Steam's launch config, the client loader, and the selected
     /// graphics translator. The bottle as it stands after, and what to run.
-    private func setUpWine(for installedBottle: Bottle) async throws -> (Bottle, String) {
+    func setUpWine(for installedBottle: Bottle) async throws -> (Bottle, String) {
         // Before the save pull, which needs the prefix's user folder.
         guard await bottles.initializeIfNeeded(installedBottle) else { throw LaunchError.wineSetupFailed }
         if !game.effectiveIsNonSteam {
@@ -170,7 +168,7 @@ extension GameDetailViewModel {
     /// `watchesAchievements` is whether Steam was connected at the click, so a
     /// session that expired during the pull still watches and queues unlocks.
     private func beginPlay(_ bottle: Bottle, watchesAchievements: Bool) -> PlayTracking? {
-        DiscordPresence.shared.beginPlaying(game)
+        session.showOnDiscord(game)
         guard !game.effectiveIsNonSteam else { return nil }
 
         // Signature of the saves as they stand going in. If the game
@@ -193,14 +191,7 @@ extension GameDetailViewModel {
         var achievementWatcher: AchievementWatcher?
         if watchesAchievements, let account = cloudAuth.account,
            let installDir = bottle.resolvedInstallDirectory {
-            let watcher = AchievementWatcher(
-                bottle: bottle, appID: game.appID, installDir: installDir,
-                steamID64: account.steamID64, account: account.accountName,
-                refreshToken: account.refreshToken,
-                onUnlock: { AchievementToastCenter.shared.post($0) }
-            )
-            watcher.start()
-            achievementWatcher = watcher
+            achievementWatcher = session.watchAchievements(bottle, game.appID, installDir, account)
         }
         return PlayTracking(savesBefore: savesBefore, achievementWatcher: achievementWatcher)
     }
@@ -208,7 +199,7 @@ extension GameDetailViewModel {
     /// `runGameSession` returns once the whole Wine session is idle, so by
     /// here play is genuinely over.
     private func endPlay(_ bottle: Bottle, tracking: PlayTracking?) async {
-        DiscordPresence.shared.endPlaying(appID: game.appID)
+        session.clearFromDiscord(game.appID)
         guard let tracking else { return }
 
         // Stopping hands back the new total, re-read on the session we

@@ -16,7 +16,9 @@ final class InstallVolumeMonitor {
     /// changes, as if it had read `drives` itself.
     @ObservationIgnored private(set) var current: VolumeCatalog = .system
 
-    private let source: VolumeCatalog
+    /// Asks the system each time, for a check that can't wait for the list
+    /// above to catch up: a drive pulled since a sheet listed it.
+    let source: VolumeCatalog
     private let snapshot: DriveSnapshot
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
 

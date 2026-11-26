@@ -119,7 +119,7 @@ extension GameDetailViewModel {
                     return
                 }
             } else if let volume = target.volume {
-                guard let mounted = volume.uuid.flatMap(VolumeCatalog.system.drive(withUUID:)) else {
+                guard let mounted = volume.uuid.flatMap(drives.source.drive(withUUID:)) else {
                     downloads.fail(appID: game.appID, reason: InstallDriveStrings.driveNotConnected(volume.name))
                     return
                 }
@@ -273,7 +273,7 @@ extension GameDetailViewModel {
                 shouldResumeInstallAfterCloudConnect = true
                 downloads.fail(appID: game.appID, reason: "Steam sign-in expired. Reconnect to resume the download.")
                 sheet = .cloudConnect
-            } catch _ where drive.map({ !GameFolders.isConnected($0, volumes: .system) }) ?? false {
+            } catch _ where drive.map({ !GameFolders.isConnected($0, volumes: drives.source) }) ?? false {
                 // Whatever DepotDownloader said, the cause is the drive. What
                 // came down is on it; Resume continues from there.
                 downloads.fail(appID: game.appID, reason: InstallDriveStrings.downloadPaused(drive?.name ?? ""))
@@ -382,7 +382,7 @@ extension GameDetailViewModel {
         let bottle = installedBottle
         Task { [self] in
             if let bottle { await bottles.delete(bottle) }
-            GameShortcutStore.shared.removeShortcuts(appID: appID)
+            shortcuts.removeShortcuts(appID: appID)
             if isNonSteam {
                 library.removeNonSteamGame(appID: appID)
             } else {

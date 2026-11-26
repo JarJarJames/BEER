@@ -10,19 +10,19 @@ final class GameDetailViewModel {
     let dependencies: GameDetailDependencies
     private let initialGame: SteamLibraryGame
 
-    let library: SteamLibraryStore
-    let bottles: BottleStore
-    let detector: ToolchainDetector
-    let depotCtl: DepotDownloaderController
-    let downloads: DownloadsStore
-    let goldberg: GoldbergInstaller
-    let cloudAuth: SteamAuthStore
-    let cloudSync: CloudSyncEngine
-    let presence: SteamPresenceStore
-    let graphicsTranslator: GraphicsTranslatorInstaller
-    let dlcStore: DLCStore
-    let drives: InstallVolumeMonitor
-    let mover: GameMover
+    var library: SteamLibraryStore { dependencies.library }
+    var bottles: BottleStore { dependencies.bottles }
+    var detector: ToolchainDetector { dependencies.detector }
+    var depotCtl: DepotDownloaderController { dependencies.depotCtl }
+    var downloads: DownloadsStore { dependencies.downloads }
+    var goldberg: GoldbergInstaller { dependencies.goldberg }
+    var cloudAuth: SteamAuthStore { dependencies.cloudAuth }
+    var cloudSync: CloudSyncEngine { dependencies.cloudSync }
+    var presence: SteamPresenceStore { dependencies.presence }
+    var graphicsTranslator: GraphicsTranslatorInstaller { dependencies.graphicsTranslator }
+    var dlcStore: DLCStore { dependencies.dlcStore }
+    var drives: InstallVolumeMonitor { dependencies.drives }
+    var mover: GameMover { dependencies.mover }
 
     /// The sheet that's up, if any. Opening one replaces whatever was up.
     var sheet: GameDetailSheet?
@@ -59,6 +59,10 @@ final class GameDetailViewModel {
     @ObservationIgnored var installSpaceCheck = InstallSpaceCheck()
     /// The runtime a new install gets. Tests swap this out.
     @ObservationIgnored var preferredRuntime: @MainActor () -> RuntimeCandidate?
+    /// What Play hands to Wine, Discord and the achievement watcher. Tests swap this out.
+    @ObservationIgnored var session: GameSession = .live
+    /// Makes and removes the game's shortcuts. Tests point one at a temporary folder.
+    @ObservationIgnored var shortcuts: GameShortcutStore = .shared
     var artworkError: String?
     /// The installed game's folder size, once measured for the Size stat.
     var installedBytes: Int64?
@@ -82,19 +86,6 @@ final class GameDetailViewModel {
         appID = game.appID
         self.dependencies = dependencies
         initialGame = game
-        library = dependencies.library
-        bottles = dependencies.bottles
-        detector = dependencies.detector
-        depotCtl = dependencies.depotCtl
-        downloads = dependencies.downloads
-        goldberg = dependencies.goldberg
-        cloudAuth = dependencies.cloudAuth
-        cloudSync = dependencies.cloudSync
-        presence = dependencies.presence
-        graphicsTranslator = dependencies.graphicsTranslator
-        dlcStore = dependencies.dlcStore
-        drives = dependencies.drives
-        mover = dependencies.mover
         preferredRuntime = { [detector = dependencies.detector] in detector.preferredGameRuntime }
     }
 

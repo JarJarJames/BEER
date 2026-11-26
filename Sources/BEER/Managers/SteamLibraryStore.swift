@@ -15,9 +15,11 @@ final class SteamLibraryStore {
 
     private let cloudClient = CloudSyncClient()
     @ObservationIgnored var updateCheck = GameUpdateCheck()
+    /// Where the library is saved. Tests point this at a temporary folder.
+    @ObservationIgnored var stateURL = AppPaths.steamLibraryStateURL
 
     func load() {
-        guard let data = try? Data(contentsOf: AppPaths.steamLibraryStateURL),
+        guard let data = try? Data(contentsOf: stateURL),
               let payload = try? JSONDecoder().decode(StoredState.self, from: data) else {
             return
         }
@@ -300,7 +302,7 @@ final class SteamLibraryStore {
             try AppPaths.ensureBaseDirectories()
             let payload = StoredState(account: account, games: games)
             let data = try JSONEncoder().encode(payload)
-            try data.write(to: AppPaths.steamLibraryStateURL, options: .atomic)
+            try data.write(to: stateURL, options: .atomic)
         } catch {
             lastError = "Could not save Steam library state: \(error.localizedDescription)"
         }
