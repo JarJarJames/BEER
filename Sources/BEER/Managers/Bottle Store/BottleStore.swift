@@ -33,14 +33,17 @@ final class BottleStore {
     /// Whether Rosetta is installed. Tests swap this out.
     @ObservationIgnored var rosettaInstalled: () -> Bool = RosettaInstaller.isInstalled
 
+    /// Where the bottle list is saved. Tests point this at a temporary folder.
+    @ObservationIgnored var metadataURL = AppPaths.metadataURL
+
     func load() async {
         do {
             try AppPaths.ensureBaseDirectories()
-            guard FileManager.default.fileExists(atPath: AppPaths.metadataURL.path) else {
+            guard FileManager.default.fileExists(atPath: metadataURL.path) else {
                 bottles = []
                 return
             }
-            let data = try Data(contentsOf: AppPaths.metadataURL)
+            let data = try Data(contentsOf: metadataURL)
             bottles = try JSONDecoder.gamenative.decode([Bottle].self, from: data)
 
             var metadataChanged = false
@@ -348,6 +351,6 @@ final class BottleStore {
     func persist() throws {
         try AppPaths.ensureBaseDirectories()
         let data = try JSONEncoder.gamenative.encode(bottles)
-        try data.write(to: AppPaths.metadataURL, options: .atomic)
+        try data.write(to: metadataURL, options: .atomic)
     }
 }

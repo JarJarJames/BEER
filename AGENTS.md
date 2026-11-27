@@ -77,6 +77,11 @@ what a fake can't cover — not the first.
 | A starting game's window on screen, and the launch steps | `BottleStore.gameWindowWatch`; `BottleStore.runLaunch(_:steps:)` given fake `LaunchSteps`; every launch phase in order through `BottleStore.launchPhasesChanged` | `LaunchStatusTests` |
 | The runtime a new install gets (game page) | `GameDetailViewModel.preferredRuntime` | `GameDetailSheetTests` |
 | Custom art folder | `CustomArtFiles.copy(into:)` / `remove(in:)`, pointed at a temp folder | `LibraryOrganizeTests` |
+| Where the bottle list and library are saved | `BottleStore.metadataURL`, `SteamLibraryStore.stateURL`, pointed at a temp folder | `GameDetailUninstallTests` |
+| The whole game page | `Tests/BEERTests/Support/FakeGamePage.swift`: a real `GameDetailViewModel` on FakeSteam, FakeDrives and stores saving to a temp folder | `GameDetailInstallTests`, `GameDetailPlayTests`, `GameDetailUninstallTests` |
+| Wine, Discord and the achievement watcher during Play | `GameDetailViewModel.session` (a `GameSession`) | `GameDetailPlayTests` |
+| Game shortcuts (game page) | `GameDetailViewModel.shortcuts`, a `GameShortcutStore(locations:)` in a temp folder | `GameDetailUninstallTests` |
+| A drive pulled since the install sheet listed it | `InstallVolumeMonitor(source:)` given `FakeDrives().catalog`; the game page checks `source` before an install | `GameDetailInstallTests` |
 
 The helper has its own offline xUnit tests in `Tools/CloudSync.Tests/`.
 
